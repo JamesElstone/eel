@@ -340,7 +340,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
-            'marks only the latest intact Companies House artifact for the current approval as current',
+            'requires exact authority validation evidence before a Companies House artifact is current',
             static function () use ($harness, $service, $invokePrivate): void {
                 $path = tempnam(test_tmp_directory(), 'ch-current-artifact-');
                 if ($path === false) {
@@ -378,9 +378,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'run_id' => 18,
                         'latest_submission_id' => 712,
                     ]);
-                    $harness->assertSame('current', (string)$current['state']);
-                    $harness->assertSame(true, (bool)$current['current']);
-                    $harness->assertSame(2, (int)$current['fact_count']);
+                    $harness->assertSame('unvalidated', (string)$current['state']);
+                    $harness->assertSame(false, (bool)$current['current']);
+                    $harness->assertTrue(str_contains(
+                        implode(' ', (array)$current['errors']),
+                        'matching passed authority-profile validation record'
+                    ));
                     $harness->assertSame(
                         \eel_accounts\Service\IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION,
                         (string)$current['presentation_version']
@@ -415,20 +418,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'run_id' => 19,
                         'latest_submission_id' => 712,
                     ]);
-                    $harness->assertSame('stale', (string)$stale['state']);
+                    $harness->assertSame('unvalidated', (string)$stale['state']);
                     $harness->assertTrue(str_contains(
                         implode(' ', (array)$stale['errors']),
-                        'current Disclosure Approval'
+                        'matching passed authority-profile validation record'
                     ));
                     $newer = $invokePrivate($service, 'preparedArtifactState', $submission, [
                         'ok' => true,
                         'run_id' => 18,
                         'latest_submission_id' => 713,
                     ]);
-                    $harness->assertSame('stale', (string)$newer['state']);
+                    $harness->assertSame('unvalidated', (string)$newer['state']);
                     $harness->assertTrue(str_contains(
                         implode(' ', (array)$newer['errors']),
-                        'newer Companies House iXBRL'
+                        'matching passed authority-profile validation record'
                     ));
 
                     file_put_contents($path, '<html>changed</html>');
@@ -464,6 +467,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(str_contains($body, 'preparedArtifactState('));
                 $harness->assertFalse(str_contains($body, '$this->readiness('));
                 $harness->assertFalse(str_contains($body, 'IxbrlFilingArtifactService'));
+                $harness->assertTrue(str_contains($body, "hash('sha256', \$accountsXml)"));
+                $harness->assertFalse(str_contains($body, "hash_file('sha256', \$artifactPath)"));
             }
         );
 
@@ -486,6 +491,80 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     implode(' ', (array)$state['errors']),
                     'must be later than the original accounts approval date'
                 ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'keeps transmitted Companies House validation provenance immutable during developer revalidation',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'revalidatePreparedArtifact'
+                );
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+
+                $harness->assertTrue(str_contains(
+                    $body,
+                    "(string)(\$submission['lifecycle'] ?? '') !== 'prepared'"
+                ));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    'WHERE id = :submission_id AND lifecycle = :lifecycle'
+                ));
+                foreach ([
+                    "(string)(\$artifactEvidence['filing_kind'] ?? '') !== \$filingKind",
+                    "(int)(\$artifactEvidence['generation_run_id'] ?? 0) !== \$baseRunId",
+                    "(string)(\$artifactEvidence['profile_key'] ?? '') !== \$profile->key()",
+                    "(string)(\$artifactEvidence['profile_version'] ?? '') !== \$profile->version()",
+                    "(string)(\$currentSubmission['lifecycle'] ?? '') !== 'prepared'",
+                ] as $guard) {
+                    $harness->assertTrue(str_contains($body, $guard));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'freezes and rechecks the approved Original or Revised classification before transmission',
+            static function () use ($harness): void {
+                $provenance = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'classificationProvenanceError'
+                );
+                $source = file($provenance->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $provenance->getStartLine() - 1,
+                    $provenance->getEndLine() - $provenance->getStartLine() + 1
+                ));
+                foreach ([
+                    "\$metadata['classification']",
+                    "\$this->filingClassification(\$companyId, \$accountingPeriodId)",
+                    "!hash_equals(\$frozenHash, \$currentHash)",
+                ] as $guard) {
+                    $harness->assertTrue(str_contains($body, $guard));
+                }
+
+                $submit = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'submitRevision'
+                );
+                $submitSource = file($submit->getFileName());
+                $harness->assertTrue(is_array($submitSource));
+                $submitBody = implode('', array_slice(
+                    $submitSource,
+                    $submit->getStartLine() - 1,
+                    $submit->getEndLine() - $submit->getStartLine() + 1
+                ));
+                $harness->assertTrue(substr_count($submitBody, 'classificationProvenanceError(') >= 2);
             }
         );
 

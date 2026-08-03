@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Resolves the one accounts artifact that is valid for each statutory filing destination. */
+/** Resolves the HMRC-specific statutory accounts artifact. */
 final class IxbrlStatutoryAccountsArtifactService
 {
     private ?\Closure $ordinaryLocator;
-    private ?\Closure $filingKindLocator;
-    private ?\Closure $revisedLocator;
 
     public function __construct(
         ?callable $ordinaryLocator = null,
@@ -17,47 +15,19 @@ final class IxbrlStatutoryAccountsArtifactService
         ?callable $revisedLocator = null
     ) {
         $this->ordinaryLocator = $ordinaryLocator !== null ? \Closure::fromCallable($ordinaryLocator) : null;
-        $this->filingKindLocator = $filingKindLocator !== null ? \Closure::fromCallable($filingKindLocator) : null;
-        $this->revisedLocator = $revisedLocator !== null ? \Closure::fromCallable($revisedLocator) : null;
     }
 
     public function locate(int $companyId, int $accountingPeriodId, bool $approvalPinnedOnly = false): array
     {
-        $ordinary = $this->ordinaryLocator !== null
+        $artifact = $this->ordinaryLocator !== null
             ? (array)($this->ordinaryLocator)($companyId, $accountingPeriodId)
             : (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId, $approvalPinnedOnly);
-        if (empty($ordinary['ok'])) {
-            return $ordinary;
+        if (empty($artifact['ok'])) {
+            return $artifact;
         }
-        $filingKind = $this->filingKindLocator !== null
-            ? (string)($this->filingKindLocator)($companyId, $accountingPeriodId)
-            : (new CompaniesHouseAccountsSubmissionService())
-                ->filingKindForArtifact($companyId, $accountingPeriodId);
-        if (!in_array($filingKind, ['original', 'revised'], true)) {
-            $filingKind = 'original';
-        }
-        if ($filingKind !== 'revised') {
-            return $ordinary;
-        }
-        $revised = $this->revisedLocator !== null
-            ? (array)($this->revisedLocator)($companyId, $accountingPeriodId)
-            : ($approvalPinnedOnly
-                ? (new IxbrlArtifactDownloadService())->revisedAccountsForStatus(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)($ordinary['run_id'] ?? 0)
-                )
-                : (new IxbrlArtifactDownloadService())->revisedAccounts(
-                    $companyId,
-                    $accountingPeriodId
-                ));
-        if (empty($revised['ok'])) {
-            return $revised;
-        }
-        return array_replace($ordinary, $revised, [
-            'basis_hash' => (string)($ordinary['basis_hash'] ?? ''),
-            'filing_approval_id' => (int)($ordinary['filing_approval_id'] ?? 0),
-            'destination' => 'shared_revised_accounts',
+        return array_replace($artifact, [
+            'destination' => 'hmrc_accounts',
+            'authority_profile' => IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS,
         ]);
     }
 }

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace eel_accounts\Service;
 
-/** Freezes the complete post-Year-End filing basis and builds its accounts facts atomically. */
+/** Freezes the statutory-accounts basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v8';
+    public const BASIS_VERSION = 'accounts-filing-approval-v9';
     public const CT_BASIS_VERSION = 'ct-period-filing-model-v11';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
@@ -81,9 +81,9 @@ final class IxbrlAccountsFilingApprovalService
      *
      * A locked Year End owns the immutable calculation evidence. Rendering
      * therefore only needs to verify the persisted approval hash and the
-     * mutable records that can explicitly invalidate it: the Year End lock,
-     * disclosure revision and Corporation Tax authorisation. Generation and
-     * transmission continue to use status(), which rebuilds the full candidate.
+     * mutable records that can explicitly invalidate it: the Year End lock and
+     * disclosure revision. Corporation Tax authorisation and calculation state
+     * belong to HmrcCtFilingApprovalService and cannot stale this approval.
      */
     public function statusForReadModel(int $companyId, int $accountingPeriodId): array
     {
@@ -108,12 +108,20 @@ final class IxbrlAccountsFilingApprovalService
                 $basisJson = (string)($approval['basis_json'] ?? '');
                 $basisHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
                 $basis = $basisJson !== '' ? json_decode($basisJson, true) : null;
-                if ((string)($approval['basis_version'] ?? '') !== self::BASIS_VERSION
-                    || !is_array($basis)
+                if (!is_array($basis)
                     || preg_match('/^[a-f0-9]{64}$/D', $basisHash) !== 1
-                    || !hash_equals($basisHash, hash('sha256', $basisJson))) {
+                    || !hash_equals($basisHash, hash('sha256', $basisJson))
+                    || !$this->isRecognisedAccountsBasis($approval, $basis)) {
                     $errors[] = 'The approved accounts filing basis failed its integrity check.';
                     $basis = [];
+                }
+
+                // Legacy combined approvals need the full, legacy-only v8
+                // report reconstruction. Native v9 approvals retain this
+                // lightweight read-model path and never depend on CH state.
+                if ($errors === []
+                    && (string)($approval['basis_version'] ?? '') !== self::BASIS_VERSION) {
+                    return $this->status($companyId, $accountingPeriodId);
                 }
 
                 $yearEnd = \InterfaceDB::fetchOne(
@@ -154,29 +162,9 @@ final class IxbrlAccountsFilingApprovalService
                     $errors[] = 'The accounts disclosures have changed since the filing approval.';
                 }
 
-                $authorisation = (new Ct600ReturnAuthorisationService())->current(
-                    $companyId,
-                    $accountingPeriodId
-                );
-                $frozenAuthorisation = (array)(
-                    $basis['corporation_tax_return_authorisation'] ?? []
-                );
-                if ($authorisation === []
-                    || $frozenAuthorisation === []
-                    || !hash_equals(
-                        $this->canonicalJson($this->authorisationBasis($authorisation)),
-                        $this->canonicalJson($frozenAuthorisation)
-                    )
-                    || !hash_equals(
-                        trim((string)($approval['declarant_name'] ?? '')),
-                        trim((string)($frozenAuthorisation['declarant_name'] ?? ''))
-                    )
-                    || !hash_equals(
-                        trim((string)($approval['declarant_status'] ?? '')),
-                        trim((string)($frozenAuthorisation['declarant_status'] ?? ''))
-                    )) {
-                    $errors[] = 'The Corporation Tax return authorisation has changed since the filing approval.';
-                }
+                $approval['approval_source'] = (string)($approval['basis_version'] ?? '') === self::BASIS_VERSION
+                    ? 'statutory_accounts'
+                    : 'legacy_combined';
 
                 return $this->statusResult(
                     $errors === [] ? 'current' : 'stale',
@@ -203,17 +191,11 @@ final class IxbrlAccountsFilingApprovalService
         if ($approvedBy === '') {
             throw new \RuntimeException('The filing approval must identify its approver.');
         }
-        if (\InterfaceDB::inTransaction()) {
-            throw new \RuntimeException('Filing approval must own its transaction so every stage can be rolled back atomically.');
-        }
-
         return (array)\InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $approvedBy, $note, $progress): array {
-            $authorisation = (new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId);
-            if ($authorisation === []) {
-                throw new \RuntimeException('Save the complete Corporation Tax return authorisation before approving the filing basis.');
-            }
             $candidate = $this->candidate($companyId, $accountingPeriodId, true);
-            if ($this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate) !== null) {
+            $matching = $this->matchingApprovalForCandidate($companyId, $accountingPeriodId, $candidate);
+            if (is_array($matching)
+                && (string)($matching['basis_version'] ?? '') === self::BASIS_VERSION) {
                 throw new \RuntimeException('This Statement of Fact is already approved and current for this locked accounting period.');
             }
             $disclosure = (array)$candidate['disclosure'];
@@ -244,13 +226,11 @@ final class IxbrlAccountsFilingApprovalService
                     'basis_json' => (string)$candidate['basis_json'],
                     'approved_by' => $approvedBy,
                     'approval_note' => trim($note) !== '' ? trim($note) : null,
-                    'declarant_name' => trim((string)($authorisation['declarant_name'] ?? '')) !== ''
-                        ? (string)$authorisation['declarant_name']
-                        : null,
-                    'declarant_status' => (string)$authorisation['declarant_status'],
-                    'original_unfiled_confirmed' => 1,
-                    'authority_confirmed' => 1,
-                    'declaration_confirmed' => 1,
+                    'declarant_name' => null,
+                    'declarant_status' => null,
+                    'original_unfiled_confirmed' => 0,
+                    'authority_confirmed' => 0,
+                    'declaration_confirmed' => 0,
                 ]
             );
             $approvalId = (int)\InterfaceDB::fetchColumn(
@@ -274,51 +254,7 @@ final class IxbrlAccountsFilingApprovalService
             );
 
             $ctBasisIds = [];
-            $ctPeriods = array_values((array)$candidate['ct_periods']);
-            $ctPeriodCount = count($ctPeriods);
-            foreach ($ctPeriods as $ctPeriodIndex => $period) {
-                $percent = 35 + (int)floor(($ctPeriodIndex / max(1, $ctPeriodCount)) * 35);
-                $progress?->__invoke(
-                    'Creating the locked Corporation Tax filing basis for period '
-                    . ($ctPeriodIndex + 1) . ' of ' . $ctPeriodCount . '…',
-                    $percent
-                );
-                $model = $this->ctModel($candidate, $period, $approvalId, $approvedBy);
-                \InterfaceDB::prepareExecute(
-                    'INSERT INTO ct_period_filing_bases (
-                        filing_approval_id, company_id, accounting_period_id, ct_period_id,
-                        computation_run_id, calculation_basis_version, calculation_basis_hash,
-                        basis_version, basis_hash, basis_json
-                     ) VALUES (
-                        :approval_id, :company_id, :accounting_period_id, :ct_period_id,
-                        :run_id, :calculation_version, :calculation_hash,
-                        :basis_version, :basis_hash, :basis_json
-                     )',
-                    [
-                        'approval_id' => $approvalId,
-                        'company_id' => $companyId,
-                        'accounting_period_id' => $accountingPeriodId,
-                        'ct_period_id' => (int)$period['id'],
-                        'run_id' => (int)$period['computation_run_id'],
-                        'calculation_version' => (string)$period['calculation_basis_version'],
-                        'calculation_hash' => (string)$period['calculation_basis_hash'],
-                        'basis_version' => self::CT_BASIS_VERSION,
-                        'basis_hash' => (string)$model['basis_hash'],
-                        'basis_json' => (string)$model['basis_json'],
-                    ]
-                );
-                $ctBasisId = (int)\InterfaceDB::fetchColumn(
-                    'SELECT id FROM ct_period_filing_bases
-                     WHERE filing_approval_id = :approval_id AND ct_period_id = :ct_period_id LIMIT 1',
-                    ['approval_id' => $approvalId, 'ct_period_id' => (int)$period['id']]
-                );
-                if ($ctBasisId <= 0) {
-                    throw new \RuntimeException('The CT-period filing basis could not be persisted.');
-                }
-                $ctBasisIds[] = $ctBasisId;
-            }
-
-            $progress?->__invoke('Building the immutable accounts facts snapshot for iXBRL generation…', 78);
+            $progress?->__invoke('Building the immutable accounts facts snapshot for iXBRL generation…', 55);
             $factRunId = $this->factBuilder !== null
                 ? (int)($this->factBuilder)(
                     $companyId,
@@ -372,6 +308,169 @@ final class IxbrlAccountsFilingApprovalService
         ));
     }
 
+    /**
+     * Builds or reuses immutable, versioned CT-period bases for the separate
+     * HMRC approval. This does not itself authorise filing with HMRC.
+     *
+     * @return array{accounts_approval_id:int,accounts_approval_hash:string,ct_basis_ids:list<int>}
+     */
+    public function prepareHmrcCtPeriodFilingBases(
+        int $companyId,
+        int $accountingPeriodId,
+        string $preparedBy
+    ): array {
+        $this->assertSchemaReady();
+        if (!\InterfaceDB::tableExists('ct_period_filing_bases')) {
+            throw new \RuntimeException(
+                'Apply the Corporation Tax filing-basis migration before approving the HMRC return.'
+            );
+        }
+        $preparedBy = trim($preparedBy);
+        if ($preparedBy === '') {
+            throw new \RuntimeException('Preparing the HMRC filing basis must identify its author.');
+        }
+        return (array)\InterfaceDB::transaction(function () use (
+            $companyId,
+            $accountingPeriodId,
+            $preparedBy
+        ): array {
+            $accountsCandidate = $this->candidate($companyId, $accountingPeriodId, true);
+            $accountsApproval = $this->matchingApprovalForCandidate(
+                $companyId,
+                $accountingPeriodId,
+                $accountsCandidate
+            );
+            if (!is_array($accountsApproval)) {
+                throw new \RuntimeException(
+                    'Approve the current statutory-accounts basis before approving the Corporation Tax return.'
+                );
+            }
+            if ((new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId) === []) {
+                throw new \RuntimeException(
+                    'Save the complete Corporation Tax return authorisation before preparing its filing basis.'
+                );
+            }
+
+            $scope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+            if (empty($scope['available']) || empty($scope['complete'])) {
+                throw new \RuntimeException((string)(($scope['errors'] ?? [])[0]
+                    ?? 'Complete the Corporation Tax supplementary-page scope review.'));
+            }
+            $profile = (new Frs105YearEndProfileService())->fetch($companyId, $accountingPeriodId);
+            if (empty($profile['available']) || empty($profile['pass'])) {
+                throw new \RuntimeException((string)(($profile['errors'] ?? [])[0]
+                    ?? 'The supported Corporation Tax return profile is not available.'));
+            }
+            $periods = $this->calculationPeriods($companyId, $accountingPeriodId, true);
+            if ($periods === []) {
+                throw new \RuntimeException('No active Corporation Tax periods are available for HMRC approval.');
+            }
+
+            $accountsBasis = (array)$accountsCandidate['basis'];
+            $turnover = $accountsBasis['accounts_facts']['turnover'] ?? null;
+            if (!is_int($turnover) && !is_float($turnover)) {
+                throw new \RuntimeException('The approved statutory accounts have no numeric turnover fact.');
+            }
+            $this->assertTurnoverReconciles((float)$turnover, $periods);
+            $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+            $accountsBasis['filing_identity'] = [
+                'utr' => preg_replace('/\s+/', '', trim((string)($settings['utr'] ?? ''))) ?? '',
+            ];
+            $accountsBasis['corporation_tax_filing_scope'] = [
+                'scope_version' => CorporationTaxFilingScopeService::SCOPE_VERSION,
+                'revision' => (int)$scope['revision'],
+                'answers' => (array)$scope['answers'],
+                'basis_hash' => (string)$scope['basis_hash'],
+            ];
+            $ctCandidate = [
+                'basis' => $accountsBasis,
+                'basis_hash' => (string)$accountsApproval['basis_hash'],
+                'year_end' => (array)$accountsCandidate['year_end'],
+                'profile' => $profile,
+                'ct_periods' => $periods,
+                'accounts_approval' => $accountsApproval,
+            ];
+
+            $basisIds = [];
+            foreach ($periods as $period) {
+                $model = $this->ctModel(
+                    $ctCandidate,
+                    $period,
+                    (int)$accountsApproval['id'],
+                    $preparedBy
+                );
+                $params = [
+                    'approval_id' => (int)$accountsApproval['id'],
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'ct_period_id' => (int)$period['id'],
+                    'run_id' => (int)$period['computation_run_id'],
+                    'calculation_version' => (string)$period['calculation_basis_version'],
+                    'calculation_hash' => (string)$period['calculation_basis_hash'],
+                    'basis_version' => self::CT_BASIS_VERSION,
+                    'basis_hash' => (string)$model['basis_hash'],
+                    'basis_json' => (string)$model['basis_json'],
+                ];
+                $existing = \InterfaceDB::fetchOne(
+                    'SELECT * FROM ct_period_filing_bases
+                     WHERE filing_approval_id = :approval_id
+                       AND ct_period_id = :ct_period_id
+                       AND basis_hash = :basis_hash
+                     ORDER BY id DESC LIMIT 1',
+                    [
+                        'approval_id' => $params['approval_id'],
+                        'ct_period_id' => $params['ct_period_id'],
+                        'basis_hash' => $params['basis_hash'],
+                    ]
+                );
+                if (is_array($existing)) {
+                    if (!$this->ctBasisMatchesModel($existing, $params)) {
+                        throw new \RuntimeException(
+                            'An existing CT-period filing basis failed its immutable evidence check.'
+                        );
+                    }
+                    $basisIds[] = (int)$existing['id'];
+                    continue;
+                }
+
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO ct_period_filing_bases (
+                        filing_approval_id, company_id, accounting_period_id, ct_period_id,
+                        computation_run_id, calculation_basis_version, calculation_basis_hash,
+                        basis_version, basis_hash, basis_json
+                     ) VALUES (
+                        :approval_id, :company_id, :accounting_period_id, :ct_period_id,
+                        :run_id, :calculation_version, :calculation_hash,
+                        :basis_version, :basis_hash, :basis_json
+                     )',
+                    $params
+                );
+                $basisId = (int)\InterfaceDB::fetchColumn(
+                    'SELECT id FROM ct_period_filing_bases
+                     WHERE filing_approval_id = :approval_id
+                       AND ct_period_id = :ct_period_id
+                       AND basis_hash = :basis_hash
+                     ORDER BY id DESC LIMIT 1',
+                    [
+                        'approval_id' => $params['approval_id'],
+                        'ct_period_id' => $params['ct_period_id'],
+                        'basis_hash' => $params['basis_hash'],
+                    ]
+                );
+                if ($basisId <= 0) {
+                    throw new \RuntimeException('The immutable CT-period filing basis could not be persisted.');
+                }
+                $basisIds[] = $basisId;
+            }
+
+            return [
+                'accounts_approval_id' => (int)$accountsApproval['id'],
+                'accounts_approval_hash' => (string)$accountsApproval['basis_hash'],
+                'ct_basis_ids' => $basisIds,
+            ];
+        });
+    }
+
     private function candidate(
         int $companyId,
         int $accountingPeriodId,
@@ -403,57 +502,26 @@ final class IxbrlAccountsFilingApprovalService
         if (!is_array($disclosure)) {
             throw new \RuntimeException('Complete the accounts disclosures before approving the filing basis.');
         }
-        $progressReport('Checking the saved Corporation Tax return authorisation…');
-        $authorisation = (new Ct600ReturnAuthorisationService())->current($companyId, $accountingPeriodId);
-        if ($authorisation === []) {
-            throw new \RuntimeException('Complete and save the Corporation Tax return authorisation before approving the filing basis.');
-        }
-
         $progressReport('Checking accounts disclosure completeness and filing profile…');
         $disclosureStatus = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
         if (empty($disclosureStatus['complete']) || empty($disclosureStatus['profile_supported'])) {
             $errors = (array)($disclosureStatus['profile_errors'] ?? $disclosureStatus['missing_labels'] ?? []);
             throw new \RuntimeException((string)($errors[0] ?? 'Complete all supported accounts disclosures before approval.'));
         }
-        $progressReport('Checking Companies House revised-accounts readiness…');
-        $revisedAccounts = (new CompaniesHouseRevisedAccountsReadinessService())
-            ->assess($companyId, $accountingPeriodId);
-        if (!empty($revisedAccounts['applicable']) && empty($revisedAccounts['ready'])) {
-            throw new \RuntimeException((string)(($revisedAccounts['errors'] ?? [])[0]
-                ?? 'Resolve the Companies House revised-accounts approval date before approval.'));
-        }
-        $progressReport('Checking the supported FRS 105 return profile and CT filing scope…');
+        $progressReport('Checking the supported FRS 105 statutory-accounts profile…');
         $profile = (new Frs105YearEndProfileService())->fetch($companyId, $accountingPeriodId);
         if (empty($profile['available']) || empty($profile['pass'])) {
             throw new \RuntimeException((string)(($profile['errors'] ?? [])[0] ?? 'The FRS 105 filing profile is not supported.'));
         }
-        $filingScope = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
-        if (empty($filingScope['available']) || empty($filingScope['complete'])) {
-            throw new \RuntimeException((string)(($filingScope['errors'] ?? [])[0] ?? 'Complete the Corporation Tax supplementary-page scope review.'));
-        }
         $progressReport('Rebuilding the approved accounts-report evidence…');
         $report = (new IxbrlAccountsReportService())->build($companyId, $accountingPeriodId);
-        $companySettings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $utr = preg_replace('/\s+/', '', trim((string)($companySettings['utr'] ?? ''))) ?? '';
         $turnover = ($report['basis']['current_mapping']['buckets']['turnover'] ?? null);
         if (!is_int($turnover) && !is_float($turnover)) {
             throw new \RuntimeException('The accounts filing basis has no numeric turnover fact to freeze.');
         }
-        $progressReport('Loading the immutable Corporation Tax period calculation evidence…');
-        $periods = $this->calculationPeriods($companyId, $accountingPeriodId, $lock);
-        if ($periods === []) {
-            throw new \RuntimeException('No active Corporation Tax periods are available for filing approval.');
-        }
-        $this->assertTurnoverReconciles((float)$turnover, $periods);
-
-        $authorisationBasis = $this->authorisationBasis($authorisation);
-
         $basis = [
             'basis_version' => self::BASIS_VERSION,
             'company' => (array)$report['basis']['company'],
-            'filing_identity' => [
-                'utr' => $utr,
-            ],
             'accounts_facts' => [
                 'turnover' => (float)$turnover,
                 'presentation_currency' => (string)$report['presentation_currency'],
@@ -472,47 +540,11 @@ final class IxbrlAccountsFilingApprovalService
                 'revision' => (int)$disclosure['revision'],
                 'values' => (array)$report['basis']['disclosures'],
             ],
-            'corporation_tax_filing_scope' => [
-                'scope_version' => CorporationTaxFilingScopeService::SCOPE_VERSION,
-                'revision' => (int)$filingScope['revision'],
-                'answers' => (array)$filingScope['answers'],
-                'basis_hash' => (string)$filingScope['basis_hash'],
-            ],
-            'supported_return_profile' => (array)$profile['supported_return_profile'],
-            'profile_diagnostics' => [
-                'checks' => (array)$profile['checks'],
-                'errors' => (array)$profile['errors'],
-            ],
             'accounts_report' => [
                 'basis_version' => IxbrlAccountsReportService::BASIS_VERSION,
                 'basis_hash' => (string)$report['basis_hash'],
             ],
-            'ct_periods' => array_map(static fn(array $period): array => [
-                'id' => (int)$period['id'],
-                'sequence_no' => (int)$period['sequence_no'],
-                'start_date' => (string)$period['period_start'],
-                'end_date' => (string)$period['period_end'],
-                'computation_run_id' => (int)$period['computation_run_id'],
-                'computation_hash' => (string)$period['computation_hash'],
-                'calculation_basis_version' => (string)$period['calculation_basis_version'],
-                'calculation_basis_hash' => (string)$period['calculation_basis_hash'],
-                'tax_audit_snapshot_id' => (int)$period['snapshot_id'],
-                'tax_audit_basis_version' => (string)$period['snapshot_basis_version'],
-                'tax_audit_basis_hash' => (string)$period['snapshot_basis_hash'],
-                'actual_trading_turnover' => (float)($period['summary']['actual_trading_turnover'] ?? 0),
-                'ct600_box_145_turnover' => (float)($period['summary']['ct600_box_145_turnover'] ?? 0),
-                'ct600_turnover_rounding_adjustment' => (int)($period['summary']['ct600_turnover_rounding_adjustment'] ?? 0),
-                'ct600a_required' => !empty($period['ct600a']['required']),
-                'ct600a_basis_hash' => (string)$period['ct600a']['basis_hash'],
-                'ct600a_review_hash' => (string)($period['ct600a']['review']['basis_hash'] ?? ''),
-            ], $periods),
         ];
-        if ($this->shouldIncludeAuthorisationBasis(
-            $authorisation,
-            $this->latestApproval($companyId, $accountingPeriodId)
-        )) {
-            $basis['corporation_tax_return_authorisation'] = $authorisationBasis;
-        }
         $json = $this->canonicalJson($basis);
         return [
             'basis' => $basis,
@@ -521,9 +553,6 @@ final class IxbrlAccountsFilingApprovalService
             'year_end' => $yearEnd,
             'disclosure' => $disclosure,
             'report' => $report,
-            'profile' => $profile,
-            'filing_scope' => $filingScope,
-            'ct_periods' => $periods,
         ];
     }
 
@@ -654,7 +683,9 @@ final class IxbrlAccountsFilingApprovalService
                 'start_date' => (string)$period['period_start'], 'end_date' => (string)$period['period_end'],
             ],
             'approval' => [
-                'id' => $approvalId, 'basis_version' => self::BASIS_VERSION,
+                'id' => $approvalId,
+                'basis_version' => (string)($candidate['accounts_approval']['basis_version']
+                    ?? self::BASIS_VERSION),
                 'basis_hash' => (string)$candidate['basis_hash'], 'approved_by' => $approvedBy,
                 'year_end_locked_at' => (string)$candidate['year_end']['locked_at'],
             ],
@@ -673,6 +704,51 @@ final class IxbrlAccountsFilingApprovalService
         ];
         $json = $this->canonicalJson($model);
         return ['basis_json' => $json, 'basis_hash' => hash('sha256', self::CT_BASIS_VERSION . '|' . (string)$candidate['basis_hash'] . '|' . (string)$period['calculation_basis_hash'] . '|' . $json)];
+    }
+
+    /** @param array<string,mixed> $expected */
+    private function ctBasisMatchesModel(array $stored, array $expected): bool
+    {
+        foreach ([
+            'filing_approval_id' => 'approval_id',
+            'company_id' => 'company_id',
+            'accounting_period_id' => 'accounting_period_id',
+            'ct_period_id' => 'ct_period_id',
+            'computation_run_id' => 'run_id',
+        ] as $storedKey => $expectedKey) {
+            if ((int)($stored[$storedKey] ?? 0) !== (int)($expected[$expectedKey] ?? 0)) {
+                return false;
+            }
+        }
+        foreach ([
+            'calculation_basis_version' => 'calculation_version',
+            'calculation_basis_hash' => 'calculation_hash',
+            'basis_version' => 'basis_version',
+            'basis_hash' => 'basis_hash',
+            'basis_json' => 'basis_json',
+        ] as $storedKey => $expectedKey) {
+            if (!hash_equals(
+                (string)($stored[$storedKey] ?? ''),
+                (string)($expected[$expectedKey] ?? '')
+            )) {
+                return false;
+            }
+        }
+        $model = json_decode((string)$expected['basis_json'], true);
+        if (!is_array($model)) {
+            return false;
+        }
+        $canonical = $this->canonicalJson($model);
+        return hash_equals((string)$expected['basis_json'], $canonical)
+            && hash_equals(
+                (string)$expected['basis_hash'],
+                hash(
+                    'sha256',
+                    self::CT_BASIS_VERSION . '|'
+                    . (string)($model['approval']['basis_hash'] ?? '') . '|'
+                    . (string)$expected['calculation_hash'] . '|' . $canonical
+                )
+            );
     }
 
     /** @param list<array<string,mixed>> $periods */
@@ -949,9 +1025,8 @@ final class IxbrlAccountsFilingApprovalService
         if (!is_array($run) || (int)$run['filing_approval_id'] !== $approvalId
             || !hash_equals((string)$candidate['basis_hash'], (string)$run['filing_approval_hash'])
             || !hash_equals((string)$candidate['report']['basis_hash'], (string)$run['basis_hash'])
-            || (string)$run['status'] !== 'ready' || (int)$run['fact_count'] <= 0
-            || count($ctBasisIds) !== count((array)$candidate['ct_periods'])) {
-            throw new \RuntimeException('The approved facts or CT filing bases failed their integrity check.');
+            || (string)$run['status'] !== 'ready' || (int)$run['fact_count'] <= 0) {
+            throw new \RuntimeException('The approved statutory-accounts facts failed their integrity check.');
         }
     }
 
@@ -981,10 +1056,12 @@ final class IxbrlAccountsFilingApprovalService
             return ['The previous filing approval cannot be compared with the current filing basis. Approve again.'];
         }
 
-        $changed = $this->changedBasisSections($storedBasis, $currentBasis);
+        $storedAccountsBasis = $this->accountsBasisProjection($storedBasis);
+        unset($storedAccountsBasis['basis_version'], $currentBasis['basis_version']);
+        $changed = $this->changedBasisSections($storedAccountsBasis, $currentBasis);
         if ($changed === ['accounts_report']) {
             return [
-                'The Accounts Report generation basis changed. Reload the PHP web runtime if this is a deployment, then approve the current filing basis again.',
+                'The Accounts Report generation basis changed. Reload the PHP web runtime if this is a deployment, then approve the current statutory-accounts basis again.',
             ];
         }
 
@@ -993,8 +1070,7 @@ final class IxbrlAccountsFilingApprovalService
             $messages[] = match ($section) {
                 'disclosures' => 'Accounts disclosures changed after the previous filing approval.',
                 'year_end_lock' => 'The Year End lock changed after the previous filing approval.',
-                'corporation_tax_filing_scope', 'ct_periods' => 'The Corporation Tax filing basis changed after the previous filing approval.',
-                'company', 'filing_identity', 'accounts_facts', 'accounting_period' => 'The accounts identity or figures changed after the previous filing approval.',
+                'company', 'accounts_facts', 'accounting_period' => 'The accounts identity or figures changed after the previous filing approval.',
                 'accounts_report' => 'The Accounts Report basis changed after the previous filing approval.',
                 default => 'The current filing basis changed after the previous approval.',
             };
@@ -1022,43 +1098,6 @@ final class IxbrlAccountsFilingApprovalService
         return $changed;
     }
 
-    private function authorisationBasis(array $authorisation): array
-    {
-        if (!(new Ct600ReturnAuthorisationService())->isStructured($authorisation)) {
-            return [
-                'declarant_status' => (string)$authorisation['declarant_status'],
-                'original_unfiled_confirmed' => true,
-                'authority_confirmed' => true,
-                'declaration_confirmed' => true,
-            ];
-        }
-
-        return [
-            'declarant_name' => (string)$authorisation['declarant_name'],
-            'declarant_status' => (string)$authorisation['declarant_status'],
-            'declaration_at' => (string)$authorisation['saved_at'],
-            'declarant_party_id' => (int)($authorisation['declarant_party_id'] ?? 0) ?: null,
-            'declarant_director_id' => (int)($authorisation['declarant_director_id'] ?? 0) ?: null,
-            'declarant_role_id' => (int)($authorisation['declarant_role_id'] ?? 0) ?: null,
-            'original_unfiled_confirmed' => true,
-            'authority_confirmed' => true,
-            'declaration_confirmed' => true,
-        ];
-    }
-
-    private function shouldIncludeAuthorisationBasis(array $authorisation, ?array $latestApproval): bool
-    {
-        if ((new Ct600ReturnAuthorisationService())->isStructured($authorisation)) {
-            return true;
-        }
-
-        $storedBasis = is_array($latestApproval)
-            ? json_decode((string)($latestApproval['basis_json'] ?? ''), true)
-            : null;
-        return is_array($storedBasis)
-            && array_key_exists('corporation_tax_return_authorisation', $storedBasis);
-    }
-
     private function latestApproval(int $companyId, int $accountingPeriodId): ?array
     {
         $row = \InterfaceDB::fetchOne(
@@ -1068,29 +1107,189 @@ final class IxbrlAccountsFilingApprovalService
         return is_array($row) ? $row : null;
     }
 
-    private function approvalByHash(int $companyId, int $accountingPeriodId, string $basisHash): ?array
-    {
-        $row = \InterfaceDB::fetchOne(
-            'SELECT * FROM ixbrl_accounts_filing_approvals
-             WHERE company_id = :company_id AND accounting_period_id = :period_id AND basis_hash = :basis_hash
-             ORDER BY id DESC LIMIT 1',
-            ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'basis_hash' => $basisHash]
-        );
-        return is_array($row) ? $row : null;
-    }
-
     /** @param array<string, mixed> $candidate */
     private function matchingApprovalForCandidate(int $companyId, int $accountingPeriodId, array $candidate): ?array
     {
-        $matching = $this->approvalByHash($companyId, $accountingPeriodId, (string)($candidate['basis_hash'] ?? ''));
-        if ($matching === null
-            || (string)($matching['basis_version'] ?? '') !== self::BASIS_VERSION
-            || !hash_equals((string)($candidate['basis_json'] ?? ''), (string)($matching['basis_json'] ?? ''))
-            || !hash_equals((string)($candidate['basis_hash'] ?? ''), hash('sha256', (string)($matching['basis_json'] ?? '')))) {
+        $legacyCompaniesHouseFiling = null;
+        $legacyCompaniesHouseFilingLoaded = false;
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT * FROM ixbrl_accounts_filing_approvals
+             WHERE company_id = :company_id AND accounting_period_id = :period_id
+             ORDER BY id DESC',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        ) as $approval) {
+            $json = (string)($approval['basis_json'] ?? '');
+            $hash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
+            $stored = $json !== '' ? json_decode($json, true) : null;
+            if (!is_array($stored)
+                || preg_match('/^[a-f0-9]{64}$/D', $hash) !== 1
+                || !hash_equals($hash, hash('sha256', $json))
+                || !$this->isRecognisedAccountsBasis($approval, $stored)) {
+                continue;
+            }
+            if ((string)($approval['basis_version'] ?? '') === self::BASIS_VERSION) {
+                $projected = $this->accountsBasisProjection($stored);
+            } else {
+                if (!$legacyCompaniesHouseFilingLoaded) {
+                    $legacyCompaniesHouseFilingLoaded = true;
+                    try {
+                        $legacyCompaniesHouseFiling = $this->legacyCompaniesHouseFilingClassification(
+                            $companyId,
+                            $accountingPeriodId
+                        );
+                    } catch (\Throwable) {
+                        $legacyCompaniesHouseFiling = null;
+                    }
+                }
+                $projected = is_array($legacyCompaniesHouseFiling)
+                    ? $this->verifiedLegacyAccountsBasisProjection(
+                        $stored,
+                        $candidate,
+                        $legacyCompaniesHouseFiling
+                    )
+                    : null;
+                if (!is_array($projected)) {
+                    continue;
+                }
+            }
+            $projectedJson = $this->canonicalJson($projected);
+            if (!hash_equals((string)($candidate['basis_json'] ?? ''), $projectedJson)
+                || !hash_equals(
+                    (string)($candidate['basis_hash'] ?? ''),
+                    hash('sha256', $projectedJson)
+                )) {
+                continue;
+            }
+            $approval['approval_source'] = (string)($approval['basis_version'] ?? '') === self::BASIS_VERSION
+                ? 'statutory_accounts'
+                : 'legacy_combined';
+            return $approval;
+        }
+        return null;
+    }
+
+    /**
+     * Verifies the exact pre-split Companies House-dependent report hash
+     * before replacing only that report reference with the neutral v9 one.
+     * Native v9 approvals never enter this compatibility path.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function verifiedLegacyAccountsBasisProjection(
+        array $legacyBasis,
+        array $candidate,
+        array $legacyCompaniesHouseFiling
+    ): ?array {
+        $storedReport = (array)($legacyBasis['accounts_report'] ?? []);
+        if ((string)($storedReport['basis_version'] ?? '') !== 'ixbrl-accounts-report-v8') {
+            return null;
+        }
+        $storedReportHash = strtolower(trim((string)($storedReport['basis_hash'] ?? '')));
+        if (preg_match('/^[a-f0-9]{64}$/D', $storedReportHash) !== 1) {
             return null;
         }
 
-        return $matching;
+        $currentReport = (array)($candidate['report'] ?? []);
+        $neutralReportBasis = (array)($currentReport['basis'] ?? []);
+        $neutralReportHash = strtolower(trim((string)($currentReport['basis_hash'] ?? '')));
+        if ($neutralReportBasis === []
+            || preg_match('/^[a-f0-9]{64}$/D', $neutralReportHash) !== 1
+            || !hash_equals(
+                $neutralReportHash,
+                hash('sha256', $this->canonicalJson($neutralReportBasis))
+            )) {
+            return null;
+        }
+
+        $legacyReportBasis = $neutralReportBasis;
+        $legacyReportBasis['companies_house_filing'] = $legacyCompaniesHouseFiling;
+        if (!hash_equals(
+            $storedReportHash,
+            hash('sha256', $this->canonicalJson($legacyReportBasis))
+        )) {
+            return null;
+        }
+
+        $currentReportReference = (array)(($candidate['basis'] ?? [])['accounts_report'] ?? []);
+        if ((string)($currentReportReference['basis_version'] ?? '')
+                !== IxbrlAccountsReportService::BASIS_VERSION
+            || !hash_equals(
+                $neutralReportHash,
+                strtolower(trim((string)($currentReportReference['basis_hash'] ?? '')))
+            )) {
+            return null;
+        }
+
+        $projected = $this->accountsBasisProjection($legacyBasis);
+        $projected['accounts_report'] = $currentReportReference;
+        return $projected;
+    }
+
+    /** @return array<string,mixed> */
+    private function legacyCompaniesHouseFilingClassification(
+        int $companyId,
+        int $accountingPeriodId
+    ): array {
+        $review = (new YearEndSectionApprovalService())->fetchCompaniesHouseReview(
+            $companyId,
+            $accountingPeriodId
+        );
+        $comparison = (array)(($review['display'] ?? [])['comparison'] ?? []);
+        $filingKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
+        if (empty($review['available'])
+            || empty($review['acknowledgement_current'])
+            || !in_array($filingKind, ['original', 'revised'], true)) {
+            throw new \DomainException(
+                'The legacy combined approval no longer has a current Companies House filing classification.'
+            );
+        }
+
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
+        return [
+            'filing_kind' => $filingKind,
+            'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
+            'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
+            'correction_required' => (int)(($review['display'] ?? [])['mismatch_count'] ?? 0) > 0,
+            'check_code' => (string)($review['check_code'] ?? ''),
+            'approval_basis_version' => (string)($acknowledgement['basis_version'] ?? ''),
+            'approval_basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
+            'approved_at' => (string)($review['acknowledged_at'] ?? ''),
+            'approved_by' => (string)($review['acknowledged_by'] ?? ''),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function accountsBasisProjection(array $basis): array
+    {
+        $projected = ['basis_version' => self::BASIS_VERSION];
+        foreach ([
+            'company', 'accounts_facts', 'accounting_period', 'year_end_lock',
+            'disclosures', 'accounts_report',
+        ] as $key) {
+            if (array_key_exists($key, $basis)) {
+                $projected[$key] = $basis[$key];
+            }
+        }
+        return $projected;
+    }
+
+    private function isRecognisedAccountsBasis(array $approval, array $basis): bool
+    {
+        $version = (string)($approval['basis_version'] ?? '');
+        if ($version === self::BASIS_VERSION) {
+            return (string)($basis['basis_version'] ?? '') === self::BASIS_VERSION;
+        }
+        $legacyAuthorisation = is_array($basis['corporation_tax_return_authorisation'] ?? null)
+            || (!empty($approval['original_unfiled_confirmed'])
+                && !empty($approval['authority_confirmed'])
+                && !empty($approval['declaration_confirmed'])
+                && trim((string)($approval['declarant_status'] ?? '')) !== '');
+        return preg_match('/^accounts-filing-approval-v[1-8]$/D', $version) === 1
+            && (string)($basis['basis_version'] ?? '') === $version
+            && $legacyAuthorisation
+            && is_array($basis['corporation_tax_filing_scope'] ?? null)
+            && is_array($basis['ct_periods'] ?? null)
+            && (array)$basis['ct_periods'] !== [];
     }
 
     private function statusResult(
@@ -1105,6 +1304,7 @@ final class IxbrlAccountsFilingApprovalService
         return [
             'available' => $this->schemaReady(), 'state' => $state, 'current' => $state === 'current',
             'can_approve' => $canApprove, 'approval' => $approval, 'candidate_hash' => $candidate['basis_hash'] ?? null,
+            'approval_source' => (string)($approval['approval_source'] ?? 'statutory_accounts'),
             'latest_approval' => $latestApproval ?? $approval,
             'errors' => array_values(array_unique(array_map('strval', $errors))),
         ];
@@ -1113,7 +1313,6 @@ final class IxbrlAccountsFilingApprovalService
     private function schemaReady(): bool
     {
         return \InterfaceDB::tableExists('ixbrl_accounts_filing_approvals')
-            && \InterfaceDB::tableExists('ct_period_filing_bases')
             && \InterfaceDB::columnExists('ixbrl_generation_runs', 'filing_approval_id')
             && \InterfaceDB::columnExists('ixbrl_generation_runs', 'filing_approval_hash');
     }

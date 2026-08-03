@@ -168,6 +168,13 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'prefills source-labelled filed suggestions but still requires explicit save', static function () use ($harness, $card): void {
         $services = $card->services();
         $harness->assertSame('fetch', (string)($services[0]['method'] ?? ''));
+        $workflowServices = array_values(array_filter(
+            $services,
+            static fn(array $service): bool => (string)($service['key'] ?? '') === 'ixbrl_filing_approval_workflow'
+        ));
+        $harness->assertSame(1, count($workflowServices));
+        $harness->assertSame(\eel_accounts\Service\IxbrlFilingApprovalWorkflowService::class, (string)$workflowServices[0]['service']);
+        $harness->assertSame('status', (string)$workflowServices[0]['method']);
 
         $html = $card->render([
             'company' => ['id' => 49, 'accounting_period_id' => 79, 'settings' => ['date_format' => 'd/m/Y']],
@@ -229,6 +236,13 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'threshold_effective_period' => ['start' => '2013-09-30', 'end' => '2025-04-05'],
                     'threshold_source_checked_at' => '2026-07-17',
                 ],
+            ], 'ixbrl_filing_approval_workflow' => [
+                'can_approve' => true,
+                'both_current' => false,
+                'state_token' => 'state-token-79',
+                'blockers' => [],
+                'accounts' => ['state' => 'absent', 'approval_id' => 0],
+                'hmrc' => ['state' => 'absent', 'approval_id' => 0],
             ]],
         ]);
 
@@ -291,26 +305,45 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Required'));
         $harness->assertFalse(str_contains($html, 'Approve Company Accounts'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-form="true"'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_disclosures"'));
+        $harness->assertSame(1, substr_count($html, '<form '));
+        $harness->assertSame(1, substr_count($html, '</form>'));
+        $harness->assertFalse(str_contains($html, '<input type="hidden" name="intent"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_ixbrl_approval_draft"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="approve_ixbrl_accounts_and_ct"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="edit_ixbrl_approval_draft"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="cancel_ixbrl_approval_edit"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="save_ixbrl_core_details"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="save_ixbrl_disclosure_field"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="save_ct600_return_authorisation"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="approve_ixbrl_accounts_filing_basis"'));
         $harness->assertFalse(str_contains($html, 'data-submit-on-change="true"'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-edit="true"'));
-        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true" disabled>Save Accounts Disclosures'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true">Save Draft'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-cancel="true"'));
-        $saveButtonPosition = strpos($html, 'Save Accounts Disclosures');
-        $corePanelEnd = $saveButtonPosition !== false ? strpos($html, '</form>', $saveButtonPosition) : false;
-        $ct600AuthorisationPosition = strpos($html, 'Corporation Tax Return Authorisation');
+        $accountsDisclosuresPosition = strpos($html, '<h3 class="card-title">Accounts Disclosures</h3>');
+        $ct600AuthorisationPosition = strpos($html, 'Corporation Tax Return Declaration');
+        $approvalPosition = strpos($html, 'Accounts and Corporation Tax Approval');
+        $formEnd = strpos($html, '</form>');
         $harness->assertSame(true,
-            $saveButtonPosition !== false
-            && $corePanelEnd !== false
+            $accountsDisclosuresPosition !== false
             && $ct600AuthorisationPosition !== false
-            && $saveButtonPosition < $corePanelEnd
-            && $corePanelEnd < $ct600AuthorisationPosition
+            && $approvalPosition !== false
+            && $formEnd !== false
+            && $accountsDisclosuresPosition < $ct600AuthorisationPosition
+            && $ct600AuthorisationPosition < $approvalPosition
+            && $approvalPosition < $formEnd
         );
         $harness->assertSame(true, str_contains($html, 'name="declarant_authority" required'));
         $harness->assertFalse(str_contains($html, 'name="declarant_status"'));
-        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Accounts Approval</h3>'));
+        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Accounts Disclosures</h3>'));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<label for="ixbrl_accounting_standard_display">Accounting standard</label>'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<input class="input" id="ixbrl_accounting_standard_display" value="FRS 105" readonly'
+        ));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated on</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">Last updated by</th><td>Not yet saved</td>'));
         $harness->assertTrue(str_contains($html, '>Director signing and approving the accounts</label>'));
@@ -323,9 +356,14 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'Is the business still a going-concern and continue to operate for the foreseeable future?'));
         $harness->assertTrue(str_contains($html, 'Director and Participant Advances are calculated automatically from transactions.'));
         $harness->assertTrue(str_contains($html, '<legend>Director or Participant Advances and Credits requiring disclosure</legend>'));
-        $harness->assertTrue(str_contains($html, 'Disclosure Approval'));
-        $harness->assertTrue(str_contains($html, 'I here by confirm that the information on this page is a true and accurate reflection of this business.'));
-        $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Statutory Accounts</th>'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">HMRC Corporation Tax</th>'));
+        $harness->assertTrue(str_contains($html, 'true and accurate reflection of this business'));
+        $harness->assertTrue(str_contains($html, 'does not transmit or send anything to Companies House or HMRC'));
+        $harness->assertSame(1, substr_count($html, '>Approve Accounts and Corporation Tax Return</button>'));
+        $harness->assertFalse(str_contains($html, 'Approve Corporation Tax Return'));
+        $harness->assertFalse(str_contains($html, 'I Approve this Statement of Fact'));
+        $harness->assertTrue(str_contains($html, 'name="state_token" value="state-token-79"'));
         foreach ([
             'micro_entity_eligibility_confirmed',
             'going_concern_basis_appropriate',
@@ -397,8 +435,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true" disabled'));
     });
 
-    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'disables the disclosure approval controls once the current basis is approved', static function () use ($harness, $card): void {
-        $html = $card->render([
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'locks all mutable controls while showing separate current approval evidence', static function () use ($harness, $card): void {
+        $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => [
                 'ixbrl_accounts_disclosures' => [
@@ -414,31 +452,75 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'trading_status_evidence' => ['has_previous_trading_evidence' => false],
                     'dormancy' => ['calculated' => false],
                 ],
-                'ixbrl_filing_approval' => ['state' => 'current', 'current' => true, 'can_approve' => true, 'year_end_locked' => true],
+                'ixbrl_filing_approval_workflow' => [
+                    'can_approve' => false,
+                    'both_current' => true,
+                    'state_token' => 'current-state',
+                    'blockers' => [],
+                    'accounts' => [
+                        'state' => 'current',
+                        'current' => true,
+                        'source' => 'native',
+                        'approval_id' => 60,
+                        'approval' => ['id' => 60, 'approved_at' => '2026-08-03 09:00:00'],
+                    ],
+                    'hmrc' => [
+                        'state' => 'current',
+                        'current' => true,
+                        'source' => 'native',
+                        'approval_id' => 81,
+                        'approval' => [
+                            'id' => 81,
+                            'approved_by' => 'user:7',
+                            'approved_at' => '2026-08-03 10:00:00',
+                            'basis_hash' => str_repeat('a', 64),
+                        ],
+                    ],
+                ],
             ],
-        ]);
+        ];
+        $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'name="approval_note" rows="2" disabled aria-disabled="true"'));
-        $harness->assertTrue(str_contains($html, '>I Approve this Statement of Fact</button>'));
-        $harness->assertTrue(str_contains($html, 'type="submit" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, 'name="approval_note" rows="2"></textarea>'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-submit="true" disabled aria-disabled="true">Approve Accounts and Corporation Tax Return'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-initially-locked="1"'));
-        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-edit="true">Edit Accounts Disclosures'));
-        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosure-control="true" disabled aria-disabled="true"'));
-        $harness->assertTrue(str_contains(
-            $html,
-            'name="declarant_authority" required data-state-default="" disabled aria-disabled="true"'
-        ));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-edit="true">Edit</button>'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-control="true" disabled aria-disabled="true"'));
         $harness->assertTrue(str_contains(
             $html,
             'name="original_unfiled_confirmed" value="1" required data-ct600-authorisation-field="true"'
         ));
         $harness->assertTrue(str_contains(
             $html,
-            'data-ct600-authorisation-field="true" disabled aria-disabled="true"'
+            'data-ct600-authorisation-field="true" data-ixbrl-approval-control="true"'
+        ));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-mirror="true">'));
+        $harness->assertTrue(str_contains($html, '<th scope="row">Statutory Accounts</th>'));
+        $harness->assertTrue(str_contains($html, 'Approval #60'));
+        $harness->assertTrue(str_contains($html, 'Approval #81'));
+        $harness->assertFalse(str_contains($html, 'Approve Corporation Tax Return'));
+        $harness->assertSame(1, substr_count($html, '<form '));
+
+        // With no JavaScript, Edit posts a read-only action which returns the
+        // same single form in editable mode. The final submit is then
+        // available even though the persisted evidence was current at render.
+        $context['ixbrl_approval_form_input'] = ['ixbrl_approval_editing' => '1'];
+        $editingHtml = $card->render($context);
+        $harness->assertTrue(str_contains(
+            $editingHtml,
+            'type="submit" name="intent" value="edit_ixbrl_approval_draft" formnovalidate'
         ));
         $harness->assertTrue(str_contains(
-            $html,
-            'id="save_ct600_return_authorisation_button" type="submit" disabled aria-disabled="true"'
+            $editingHtml,
+            'type="submit" name="intent" value="cancel_ixbrl_approval_edit" formnovalidate'
+        ));
+        $harness->assertFalse(str_contains(
+            $editingHtml,
+            'data-ixbrl-disclosures-initially-locked="1"'
+        ));
+        $harness->assertTrue(str_contains(
+            $editingHtml,
+            'data-ixbrl-approval-submit="true">Approve Accounts and Corporation Tax Return'
         ));
     });
 
@@ -459,17 +541,24 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
                     'trading_status_evidence' => ['has_previous_trading_evidence' => false],
                     'dormancy' => ['calculated' => false],
                 ],
-                'ixbrl_filing_approval' => [
-                    'state' => 'stale',
-                    'current' => false,
-                    'can_approve' => true,
-                    'errors' => ['The accounts identity or figures changed after the previous filing approval.'],
-                    'approval' => [
-                        'id' => 57,
-                        'basis_json' => json_encode([
-                            'disclosures' => ['values' => ['accounting_standard' => 'FRS_105']],
-                        ], JSON_THROW_ON_ERROR),
+                'ixbrl_filing_approval_workflow' => [
+                    'can_approve' => false,
+                    'both_current' => false,
+                    'state_token' => 'ap79-v9-state',
+                    'blockers' => [],
+                    'accounts' => [
+                        'state' => 'stale',
+                        'current' => false,
+                        'approval_id' => 57,
+                        'errors' => ['The accounts identity or figures changed after the previous filing approval.'],
+                        'approval' => [
+                            'id' => 57,
+                            'basis_json' => json_encode([
+                                'disclosures' => ['values' => ['accounting_standard' => 'FRS_105']],
+                            ], JSON_THROW_ON_ERROR),
+                        ],
                     ],
+                    'hmrc' => ['state' => 'absent', 'approval_id' => 0],
                 ],
             ],
         ]);
@@ -477,8 +566,83 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-initially-locked="1"'));
         $harness->assertTrue(str_contains($html, 'still match the current approval #57'));
         $harness->assertTrue(str_contains($html, 'name="average_number_employees" type="number"'));
-        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosure-control="true" disabled aria-disabled="true"'));
-        $harness->assertTrue(str_contains($html, 'Edit Accounts Disclosures'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-control="true" disabled aria-disabled="true"'));
+        $harness->assertTrue(str_contains($html, '>Edit</button>'));
+        $harness->assertTrue(str_contains($html, 'name="state_token" value="ap79-v9-state"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-mirror="true">'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-submit="true">Approve Accounts and Corporation Tax Return'));
+    });
+
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'preserves rejected combined approval input and returns the whole form to edit mode', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl_approval_form_input' => [
+                'ixbrl_approval_editing' => '1',
+                'average_number_employees' => '7',
+                'declarant_authority' => 'director:17',
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '0',
+                'approval_note' => 'Please retain this note',
+            ],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => true,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'disclosures' => ['accounting_standard' => 'FRS_105', 'average_number_employees' => 1],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => false],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval_workflow' => [
+                    'can_approve' => true,
+                    'both_current' => false,
+                    'state_token' => 'retry-state',
+                    'form_blockers' => ['The declaration must be confirmed.'],
+                    'external_blockers' => [],
+                    'blockers' => ['The declaration must be confirmed.'],
+                    'accounts' => ['state' => 'stale', 'approval_id' => 60, 'approval' => ['id' => 60]],
+                    'hmrc' => ['state' => 'absent', 'approval_id' => 0],
+                ],
+            ],
+        ];
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'name="ixbrl_approval_editing" value="1"'));
+        $harness->assertTrue(str_contains($html, 'name="average_number_employees" type="number" min="0" step="1" required value="7"'));
+        $harness->assertTrue(preg_match('/name="declaration_confirmed" value="0"[^>]*checked/', $html) === 1);
+        $harness->assertTrue(str_contains($html, '>Please retain this note</textarea>'));
+        $harness->assertTrue(str_contains($html, '<li>The declaration must be confirmed.</li>'));
+        $harness->assertFalse(str_contains($html, 'data-ixbrl-disclosures-initially-locked="1"'));
+        $harness->assertTrue(str_contains(
+            $html,
+            'data-ixbrl-approval-submit="true">Approve Accounts and Corporation Tax Return'
+        ));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-disclosures-save="true">Save Draft'));
+
+        $context['services']['ixbrl_filing_approval_workflow']['form_blockers'] = [];
+        $context['services']['ixbrl_filing_approval_workflow']['external_blockers'] = [
+            'Complete the Corporation Tax supplementary-page scope review.',
+        ];
+        $context['services']['ixbrl_filing_approval_workflow']['blockers'] = [
+            'Complete the Corporation Tax supplementary-page scope review.',
+        ];
+        $externalBlockerHtml = $card->render($context);
+        $harness->assertTrue(str_contains($externalBlockerHtml, 'name="ixbrl_approval_editing" value="1"'));
+        $harness->assertTrue(str_contains($externalBlockerHtml, 'data-ixbrl-approval-can-approve="0"'));
+        $harness->assertTrue(str_contains(
+            $externalBlockerHtml,
+            'data-ixbrl-approval-submit="true" disabled aria-disabled="true">Approve Accounts and Corporation Tax Return'
+        ));
+        $harness->assertTrue(str_contains(
+            $externalBlockerHtml,
+            '<li>Complete the Corporation Tax supplementary-page scope review.</li>'
+        ));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders Companies House revised accounts disclosure immediately after FRS 105 notes', static function () use ($harness, $card): void {
@@ -529,7 +693,22 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-disclosures-form="true"]'));
         $harness->assertTrue(str_contains($projectJs, 'initialState'));
         $harness->assertTrue(str_contains($projectJs, 'form.reset()'));
+        $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-approval-control="true"]'));
+        $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-approval-mirror="true"]'));
+        $harness->assertTrue(str_contains($projectJs, 'serverCanApprove || changed'));
+        $harness->assertTrue(str_contains($projectJs, 'ctConfirmationsAreYes'));
+        $harness->assertTrue(substr_count($projectJs, 'event.preventDefault()') >= 2);
+        foreach (['original_unfiled_confirmed', 'authority_confirmed', 'declaration_confirmed'] as $confirmation) {
+            $harness->assertTrue(str_contains($projectJs, "'" . $confirmation . "'"));
+        }
         $harness->assertTrue(substr_count($projectJs, 'initialiseIxbrlDisclosureForms(') >= 3);
+    });
+
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'enables changed current approvals only when every CT declaration remains Yes', static function () use ($harness): void {
+        $projectJs = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'project.js');
+        $harness->assertTrue(str_contains($projectJs, 'approvalButton.disabled = !(serverCanApprove || changed)'));
+        $harness->assertTrue(str_contains($projectJs, '|| !ctConfirmationsAreYes'));
+        $harness->assertTrue(str_contains($projectJs, "selected.value === '1'"));
     });
 });
 
@@ -566,7 +745,7 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
         $harness->assertFalse(str_contains($html, 'Build / Refresh Facts'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="build_ixbrl_facts"'));
     });
-    $harness->check(_ixbrl_facts_previewCard::class, 'shows the approved-fact rebuild control only with developer options', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_facts_previewCard::class, 'shows fact rebuild for developers or a verified legacy-report upgrade', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'ixbrl' => ['readiness' => [], 'facts' => []],
@@ -575,6 +754,24 @@ $harness->run(_ixbrl_facts_previewCard::class, static function (GeneratedService
         try {
             AppConfigurationStore::set('developer_options', false);
             $harness->assertFalse(str_contains($card->render($context), 'rebuild_ixbrl_facts_from_current_approval'));
+
+            $legacyContext = $context;
+            $legacyContext['ixbrl']['readiness'] = [
+                'filing_approval' => [
+                    'state' => 'current',
+                    'approval_source' => 'legacy_combined',
+                ],
+                'run_freshness' => [
+                    'state' => 'stale',
+                    'detail' => 'The report basis changed during the authority split.',
+                ],
+            ];
+            $legacyHtml = $card->render($legacyContext);
+            $harness->assertTrue(str_contains($legacyHtml, 'name="intent" value="rebuild_ixbrl_facts_from_current_approval"'));
+            $harness->assertTrue(str_contains($legacyHtml, '>Rebuild Facts for Neutral Report</button>'));
+            $harness->assertTrue(str_contains($legacyHtml, 'class="button primary"'));
+            $harness->assertTrue(str_contains($legacyHtml, 'does not create or alter an approval'));
+            $harness->assertFalse(str_contains($legacyHtml, 'data-chicken-title="Rebuild approved fact snapshot"'));
 
             AppConfigurationStore::set('developer_options', true);
             $html = $card->render($context);
@@ -1013,7 +1210,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $context['services']['companies_house_ixbrl']['preparation_blockers'][] = 'Record Companies House written confirmation.';
         $context['services']['companies_house_ixbrl']['can_prepare_after_accounts_generation'] = false;
         $genuineBlocker = $card->render($context);
-        $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate All Filing Artefacts'));
+        $harness->assertFalse($buttonDisabled($genuineBlocker, 'Generate All Filing Artefacts'));
         $harness->assertTrue($buttonDisabled($genuineBlocker, 'Generate Companies House iXBRL'));
     });
     $harness->check(_ixbrl_generationCard::class, 'summarises only current iXBRL generation blockers above the filing actions', static function () use ($harness, $card): void {
@@ -1285,7 +1482,95 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Arelle Validated At</div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-value">2026-07-29 18:43:22</div>'));
     });
-    $harness->check(_ixbrl_generationCard::class, 'offers one combined filing generation action only when every artifact can be built', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_generationCard::class, 'keeps HMRC and Companies House profile outcomes visibly independent', static function () use ($harness, $card): void {
+        $hmrcProfile = [
+            'key' => 'hmrc_ct_accounts',
+            'version' => '1.0.0',
+            'transformation_namespace' => 'http://www.xbrl.org/inlineXBRL/transformation/2011-07-31',
+        ];
+        $companiesHouseProfile = [
+            'key' => 'companies_house_accounts',
+            'version' => '1.0.0',
+            'transformation_namespace' => 'http://www.xbrl.org/inlineXBRL/transformation/2015-02-26',
+        ];
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'ixbrl' => [
+                'readiness' => [
+                    'can_generate' => true,
+                    'ready_for_filing' => false,
+                    'arelle_status' => ['installed' => true],
+                    'authority_readiness' => [
+                        'hmrc_accounts' => [
+                            'profile' => $hmrcProfile,
+                            'state' => 'failed',
+                            'ready' => false,
+                            'errors' => ['HMRC-only transformation failure.'],
+                            'artifact' => [
+                                'output_path' => __FILE__,
+                                'output_filename' => 'hmrc-accounts.xhtml',
+                                'generated_at' => '2026-08-03 10:00:00',
+                                'profile_key' => 'hmrc_ct_accounts',
+                                'profile_version' => '1.0.0',
+                                'transformation_registry_uri' => $hmrcProfile['transformation_namespace'],
+                            ],
+                            'display_validation' => [
+                                'validation_status' => 'passed',
+                                'authority_validation_status' => 'failed',
+                                'external_validation_status' => 'failed',
+                            ],
+                        ],
+                        'hmrc_computations' => [
+                            'profile' => [
+                                'key' => 'hmrc_ct_computation',
+                                'version' => '1.0.0',
+                                'transformation_namespace' => $hmrcProfile['transformation_namespace'],
+                            ],
+                            'periods' => [],
+                        ],
+                        'companies_house_accounts' => [
+                            'profile' => $companiesHouseProfile,
+                            'state' => 'filing_ready',
+                            'ready' => true,
+                            'errors' => [],
+                            'display_validation' => [
+                                'validation_status' => 'passed',
+                                'authority_validation_status' => 'passed',
+                                'external_validation_status' => 'passed',
+                                'external_validated_at' => '2026-08-03 10:01:00',
+                            ],
+                        ],
+                    ],
+                ],
+                'latest_run' => ['id' => 812, 'fact_count' => 42, 'run_freshness' => ['state' => 'current']],
+                'computation_periods' => [],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => [
+                    'filing_required' => true,
+                    'filing_kind' => 'original',
+                    'can_prepare' => true,
+                    'submission' => ['id' => 901, 'lifecycle' => 'prepared', 'prepared_at' => '2026-08-03 10:01:00'],
+                    'prepared_artifact' => ['filename' => 'companies-house.xhtml', 'path' => __FILE__, 'fact_count' => 42],
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $hmrcStart = strpos($html, 'HMRC Accounting iXBRL');
+        $companiesHouseStart = strpos($html, 'Companies House Accounting iXBRL');
+        $harness->assertTrue($hmrcStart !== false && $companiesHouseStart !== false && $hmrcStart < $companiesHouseStart);
+        $hmrcPanel = substr($html, (int)$hmrcStart, (int)$companiesHouseStart - (int)$hmrcStart);
+        $companiesHousePanel = substr($html, (int)$companiesHouseStart);
+        $harness->assertTrue(str_contains($hmrcPanel, 'HMRC accounts v1.0.0'));
+        $harness->assertTrue(str_contains($hmrcPanel, '<div class="summary-value">2011</div>'));
+        $harness->assertTrue(str_contains($hmrcPanel, 'HMRC-only transformation failure.'));
+        $harness->assertTrue(str_contains($companiesHousePanel, 'Companies House accounts v1.0.0'));
+        $harness->assertTrue(str_contains($companiesHousePanel, '<div class="summary-value">2015</div>'));
+        $harness->assertFalse(str_contains($companiesHousePanel, 'HMRC-only transformation failure.'));
+        $harness->assertTrue(preg_match('/<button class="button primary" type="submit">Generate All Filing Artefacts<\/button>/', $html) === 1);
+    });
+    $harness->check(_ixbrl_generationCard::class, 'offers the combined action when at least the shared approved basis can be generated', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'ixbrl' => [
@@ -1437,6 +1722,29 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
 });
 
 $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarness $harness, IxbrlAction $action): void {
+    $harness->check(IxbrlAction::class, 'uses the atomic unified approval workflow and retires separate approval posts', static function () use ($harness): void {
+        $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
+            . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
+        $draft = strstr($source, "if (\$intent === 'save_ixbrl_approval_draft')");
+        $draft = strstr((string)$draft, "if (\$intent === 'approve_ixbrl_accounts_and_ct')", true);
+        $combined = strstr($source, "if (\$intent === 'approve_ixbrl_accounts_and_ct')");
+        $combined = strstr((string)$combined, "if (\$intent === 'save_ixbrl_disclosures')", true);
+        $legacy = strstr($source, "if (\$intent === 'save_ct600_return_authorisation')");
+        $legacy = strstr((string)$legacy, "if (\$intent === 'rebuild_ixbrl_facts_from_current_approval')", true);
+
+        $harness->assertTrue(str_contains((string)$draft, 'IxbrlFilingApprovalWorkflowService'));
+        $harness->assertTrue(str_contains((string)$draft, ')->saveDraft('));
+        $harness->assertTrue(str_contains((string)$combined, 'IxbrlFilingApprovalWorkflowService'));
+        $harness->assertTrue(str_contains((string)$combined, ')->approveAll('));
+        $harness->assertTrue(str_contains((string)$combined, "['ixbrl_approval_form_input' => \$input]"));
+        $harness->assertTrue(str_contains($source, "\$intent === 'edit_ixbrl_approval_draft'"));
+        $harness->assertTrue(str_contains($source, "\$intent === 'cancel_ixbrl_approval_edit'"));
+        $harness->assertTrue(substr_count((string)$legacy, 'This approval form is out of date.') === 2);
+        $harness->assertFalse(str_contains((string)$legacy, 'Ct600ReturnAuthorisationService'));
+        $harness->assertFalse(str_contains((string)$legacy, 'prepareHmrcCtPeriodFilingBases'));
+        $harness->assertFalse(str_contains((string)$legacy, 'HmrcCtFilingApprovalService'));
+    });
+
     $harness->check(IxbrlAction::class, 'passes the principal activity SIC code through both disclosure save paths', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
@@ -1465,12 +1773,14 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ct600_xml_artifacts\''));
         $harness->assertTrue(str_contains($source, 'Ct600GenerationArtifactCleanupService'));
     });
-    $harness->check(IxbrlAction::class, 'guards approved-fact recovery behind developer options', static function () use ($harness): void {
+    $harness->check(IxbrlAction::class, 'guards fact recovery while permitting a verified legacy-report upgrade', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'IxbrlAction.php');
         $rebuildAction = strstr($source, "if (\$intent === 'rebuild_ixbrl_facts_from_current_approval')");
         $harness->assertTrue(is_string($rebuildAction));
         $harness->assertTrue(str_contains((string)$rebuildAction, 'developer_options'));
+        $harness->assertTrue(str_contains((string)$rebuildAction, "'legacy_combined'"));
+        $harness->assertTrue(str_contains((string)$rebuildAction, "['run_freshness']"));
         $harness->assertTrue(str_contains((string)$rebuildAction, 'rebuildFactsFromCurrentApproval'));
     });
     $harness->check(IxbrlAction::class, 'guards untransmitted-history cleanup behind developer options', static function () use ($harness): void {

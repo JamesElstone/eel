@@ -274,7 +274,11 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                     }
                     $prerequisite = $this->accountingPrerequisite !== null
                         ? ($this->accountingPrerequisite)($companyId, $accountingPeriodId, $progress)
-                        : $this->ensureAccountingIxbrlReady($companyId, $accountingPeriodId, $progress);
+                        : $this->ensureApprovedAccountsFactSnapshotReady(
+                            $companyId,
+                            $accountingPeriodId,
+                            $progress
+                        );
                     if (empty($prerequisite['success'])) {
                         return $prerequisite;
                     }
@@ -299,7 +303,7 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         }
     }
 
-    private function ensureAccountingIxbrlReady(
+    private function ensureApprovedAccountsFactSnapshotReady(
         int $companyId,
         int $accountingPeriodId,
         ActionProgressFramework $progress
@@ -314,41 +318,10 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
                 ]),
             ];
         }
-        if (empty($readiness['ready_for_filing'])) {
-            if (empty($readiness['can_validate'])) {
-                $progress->report('Generating the prerequisite Accounting iXBRL…', 5);
-                $generated = (new \eel_accounts\Service\IxbrlAccountingService())
-                    ->generateFilingExport($companyId, $accountingPeriodId);
-                if (empty($generated['success'])) {
-                    return $generated;
-                }
-                \eel_accounts\Support\RequestCache::clear();
-            }
-
-            $progress->report('Running Arelle validation for the Accounting iXBRL…', 40);
-            $external = (new \eel_accounts\Service\IxbrlExternalValidationService())
-                ->validateLatestRun($companyId, $accountingPeriodId);
-            if ((string)($external['status'] ?? '') !== 'passed') {
-                return [
-                    'success' => false,
-                    'errors' => (array)($external['errors'] ?? [
-                        'The prerequisite Accounting iXBRL did not pass Arelle validation.',
-                    ]),
-                ];
-            }
-
-            \eel_accounts\Support\RequestCache::clear();
-            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())
-                ->getReadiness($companyId, $accountingPeriodId);
-            if (empty($readiness['ready_for_filing'])) {
-                return [
-                    'success' => false,
-                    'errors' => (array)($readiness['filing_errors'] ?? [
-                        'The prerequisite Accounting iXBRL is not filing-ready.',
-                    ]),
-                ];
-            }
-        }
+        $progress->report(
+            'Verified the current approved statutory-accounts fact snapshot for Companies House rendering.',
+            40
+        );
 
         return ['success' => true, 'errors' => []];
     }

@@ -16,7 +16,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $authorisation = [
                     'declarant_name' => 'Jane Director',
                     'declarant_status' => 'Director',
-                    'declaration_at' => '2026-07-30 10:15:00',
+                    'declared_at' => '2026-07-30 10:15:00',
                     'declarant_party_id' => null,
                     'declarant_director_id' => 44,
                     'declarant_role_id' => null,
@@ -24,16 +24,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'authority_confirmed' => true,
                     'declaration_confirmed' => true,
                 ];
-                $basisJson = \eel_accounts\Support\Utf8::json(
-                    ['corporation_tax_return_authorisation' => $authorisation],
+                $authorisationJson = \eel_accounts\Support\PersistentJson::encode(
+                    $authorisation,
                     JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES
                 );
                 $approval = [
                     'id' => 67,
-                    'basis_json' => $basisJson,
-                    'basis_hash' => hash('sha256', $basisJson),
-                    'declarant_name' => 'Jane Director',
-                    'declarant_status' => 'Director',
+                    'return_authorisation_json' => $authorisationJson,
+                    'return_authorisation_hash' => hash('sha256', $authorisationJson),
                     'approved_at' => '2026-07-30 10:20:00',
                     'approved_by' => 'user:9',
                 ];
@@ -51,12 +49,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (int)$result['declaration']['declarant_director_id']
                 );
 
-                $approval['basis_hash'] = str_repeat('0', 64);
+                $approval['return_authorisation_hash'] = str_repeat('0', 64);
                 $tampered = (array)$method->invoke($service, $approval);
                 $harness->assertFalse((bool)$tampered['ok']);
                 $harness->assertTrue(str_contains(
                     implode(' ', (array)$tampered['errors']),
-                    'integrity check'
+                    'authorisation integrity check'
                 ));
             }
         );
@@ -68,20 +66,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $authorisation = [
                     'declarant_name' => 'Jane Director',
                     'declarant_status' => 'Director',
-                    'declaration_at' => '2026-07-30 10:15:00',
+                    'declared_at' => '2026-07-30 10:15:00',
                     'original_unfiled_confirmed' => true,
                     'authority_confirmed' => false,
                     'declaration_confirmed' => true,
                 ];
-                $basisJson = \eel_accounts\Support\Utf8::json(
-                    ['corporation_tax_return_authorisation' => $authorisation],
+                $authorisationJson = \eel_accounts\Support\PersistentJson::encode(
+                    $authorisation,
                     JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES
                 );
                 $approval = [
-                    'basis_json' => $basisJson,
-                    'basis_hash' => hash('sha256', $basisJson),
-                    'declarant_name' => 'Jane Director',
-                    'declarant_status' => 'Director',
+                    'return_authorisation_json' => $authorisationJson,
+                    'return_authorisation_hash' => hash('sha256', $authorisationJson),
                 ];
                 $method = new ReflectionMethod($service, 'frozenDeclaration');
                 $method->setAccessible(true);
@@ -175,7 +171,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ));
 
                 foreach ([
-                    'Verifying the frozen accounts approval and return authorisation',
+                    'Verifying the statutory-accounts and HMRC CT approvals',
                     'Checking the HMRC Accounting iXBRL artifact',
                     'Applying and verifying the HMRC IRmark',
                     'Rechecking the stored CT600 file, attachments and IRmark',

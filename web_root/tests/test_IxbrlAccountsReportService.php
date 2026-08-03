@@ -17,8 +17,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check($service::class, 'declares an explicit report-basis version', static function () use ($harness, $service): void {
-            $harness->assertSame('ixbrl-accounts-report-v8', $service::BASIS_VERSION);
+            $harness->assertSame('ixbrl-accounts-report-v9', $service::BASIS_VERSION);
         });
+
+        $harness->check(
+            $service::class,
+            'keeps the canonical accounts report independent of Companies House filing classification',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'build');
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertFalse(str_contains($body, 'fetchCompaniesHouseReview'));
+                $harness->assertFalse(str_contains($body, 'companies_house_filing'));
+            }
+        );
 
         $harness->check($service::class, 'freezes the selected director id with the officer-name snapshot', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'disclosureBasis');

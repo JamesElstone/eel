@@ -51,8 +51,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        $hmrcAuthority = (array)($readiness['authority_readiness']['hmrc_accounts']
+            ?? $readiness['hmrc_accounts']
+            ?? []);
+        $run = $this->authorityDisplayRun(
+            $hmrcAuthority,
+            (array)($context['ixbrl']['latest_run'] ?? [])
+        );
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $canGenerate = !empty($readiness['can_generate']);
         $readyForFiling = !empty($readiness['ready_for_filing']);
@@ -60,17 +66,21 @@ final class _ixbrl_generationCard extends CardBaseFramework
             static fn(mixed $message): string => trim((string)$message),
             (array)($readiness['generation_errors'] ?? [])
         ), static fn(string $message): bool => $message !== '')));
-        $canGenerateAll = $canGenerate
-            && $this->allComputationPeriodsReady($context)
-            && $this->companiesHouseArtifactReady($context);
+        // The combined action attempts each authority branch independently and
+        // retains successful artifacts, so a blocker for one destination must
+        // not disable generation for the others.
+        $canGenerateAll = $canGenerate;
         $generationBlockerPanel = $this->generationBlockerPanel($context);
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $runFreshness = (array)($run['run_freshness'] ?? []);
         $stale = (int)($run['fact_count'] ?? 0) > 0
             && (string)($runFreshness['state'] ?? '') !== 'current';
-        $displayStatus = $readyForFiling
-            ? 'filing_ready'
-            : ($stale ? 'stale' : (string)($run['status'] ?? 'draft'));
+        $displayStatus = trim((string)($hmrcAuthority['state'] ?? ''));
+        if ($displayStatus === '') {
+            $displayStatus = $readyForFiling
+                ? 'filing_ready'
+                : ($stale ? 'stale' : (string)($run['status'] ?? 'draft'));
+        }
         $fileExists = !$stale
             && trim((string)($run['generated_path'] ?? '')) !== ''
             && is_file((string)$run['generated_path']);
@@ -91,7 +101,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $runFreshness,
             $stale,
             $readyForFiling,
-            $fileExists
+            $fileExists,
+            $hmrcAuthority
         );
         return '<div class="settings-stack">
             ' . $generationBlockerPanel . '
@@ -99,7 +110,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="status-head">
                     <div>
                         <h3 class="card-title">Complete Filing Set</h3>
-                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the Accounting iXBRL, each Corporation Tax computation iXBRL and CT600 XML, and the required Companies House original or revised accounts iXBRL.</div>
+                        <div class="helper ixbrl-complete-filing-set-helper">Generate and validate the independent HMRC accounts, HMRC computation and Companies House accounts iXBRL artifacts. Successful authority outputs are retained when another authority is blocked or fails validation.</div>
                     </div>
                 </div>
                 <div class="actions-row ixbrl-complete-filing-actions">
@@ -128,7 +139,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                         . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Synchronise missing XML files" data-chicken-message="Synchronise CT600 XML artifacts that no longer exist on disk?<br><br>Empty missing-file artifact records are removed so they can be regenerated. Records used by in-flight or completed HMRC submissions are retained. No files are deleted." data-chicken-confirm-text="Synchronise" data-chicken-button-class="button danger">Synchronise missing XML files</button>'
                         . '</form></div>' : '') . '
                 </div>
-                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready accounts basis, resolve every CT-period computation blocker, and complete the Companies House filing prerequisites when required.</div>') . '
+                ' . ($canGenerateAll ? '' : '<div class="helper">Approve a generation-ready statutory accounts basis and build a current fact snapshot. Authority-specific blockers are then handled independently.</div>') . '
             </section>
             <section class="panel-soft">
                 <div class="status-head">
@@ -140,8 +151,11 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Generated At', (string)($run['generated_at'] ?? 'Not Generated')) . '
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
                     ' . $this->metric('Export Type', $this->exportTypeLabel((string)($run['export_type'] ?? ''))) . '
+                    ' . $this->metric('Authority Profile', $this->profileLabel($hmrcAuthority, 'HMRC accounts')) . '
+                    ' . $this->metric('Transformation Registry', $this->profileRegistryYear($hmrcAuthority, '2011')) . '
                     ' . $this->metric('Taxonomy Profile', (string)($run['taxonomy_profile'] ?? '')) . '
                     ' . $this->metric('Validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run'))) . '
+                    ' . $this->metric('Authority Validation', $this->validationLabel((string)($run['authority_validation_status'] ?? 'not_run'))) . '
                     ' . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed') . '
                     ' . $this->metric('Arelle Validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run'))) . '
                     ' . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? '')) . '
@@ -183,7 +197,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
         array $runFreshness,
         bool $stale,
         bool $readyForFiling,
-        bool $fileExists
+        bool $fileExists,
+        array $authorityStatus = []
     ): string {
         if ($readyForFiling && $fileExists) {
             return 'HMRC Accounting iXBRL is current and filing-ready.';
@@ -201,6 +216,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
         if (!$fileExists) {
             return 'HMRC Accounting iXBRL needs to be regenerated because its artifact file is missing.';
+        }
+
+        $authorityErrors = array_values(array_filter(array_map(
+            static fn(mixed $message): string => trim((string)$message),
+            (array)($authorityStatus['errors'] ?? [])
+        )));
+        if ($authorityErrors !== []) {
+            return 'HMRC Accounting iXBRL is not filing-ready: ' . $authorityErrors[0];
         }
 
         $externalStatus = strtolower(trim((string)($run['external_validation_status'] ?? 'not_run')));
@@ -253,15 +276,18 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . ' against an earlier prepared basis. It remains available in GovTalk Transmission History and blocks another Companies House transmission, but it does not block generating the current artifact or HMRC filing set.</div>';
         }
         $artifact = (array)($filing['prepared_artifact'] ?? []);
-        $baseRun = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
+        $authorityStatus = (array)($readiness['authority_readiness']['companies_house_accounts']
+            ?? $readiness['companies_house_accounts']
+            ?? []);
+        $authorityValidation = (array)($authorityStatus['display_validation'] ?? []);
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $revisedValidation = (array)($filing['revised_validation'] ?? []);
         $artifactCurrent = !array_key_exists('state', $artifact)
             ? trim((string)($artifact['filename'] ?? '')) !== ''
             : (!empty($artifact['current']) || (string)$artifact['state'] === 'current');
         if ($submission === null || $artifact === [] || !$artifactCurrent) {
-            $canPrepare = !empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']);
+            $canPrepare = !empty($readiness['can_generate']) && !empty($filing['can_prepare']);
             $blockers = array_values(array_unique(array_filter(array_map(
                 static fn(mixed $message): string => trim((string)$message),
                 (array)($filing['preparation_blockers'] ?? [])
@@ -279,7 +305,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 . $this->metric('Generated At', 'Not Generated')
                 . $this->metric('Facts', '0')
                 . $this->metric('Export Type', 'Companies House')
+                . $this->metric('Authority Profile', $this->profileLabel($authorityStatus, 'Companies House accounts'))
+                . $this->metric('Transformation Registry', $this->profileRegistryYear($authorityStatus, '2015'))
                 . $this->metric('Validation', 'Not Run')
+                . $this->metric('Authority Validation', 'Not Run')
                 . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
                 . $this->metric('Arelle Validation', 'Not Run')
                 . $this->metric('Arelle Validated At', '')
@@ -314,7 +343,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . '<input type="hidden" name="intent" value="prepare_accounts">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
-            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['ready_for_filing']) && !empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
+            . '<button class="button primary" type="submit" data-processing-text="Generating Companies House iXBRL…" data-processing-state="disabled"' . (!empty($readiness['can_generate']) && !empty($filing['can_prepare']) ? '' : ' disabled') . '>Generate Companies House iXBRL</button>'
             . '</form>';
         $badge = match ($lifecycle) {
             'accepted' => 'success',
@@ -322,30 +351,42 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'transport_unknown', 'parked' => 'warning',
             default => 'info',
         };
+        $authorityDecisionAvailable = array_key_exists('ready', $authorityStatus);
+        $authorityReady = !empty($authorityStatus['ready']);
+        $badgeLabel = HelperFramework::labelFromKey($lifecycle, '_');
+        if ($authorityDecisionAvailable && !$authorityReady) {
+            $authorityState = (string)($authorityStatus['state'] ?? 'not_validated');
+            $badge = in_array($authorityState, ['failed', 'stale'], true) ? 'danger' : 'warning';
+            $badgeLabel = HelperFramework::labelFromKey($authorityState, '_');
+        }
         return '<section class="panel-soft"><div class="status-head">'
             . '<h3 class="card-title">Companies House Accounting iXBRL</h3>'
             . '<span class="badge ' . $badge . '">'
-            . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>'
+            . \eel_accounts\Support\Utf8::html($badgeLabel) . '</span></div>'
             . '<div class="helper ixbrl-complete-filing-set-helper">This is the prepared Companies House '
             . \eel_accounts\Support\Utf8::html($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . $activeSubmissionNotice
             . '<div class="summary-grid">'
             . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
             . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
-            . $this->metric('Export Type', $this->exportTypeLabel((string)($baseRun['export_type'] ?? '')))
-            . $this->metric('Validation', $this->validationLabel((string)($baseRun['validation_status'] ?? 'not_run')))
+            . $this->metric('Export Type', 'Companies House')
+            . $this->metric('Authority Profile', $this->profileLabel($authorityStatus, 'Companies House accounts'))
+            . $this->metric('Transformation Registry', $this->profileRegistryYear($authorityStatus, '2015'))
+            . $this->metric('Validation', $this->validationLabel((string)($authorityValidation['validation_status'] ?? 'not_run')))
+            . $this->metric('Authority Validation', $this->validationLabel((string)($authorityValidation['authority_validation_status'] ?? 'not_run')))
             . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
-            . $this->metric('Arelle Validation', $this->validationLabel((string)($revisedValidation['status'] ?? $baseRun['external_validation_status'] ?? 'not_run')))
-            . $this->metric('Arelle Validated At', (string)($revisedValidation['validated_at'] ?? $baseRun['external_validated_at'] ?? ''))
+            . $this->metric('Arelle Validation', $this->validationLabel((string)($authorityValidation['external_validation_status'] ?? $revisedValidation['status'] ?? 'not_run')))
+            . $this->metric('Arelle Validated At', (string)($authorityValidation['external_validated_at'] ?? $revisedValidation['validated_at'] ?? ''))
             . $this->metric('Submission number', (string)($submission['submission_number'] ?? 'Allocated on send'))
             . $this->metricHtml('Artifact', $artifactDownload)
             . '</div>'
-            . $this->arelleOutput($revisedValidation, [
+            . $this->arelleOutput($authorityValidation !== [] ? $authorityValidation : $revisedValidation, [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'scope' => 'companies_house',
                 'submission_id' => (int)($submission['id'] ?? 0),
             ])
+            . $this->authorityErrors($authorityStatus)
             . '<div class="actions-row">' . $regenerate . '</div>'
             . '</section>';
     }
@@ -426,9 +467,9 @@ final class _ixbrl_generationCard extends CardBaseFramework
         }
 
         $html = '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
-            . '<h3 class="card-title">iXBRL generation blocked</h3>'
-            . '<span class="badge warning">Action required</span></div>'
-            . '<div class="helper">Resolve the following before generating the complete iXBRL filing set.</div><ul>';
+            . '<h3 class="card-title">iXBRL generation blocked for some artifacts</h3>'
+            . '<span class="badge warning">Partial generation available</span></div>'
+            . '<div class="helper">The combined action retains successful authority outputs. Resolve these items for the remaining artifacts.</div><ul>';
         foreach ($groups as $label => $messages) {
             foreach ($messages as $message) {
                 $html .= '<li><strong>' . \eel_accounts\Support\Utf8::html($label) . ':</strong> '
@@ -455,6 +496,12 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $periods = (array)($context['ixbrl']['computation_periods'] ?? []);
         $accountsGenerationReady = !empty($context['ixbrl']['readiness']['can_generate']);
         $arelleStatus = (array)($context['ixbrl']['readiness']['arelle_status'] ?? []);
+        $authorityPeriods = (array)($context['ixbrl']['readiness']['authority_readiness']['hmrc_computations']['periods']
+            ?? $context['ixbrl']['readiness']['hmrc_computations']['periods']
+            ?? []);
+        $computationAuthority = (array)($context['ixbrl']['readiness']['authority_readiness']['hmrc_computations']
+            ?? $context['ixbrl']['readiness']['hmrc_computations']
+            ?? []);
         $html = '';
         if ($periods === []) {
             return $html . '<div class="notice warning">No CT periods are available for computations generation.</div>';
@@ -464,13 +511,18 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $status = (array)($item['status'] ?? []);
             $run = (array)($status['run'] ?? []);
             $ctPeriodId = (int)($period['ct_period_id'] ?? $period['id'] ?? 0);
+            $authorityStatus = (array)($authorityPeriods[(string)$ctPeriodId] ?? []);
+            $authorityValidation = (array)($authorityStatus['display_validation'] ?? []);
+            $displayRun = array_replace($run, $authorityValidation);
             $ctPeriodNumber = $this->ctPeriodDisplayNumber($period);
             $ctPeriodLabel = 'Corporation Tax Period ' . $ctPeriodNumber;
             $start = (string)($period['period_start'] ?? '');
             $end = (string)($period['period_end'] ?? '');
             $ready = $accountsGenerationReady && !empty($status['ready']);
             $fresh = !empty($status['fresh']);
-            $fileable = !empty($status['fileable']);
+            $authorityDecisionAvailable = array_key_exists('ready', $authorityStatus);
+            $fileable = !empty($status['fileable'])
+                && (!$authorityDecisionAvailable || !empty($authorityStatus['ready']));
             $artifactPath = trim((string)($run['generated_path'] ?? ''));
             $artifactExists = $artifactPath !== '' && is_file($artifactPath);
             $hidden = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -483,26 +535,38 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     . '<input type="hidden" name="intent" value="download_computation_ixbrl">'
                     . '<button class="button compact primary" type="submit"' . ($fileable && $artifactExists ? '' : ' disabled') . '>Download ' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' iXBRL</button></form>'
                 : 'Not generated';
+            $authorityState = (string)($authorityStatus['state'] ?? '');
+            $failedAuthorityValidation = $authorityDecisionAvailable
+                && in_array($authorityState, ['failed', 'stale'], true);
             $html .= '<section class="panel-soft"><div class="status-head"><h3>' . \eel_accounts\Support\Utf8::html($ctPeriodLabel) . ' Computation iXBRL</h3><span class="badge '
-                . ($fileable ? 'success' : ($fresh ? 'warning' : 'muted')) . '">'
-                . ($fileable ? 'Filing ready' : ($fresh ? 'Generated, not fileable' : 'Not generated')) . '</span></div>'
+                . ($fileable ? 'success' : ($failedAuthorityValidation ? 'danger' : ($fresh ? 'warning' : 'muted'))) . '">'
+                . ($fileable ? 'Filing ready' : ($failedAuthorityValidation
+                    ? HelperFramework::labelFromKey($authorityState, '_')
+                    : ($fresh ? 'Generated, not fileable' : 'Not generated'))) . '</span></div>'
                 . '<div class="helper ixbrl-complete-filing-set-helper">Generate a separate Corporation Tax computation iXBRL for this filing period and review its validation status.</div>'
                 . '<div class="summary-grid four">'
                 . $this->metric('CT period', $start . ' to ' . $end)
-                . $this->metric('Internal validation', $this->validationLabel((string)($run['validation_status'] ?? 'not_run')))
+                . $this->metric('Authority Profile', $this->profileLabel($authorityStatus !== [] ? $authorityStatus : $computationAuthority, 'HMRC computation'))
+                . $this->metric('Transformation Registry', $this->profileRegistryYear($authorityStatus !== [] ? $authorityStatus : $computationAuthority, '2011'))
+                . $this->metric('Internal validation', $this->validationLabel((string)($displayRun['validation_status'] ?? 'not_run')))
+                . $this->metric('Authority validation', $this->validationLabel((string)($displayRun['authority_validation_status'] ?? 'not_run')))
                 . $this->metric('Arelle Status', !empty($arelleStatus['installed']) ? 'Installed' : 'Not Installed')
-                . $this->metric('Arelle validation', $this->validationLabel((string)($run['external_validation_status'] ?? 'not_run')))
-                . $this->metric('Arelle Validated At', (string)($run['external_validated_at'] ?? ''))
+                . $this->metric('Arelle validation', $this->validationLabel((string)($displayRun['external_validation_status'] ?? 'not_run')))
+                . $this->metric('Arelle Validated At', (string)($displayRun['external_validated_at'] ?? ''))
                 . $this->metricHtml('Artifact', $artifact)
                 . '</div>'
-                . $this->arelleOutput($run, [
+                . $this->arelleOutput($displayRun, [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'scope' => 'computation',
                     'run_id' => (int)($run['id'] ?? 0),
                     'ct_period_id' => $ctPeriodId,
                 ]);
-            $errors = array_values(array_unique(array_merge((array)($status['errors'] ?? []), (array)($status['artifact_errors'] ?? []))));
+            $errors = array_values(array_unique(array_merge(
+                (array)($status['errors'] ?? []),
+                (array)($status['artifact_errors'] ?? []),
+                (array)($authorityStatus['errors'] ?? [])
+            )));
             $staleArtifactErrors = [
                 'The computation artifact filing basis is stale.',
                 'The computation taxonomy package is stale, changed or incompatible.',
@@ -656,6 +720,76 @@ final class _ixbrl_generationCard extends CardBaseFramework
             || !empty($filing['can_prepare_after_accounts_generation']);
     }
 
+    /**
+     * Projects the immutable HMRC authority artifact and its validation evidence
+     * onto the legacy run-shaped fields used by this card.
+     */
+    private function authorityDisplayRun(array $authorityStatus, array $legacyRun): array
+    {
+        $artifact = is_array($authorityStatus['artifact'] ?? null)
+            ? (array)$authorityStatus['artifact']
+            : [];
+        $validation = (array)($authorityStatus['display_validation'] ?? []);
+        if ($artifact === []) {
+            return $legacyRun;
+        }
+
+        return array_replace($legacyRun, [
+            'generated_path' => (string)($artifact['output_path'] ?? ''),
+            'generated_filename' => (string)($artifact['output_filename'] ?? ''),
+            'generated_at' => (string)($artifact['generated_at'] ?? ''),
+            'output_sha256' => (string)($artifact['output_sha256'] ?? ''),
+            'taxonomy_profile' => (string)($artifact['taxonomy_profile'] ?? ''),
+            'authority_profile' => (string)($artifact['profile_key'] ?? ''),
+            'authority_profile_version' => (string)($artifact['profile_version'] ?? ''),
+            'transformation_registry_uri' => (string)($artifact['transformation_registry_uri'] ?? ''),
+        ], $validation);
+    }
+
+    private function profileLabel(array $authorityStatus, string $fallback): string
+    {
+        $profile = (array)($authorityStatus['profile'] ?? []);
+        $key = trim((string)($profile['key'] ?? ''));
+        $version = trim((string)($profile['version'] ?? ''));
+        if ($key === '') {
+            return $fallback;
+        }
+
+        $label = match ($key) {
+            'hmrc_ct_accounts' => 'HMRC accounts',
+            'hmrc_ct_computation' => 'HMRC computation',
+            'companies_house_accounts' => 'Companies House accounts',
+            default => HelperFramework::labelFromKey($key, '_'),
+        };
+        return $version !== '' ? $label . ' v' . $version : $label;
+    }
+
+    private function profileRegistryYear(array $authorityStatus, string $fallback): string
+    {
+        $profile = (array)($authorityStatus['profile'] ?? []);
+        $namespace = trim((string)($profile['transformation_namespace'] ?? ''));
+        if (str_contains($namespace, '/2011-')) {
+            return '2011';
+        }
+        if (str_contains($namespace, '/2015-')) {
+            return '2015';
+        }
+        return $fallback;
+    }
+
+    private function authorityErrors(array $authorityStatus): string
+    {
+        $messages = $this->uniqueMessages((array)($authorityStatus['errors'] ?? []), '');
+        $html = '';
+        foreach ($messages as $message) {
+            if ($message !== '') {
+                $html .= '<div class="helper ixbrl-authority-validation-helper">'
+                    . \eel_accounts\Support\Utf8::html($message) . '</div>';
+            }
+        }
+        return $html;
+    }
+
     private function metric(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . \eel_accounts\Support\Utf8::html($label) . '</div><div class="summary-value">' . \eel_accounts\Support\Utf8::html($value) . '</div></div>';
@@ -673,6 +807,8 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'generated' => 'success',
             'filing_ready' => 'success',
             'stale' => 'warning',
+            'not_validated' => 'warning',
+            'not_generated' => 'muted',
             'failed' => 'danger',
             default => 'muted',
         };

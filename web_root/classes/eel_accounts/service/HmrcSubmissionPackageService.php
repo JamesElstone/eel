@@ -115,6 +115,21 @@ final class HmrcSubmissionPackageService
             return $this->artifactFailure('not_ready', (string)($errors[0] ?? 'The computations iXBRL artifact is not filing-ready.'), $errors);
         }
         $run = (array)$status['run'];
+        $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+        );
+        $validationRun = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->latestForComputation(
+                (int)($run['id'] ?? 0),
+                (string)($run['output_sha256'] ?? ''),
+                $authorityProfile->fingerprint()
+            );
+        if (!is_array($validationRun) || (string)($validationRun['overall_status'] ?? '') !== 'passed') {
+            return $this->artifactFailure(
+                'not_ready',
+                'The latest computations iXBRL validation decision has not passed the HMRC authority profile.'
+            );
+        }
         $taxonomy = [];
         if ((int)($run['computation_taxonomy_package_id'] ?? 0) > 0
             && \InterfaceDB::tableExists('hmrc_ct_computation_packages')) {
@@ -127,6 +142,7 @@ final class HmrcSubmissionPackageService
             'ok' => true,
             'state' => 'ready',
             'run_id' => (int)$run['id'],
+            'validation_run_id' => (int)$validationRun['id'],
             'ct_period_id' => $ctPeriodId,
             'accounting_period_id' => (int)$period['accounting_period_id'],
             'path' => (string)$run['generated_path'],
@@ -143,6 +159,8 @@ final class HmrcSubmissionPackageService
                 ? (string)$taxonomy['taxonomy_version'] . '/' . (string)$taxonomy['artifact_version']
                 : '',
             'validation_status' => (string)($run['external_validation_status'] ?? ''),
+            'authority_profile' => $authorityProfile->key(),
+            'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
             'warnings' => json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true) ?: [],
             'errors' => [],
         ];
@@ -199,8 +217,24 @@ final class HmrcSubmissionPackageService
             || !hash_equals($hash, (string)(new IxbrlArtifactFingerprintService())->sha256($path))) {
             return $this->artifactFailure('missing', 'The current computation iXBRL artifact is missing or has changed.');
         }
+        $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+        );
+        $validationRun = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->latestForComputation(
+                (int)$run['id'],
+                $hash,
+                $authorityProfile->fingerprint()
+            );
+        if (!is_array($validationRun) || (string)($validationRun['overall_status'] ?? '') !== 'passed') {
+            return $this->artifactFailure(
+                'not_ready',
+                'The latest computation iXBRL validation decision has not passed the HMRC authority profile.'
+            );
+        }
         return [
             'ok' => true, 'state' => 'ready', 'run_id' => (int)$run['id'],
+            'validation_run_id' => (int)$validationRun['id'],
             'ct_period_id' => $ctPeriodId, 'accounting_period_id' => (int)$run['accounting_period_id'],
             'path' => $path, 'filename' => (string)$run['generated_filename'], 'hash' => $hash,
             'basis_hash' => (string)($run['filing_basis_hash'] ?? ''),
@@ -211,6 +245,8 @@ final class HmrcSubmissionPackageService
             'taxonomy_package_id' => (int)($run['computation_taxonomy_package_id'] ?? 0),
             'taxonomy_package_hash' => (string)($run['computation_taxonomy_package_hash'] ?? ''),
             'validation_status' => (string)($run['external_validation_status'] ?? ''), 'warnings' => [], 'errors' => [],
+            'authority_profile' => $authorityProfile->key(),
+            'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
         ];
     }
 
@@ -292,6 +328,22 @@ final class HmrcSubmissionPackageService
         if ($artifactErrors !== []) {
             return $this->failure('The filing iXBRL artifacts are not ready.', $artifactErrors);
         }
+        try {
+            $this->assertHmrcArtifact(
+                $accounts,
+                IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS,
+                'Accounts'
+            );
+            $this->assertHmrcArtifact(
+                $computation,
+                IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION,
+                'Computation'
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure('The filing iXBRL artifacts failed the HMRC authority profile.', [
+                $exception->getMessage(),
+            ]);
+        }
 
         $report('Checking CT600 values against both iXBRL artifacts…', 32);
         $crossDocument = $this->crossDocumentChecks(
@@ -352,12 +404,19 @@ final class HmrcSubmissionPackageService
         $sourceManifest = array_replace((array)$return['source_manifest'], [
             'package_version' => self::PACKAGE_VERSION,
             'accounts_ixbrl' => [
+                'artifact_id' => (int)($accounts['artifact_id'] ?? 0),
+                'validation_run_id' => (int)($accounts['validation_run_id'] ?? 0),
                 'run_id' => (int)$accounts['run_id'],
                 'basis_hash' => (string)($accounts['basis_hash'] ?? ''),
                 'sha256' => (string)$accounts['hash'],
                 'filename' => (string)$accounts['filename'],
+                'authority_profile' => IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS,
+                'authority_profile_fingerprint' => (new IxbrlAuthorityProfileService())
+                    ->profile(IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS)
+                    ->fingerprint(),
             ],
             'computations_ixbrl' => [
+                'validation_run_id' => (int)($computation['validation_run_id'] ?? 0),
                 'run_id' => (int)$computation['run_id'],
                 'basis_hash' => (string)($computation['basis_hash'] ?? ''),
                 'sha256' => (string)$computation['hash'],
@@ -368,6 +427,10 @@ final class HmrcSubmissionPackageService
                 'presentation_version' => (string)($computation['presentation_version'] ?? ''),
                 'taxonomy_package_id' => (int)($computation['taxonomy_package_id'] ?? 0),
                 'taxonomy_package_hash' => (string)($computation['taxonomy_package_hash'] ?? ''),
+                'authority_profile' => IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION,
+                'authority_profile_fingerprint' => (new IxbrlAuthorityProfileService())
+                    ->profile(IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION)
+                    ->fingerprint(),
             ],
             'rim_validation_artifact_hashes' => $artifactHashes,
             'cross_document_policy' => (string)$crossDocument['policy_version'],
@@ -410,10 +473,13 @@ final class HmrcSubmissionPackageService
             'source_manifest_sha256' => $manifestHash,
             'package_hash' => $packageHash,
             'accounts_ixbrl_path' => (string)$accounts['path'],
+            'accounts_artifact_id' => (int)($accounts['artifact_id'] ?? 0),
+            'accounts_validation_run_id' => (int)($accounts['validation_run_id'] ?? 0),
             'accounts_run_id' => (int)$accounts['run_id'],
             'accounts_sha256' => (string)$accounts['hash'],
             'computations_ixbrl_path' => (string)$computation['path'],
             'computation_run_id' => (int)$computation['run_id'],
+            'computation_validation_run_id' => (int)($computation['validation_run_id'] ?? 0),
             'computations_sha256' => (string)$computation['hash'],
             'year_end_locked_at' => (string)($filingModel['approval']['year_end_locked_at'] ?? ''),
             'irmark' => (string)$marked['base64'],
@@ -615,6 +681,8 @@ final class HmrcSubmissionPackageService
         if (!is_string($result) || $result === '') {
             throw new \RuntimeException('The attached CT600 body could not be serialized.');
         }
+        $this->assertAttachedArtifactBytes($result, 'Accounts', $accounts);
+        $this->assertAttachedArtifactBytes($result, 'Computation', $computation);
         return $result;
     }
 
@@ -625,6 +693,11 @@ final class HmrcSubmissionPackageService
         if (!is_string($bytes) || $bytes === '') {
             throw new \RuntimeException($type . ' iXBRL could not be read for attachment.');
         }
+        $expectedHash = strtolower(trim((string)($artifact['hash'] ?? '')));
+        $actualHash = hash('sha256', $bytes);
+        if ($expectedHash === '' || !hash_equals($expectedHash, $actualHash)) {
+            throw new \RuntimeException($type . ' iXBRL changed after validation.');
+        }
         $filename = basename((string)($artifact['filename'] ?? $path));
         if ($filename === '' || preg_match('~[£$#\~|€/\\\\:*"<>]~u', $filename) === 1) {
             throw new \RuntimeException($type . ' iXBRL has a filename unsupported by the CT600 schema.');
@@ -634,6 +707,144 @@ final class HmrcSubmissionPackageService
         $encoded = $this->ctElement($document, $instance, 'EncodedInlineXBRLDocument', base64_encode($bytes));
         $encoded->setAttribute('Filename', $filename);
         $encoded->setAttribute('entryPoint', 'yes');
+    }
+
+    private function assertHmrcArtifact(array $artifact, string $profileKey, string $label): void
+    {
+        $profile = (new IxbrlAuthorityProfileService())->profile($profileKey);
+        $path = trim((string)($artifact['path'] ?? ''));
+        $expectedHash = strtolower(trim((string)($artifact['hash'] ?? '')));
+        if ($path === '' || !is_file($path) || $expectedHash === '') {
+            throw new \RuntimeException($label . ' iXBRL evidence is incomplete.');
+        }
+        $bytes = file_get_contents($path);
+        if (!is_string($bytes) || !hash_equals($expectedHash, hash('sha256', $bytes))) {
+            throw new \RuntimeException($label . ' iXBRL does not match its validated SHA-256.');
+        }
+        if ((string)($artifact['authority_profile'] ?? '') !== $profile->key()
+            || !hash_equals(
+                (string)($artifact['authority_profile_fingerprint'] ?? ''),
+                $profile->fingerprint()
+            )) {
+            throw new \RuntimeException($label . ' iXBRL is not bound to the current HMRC authority profile.');
+        }
+        $validationRunId = (int)($artifact['validation_run_id'] ?? 0);
+        $validationRun = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->findById($validationRunId);
+        if ($validationRunId <= 0
+            || !is_array($validationRun)
+            || ($profileKey === IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+                ? (int)($validationRun['accounts_artifact_id'] ?? 0)
+                    !== (int)($artifact['artifact_id'] ?? 0)
+                : (int)($validationRun['computation_run_id'] ?? 0)
+                    !== (int)($artifact['run_id'] ?? 0))
+            || (string)($validationRun['overall_status'] ?? '') !== 'passed'
+            || !hash_equals((string)($validationRun['artifact_sha256'] ?? ''), $expectedHash)
+            || !hash_equals(
+                (string)($validationRun['profile_fingerprint'] ?? ''),
+                $profile->fingerprint()
+            )) {
+            throw new \RuntimeException($label . ' iXBRL has no matching passed HMRC validation record.');
+        }
+        $targetTaxonomy = $this->hmrcArtifactTargetTaxonomy($artifact, $profileKey, $label);
+        $suppliedTaxonomy = $this->normaliseTaxonomyBinding(
+            $artifact['taxonomy_package_id'] ?? null,
+            $artifact['taxonomy_package_hash'] ?? null,
+            $label . ' iXBRL'
+        );
+        $validationTaxonomy = $this->normaliseTaxonomyBinding(
+            $validationRun['taxonomy_package_id'] ?? null,
+            $validationRun['taxonomy_package_sha256'] ?? null,
+            $label . ' validation'
+        );
+        if ($targetTaxonomy !== $suppliedTaxonomy || $targetTaxonomy !== $validationTaxonomy) {
+            throw new \RuntimeException(
+                $label . ' iXBRL validation is not bound to the artifact taxonomy package.'
+            );
+        }
+        $validation = (new IxbrlAuthorityValidationService())->validate($bytes, $profile);
+        if (!empty($validation['ok'])) {
+            return;
+        }
+        $messages = [];
+        foreach ((array)($validation['errors'] ?? []) as $error) {
+            $message = is_array($error) ? trim((string)($error['message'] ?? '')) : trim((string)$error);
+            if ($message !== '') {
+                $messages[] = $message;
+            }
+        }
+        throw new \RuntimeException(
+            $label . ' iXBRL: ' . ($messages !== []
+                ? implode(' ', array_values(array_unique($messages)))
+                : 'the authority profile did not pass.')
+        );
+    }
+
+    /** @return array{id:int,hash:string} */
+    private function hmrcArtifactTargetTaxonomy(array $artifact, string $profileKey, string $label): array
+    {
+        if ($profileKey === IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS) {
+            $target = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())
+                ->findById((int)($artifact['artifact_id'] ?? 0));
+            if (!is_array($target)) {
+                throw new \RuntimeException($label . ' iXBRL immutable artifact evidence is unavailable.');
+            }
+            return $this->normaliseTaxonomyBinding(
+                $target['taxonomy_package_id'] ?? null,
+                $target['taxonomy_package_sha256'] ?? null,
+                $label . ' artifact'
+            );
+        }
+
+        $target = \InterfaceDB::fetchOne(
+            'SELECT computation_taxonomy_package_id, computation_taxonomy_package_hash
+             FROM corporation_tax_computation_runs WHERE id = :id LIMIT 1',
+            ['id' => (int)($artifact['run_id'] ?? 0)]
+        );
+        if (!is_array($target)) {
+            throw new \RuntimeException($label . ' iXBRL immutable computation evidence is unavailable.');
+        }
+        return $this->normaliseTaxonomyBinding(
+            $target['computation_taxonomy_package_id'] ?? null,
+            $target['computation_taxonomy_package_hash'] ?? null,
+            $label . ' computation artifact'
+        );
+    }
+
+    /** @return array{id:int,hash:string} */
+    private function normaliseTaxonomyBinding(mixed $id, mixed $hash, string $label): array
+    {
+        $id = (int)($id ?? 0);
+        $hash = strtolower(trim((string)($hash ?? '')));
+        if ($id < 0
+            || ($id === 0 && $hash !== '')
+            || ($id > 0 && preg_match('/^[a-f0-9]{64}$/D', $hash) !== 1)) {
+            throw new \RuntimeException($label . ' has incomplete taxonomy-package evidence.');
+        }
+
+        return ['id' => max(0, $id), 'hash' => $hash];
+    }
+
+    private function assertAttachedArtifactBytes(string $ct600Xml, string $type, array $artifact): void
+    {
+        $document = new \DOMDocument();
+        if (!$document->loadXML($ct600Xml, LIBXML_NONET | LIBXML_NOBLANKS | LIBXML_COMPACT)) {
+            throw new \RuntimeException('The attached CT600 could not be parsed for iXBRL verification.');
+        }
+        $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('ct', Ct600BuilderService::CT_NAMESPACE);
+        $nodes = $xpath->query(
+            '/ct:IRenvelope/ct:CompanyTaxReturn/ct:AttachedFiles/ct:XBRLsubmission/ct:'
+                . $type . '/ct:Instance/ct:EncodedInlineXBRLDocument'
+        );
+        if (!$nodes instanceof \DOMNodeList || $nodes->length !== 1) {
+            throw new \RuntimeException($type . ' iXBRL was not embedded exactly once.');
+        }
+        $decoded = base64_decode(trim((string)$nodes->item(0)?->textContent), true);
+        if (!is_string($decoded)
+            || !hash_equals(strtolower((string)$artifact['hash']), hash('sha256', $decoded))) {
+            throw new \RuntimeException($type . ' iXBRL bytes changed while being embedded.');
+        }
     }
 
     private function validationEnvelope(string $filingBody, string $utr): string

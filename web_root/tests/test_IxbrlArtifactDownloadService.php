@@ -61,15 +61,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlArtifactDownloadService::class,
-            'requires Companies House artifact to reference current Accounting run',
+            'leaves Companies House freshness to the bound authority artifact and validation evidence',
             static function () use ($harness, $invoke): void {
                 $harness->assertSame(
                     null,
                     $invoke('companiesHouseRowError', ['ixbrl_generation_run_id' => 42, 'lifecycle' => 'prepared'], 42)
                 );
                 $harness->assertSame(
-                    'This Companies House iXBRL belongs to an earlier Accounting iXBRL run.',
+                    null,
                     $invoke('companiesHouseRowError', ['ixbrl_generation_run_id' => 41, 'lifecycle' => 'prepared'], 42)
+                );
+                $harness->assertSame(
+                    'The Companies House artifact is not in a downloadable filing state.',
+                    $invoke('companiesHouseRowError', ['ixbrl_generation_run_id' => 42, 'lifecycle' => 'failed'], 42)
                 );
             }
         );
@@ -150,6 +154,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $harness->assertSame(true, str_contains((string)$ixbrlAction, 'IxbrlArtifactDownloadService'));
                 $harness->assertSame(true, str_contains((string)$companiesHouseAction, 'IxbrlArtifactDownloadService'));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlArtifactDownloadService::class,
+            'locates computation evidence through the append-only HMRC approval binding',
+            static function () use ($harness): void {
+                $source = (string)file_get_contents(
+                    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                    . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                    . DIRECTORY_SEPARATOR . 'IxbrlArtifactDownloadService.php'
+                );
+                $harness->assertTrue(str_contains(
+                    $source,
+                    'FROM hmrc_ct_filing_approval_period_bases approval_basis'
+                ));
+                $harness->assertFalse(str_contains(
+                    $source,
+                    'b.hmrc_ct_filing_approval_id = hmrc_approval.id'
+                ));
             }
         );
     }

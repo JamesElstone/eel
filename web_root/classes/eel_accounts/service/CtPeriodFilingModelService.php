@@ -54,6 +54,38 @@ final class CtPeriodFilingModelService
             return $this->failure('Approve the current disclosures and filing basis before preparing CT filing output.');
         }
         $approval = (array)$approvalStatus['approval'];
+        $hmrcApprovalStatus = (new HmrcCtFilingApprovalService())->status(
+            $companyId,
+            $accountingPeriodId
+        );
+        $hmrcApproval = (array)($hmrcApprovalStatus['approval'] ?? []);
+        if (($hmrcApprovalStatus['state'] ?? '') !== 'current' || $hmrcApproval === []) {
+            return $this->failure((string)(($hmrcApprovalStatus['errors'] ?? [])[0]
+                ?? 'Approve the current HMRC Corporation Tax filing basis.'));
+        }
+        $hmrcApprovalId = (int)($hmrcApproval['id'] ?? 0);
+        // Native approvals bind through the append-only junction. A verified
+        // pre-split combined approval is exposed as an adapter with no native
+        // id and may consume only the legacy, previously unbound basis row.
+        $bindingClause = $hmrcApprovalId > 0
+            ? ' AND EXISTS (
+                    SELECT 1
+                    FROM hmrc_ct_filing_approval_period_bases approval_basis
+                    WHERE approval_basis.hmrc_ct_filing_approval_id = :hmrc_approval_id
+                      AND approval_basis.ct_period_filing_basis_id = b.id
+                      AND approval_basis.ct_period_id = b.ct_period_id
+                      AND approval_basis.basis_hash = b.basis_hash
+                )'
+            : ' AND b.hmrc_ct_filing_approval_id IS NULL';
+        $params = [
+            'approval_id' => (int)$approval['id'],
+            'company_id' => $companyId,
+            'period_id' => $accountingPeriodId,
+            'ct_period_id' => $ctPeriodId,
+        ];
+        if ($hmrcApprovalId > 0) {
+            $params['hmrc_approval_id'] = $hmrcApprovalId;
+        }
         $row = \InterfaceDB::fetchOne(
             'SELECT b.*, r.id AS run_id, ctp.sequence_no, ctp.period_start, ctp.period_end,
                     ctp.latest_computation_run_id, r.computation_hash, r.summary_json,
@@ -66,11 +98,10 @@ final class CtPeriodFilingModelService
                AND b.company_id = :company_id
                AND b.accounting_period_id = :period_id
                AND b.ct_period_id = :ct_period_id
+               ' . $bindingClause . '
+             ORDER BY b.id DESC
              LIMIT 1',
-            [
-                'approval_id' => (int)$approval['id'], 'company_id' => $companyId,
-                'period_id' => $accountingPeriodId, 'ct_period_id' => $ctPeriodId,
-            ]
+            $params
         );
         if (!is_array($row)) {
             return $this->failure('The current filing approval has no immutable basis for this CT period.');
@@ -130,6 +161,7 @@ final class CtPeriodFilingModelService
         return [
             'available' => true, 'errors' => [], 'run' => $row,
             'approval' => (array)$model['approval'],
+            'hmrc_approval' => $hmrcApproval,
             'supported_return_profile' => (array)($model['supported_return_profile'] ?? []),
             'blocking_diagnostics' => (array)($model['diagnostics']['blocking'] ?? []),
             'warning_diagnostics' => (array)($model['diagnostics']['warnings'] ?? []),
@@ -139,10 +171,10 @@ final class CtPeriodFilingModelService
         ];
     }
 
-    /** Filing bases are now created only by the post-Year-End approval transaction. */
+    /** Filing bases are created only by the HMRC Corporation Tax approval transaction. */
     public function buildForYearEndSeal(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
-        return $this->failure('CT filing bases are created after Year End by approving the complete filing basis.');
+        return $this->failure('CT filing bases are created by approving the HMRC Corporation Tax return.');
     }
 
     private function flatten(mixed $value, string $prefix, array &$facts): void

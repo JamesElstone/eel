@@ -89,7 +89,43 @@ final class IxbrlExternalValidationService
             return $result;
         }
 
-        $result = $this->validateArtifact($path);
+        $result = $this->validateArtifact(
+            $path,
+            [],
+            [],
+            IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+        );
+
+        try {
+            $profile = (new IxbrlAuthorityProfileService())->profile(
+                IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+            );
+            $artifact = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())->findByBuildIdentity(
+                $runId,
+                \eel_accounts\Repository\IxbrlAccountsArtifactRepository::AUTHORITY_HMRC,
+                'ordinary',
+                $profile->fingerprint(),
+                $expectedHash
+            );
+            if (!is_array($artifact)
+                || !hash_equals((string)($artifact['output_sha256'] ?? ''), $expectedHash)
+                || (string)($artifact['output_path'] ?? '') !== $path) {
+                throw new \RuntimeException(
+                    'The HMRC accounts artifact is not bound to this generation run. Regenerate it before validation.'
+                );
+            }
+
+            $this->storeAuthorityValidationRun($artifact, $run, $profile, $result);
+        } catch (\Throwable $exception) {
+            $result['ok'] = false;
+            $result['status'] = 'error';
+            $result['errors'] = array_values(array_unique(array_merge(
+                (array)($result['errors'] ?? []),
+                [$exception->getMessage()]
+            )));
+        }
+        // Persist the mutable latest-attempt state after the append-only
+        // authority ledger attempt, including any ledger persistence failure.
         $this->storeResult($runId, $result);
 
         return $result;
@@ -99,7 +135,8 @@ final class IxbrlExternalValidationService
     public function validateArtifact(
         string $path,
         array $taxonomyPackages = [],
-        array $ignoredDiagnosticCodes = []
+        array $ignoredDiagnosticCodes = [],
+        string|IxbrlAuthorityProfile|null $authorityProfile = null
     ): array
     {
         $path = trim($path);
@@ -152,8 +189,24 @@ final class IxbrlExternalValidationService
             $packages[] = (string)$activePackage['local_path'];
             $managedPackage = $activePackage;
         }
-        $validator = new \ArelleIxbrlValidator($this->configuration(), $this->validatorRootPath);
+        $profile = $authorityProfile instanceof IxbrlAuthorityProfile
+            ? $authorityProfile
+            : ($authorityProfile !== null
+                ? (new IxbrlAuthorityProfileService())->profile($authorityProfile)
+                : null);
+        $validatorConfiguration = $this->configurationForProfile($profile);
+        $validator = new \ArelleIxbrlValidator($validatorConfiguration, $this->validatorRootPath);
         $result = $validator->validate($path, $packages, $ignoredDiagnosticCodes);
+        $result['validation_profile_key'] = $profile?->key();
+        $result['validation_profile_version'] = $profile?->version();
+        $result['validation_profile_fingerprint'] = $profile?->fingerprint();
+        $result['validator_options_sha256'] = hash(
+            'sha256',
+            \eel_accounts\Support\Utf8::json(
+                array_values((array)($validatorConfiguration['flags'] ?? [])),
+                JSON_UNESCAPED_SLASHES
+            )
+        );
         if (is_array($managedPackage)) {
             $result['taxonomy_package_id'] = (int)$managedPackage['id'];
             $result['taxonomy_sha256'] = (string)$managedPackage['sha256'];
@@ -263,6 +316,82 @@ final class IxbrlExternalValidationService
         );
     }
 
+    /**
+     * Persist the complete validation decision against the exact immutable
+     * authority artifact. The legacy generation-run columns remain populated
+     * as a compatibility read model, but filing code consumes this ledger.
+     *
+     * @param array<string,mixed> $artifact
+     * @param array<string,mixed> $run
+     * @param array<string,mixed> $external
+     */
+    private function storeAuthorityValidationRun(
+        array $artifact,
+        array $run,
+        IxbrlAuthorityProfile $profile,
+        array $external
+    ): int {
+        $path = (string)($artifact['output_path'] ?? '');
+        $source = is_file($path) ? file_get_contents($path) : false;
+        if (!is_string($source)) {
+            throw new \RuntimeException('The HMRC accounts artifact could not be read for authority validation.');
+        }
+        $authorityResult = (new IxbrlAuthorityValidationService())->validate($source, $profile);
+        $authorityStatus = !empty($authorityResult['ok']) ? 'passed' : 'failed';
+        $coreStatus = (string)($run['validation_status'] ?? '') === 'passed' ? 'passed' : 'failed';
+        $arelleStatus = $this->validationComponentStatus((string)($external['status'] ?? 'error'));
+        $overallStatus = $coreStatus === 'passed'
+            && $authorityStatus === 'passed'
+            && $arelleStatus === 'passed'
+                ? 'passed'
+                : (in_array('failed', [$coreStatus, $authorityStatus, $arelleStatus], true) ? 'failed' : 'error');
+        $validator = trim((string)($external['validator'] ?? 'arelle')) ?: 'arelle';
+        $version = trim((string)($external['version'] ?? '')) ?: 'unknown';
+        $options = [
+            'authority_profile' => $profile->key(),
+            'authority_profile_fingerprint' => $profile->fingerprint(),
+            'validator_options_sha256' => (string)($external['validator_options_sha256'] ?? ''),
+        ];
+
+        return (new \eel_accounts\Repository\IxbrlValidationRunRepository())->create([
+            'accounts_artifact_id' => (int)($artifact['id'] ?? 0),
+            'authority' => 'HMRC',
+            'profile_key' => $profile->key(),
+            'profile_version' => $profile->version(),
+            'profile_fingerprint' => $profile->fingerprint(),
+            'artifact_sha256' => (string)($artifact['output_sha256'] ?? ''),
+            'taxonomy_package_id' => (int)($external['taxonomy_package_id'] ?? 0) ?: null,
+            'taxonomy_package_sha256' => trim((string)($external['taxonomy_sha256'] ?? '')) ?: null,
+            'validator_name' => $validator,
+            'validator_version' => $version,
+            'validator_fingerprint' => hash(
+                'sha256',
+                $validator . '|' . $version . '|' . (string)($external['validator_options_sha256'] ?? '')
+            ),
+            'options' => $options,
+            'source_conformance_status' => 'not_applicable',
+            'source_conformance_results' => [],
+            'core_status' => $coreStatus,
+            'core_results' => (array)json_decode((string)($run['validation_errors_json'] ?? '[]'), true),
+            'authority_status' => $authorityStatus,
+            'authority_results' => $authorityResult,
+            'arelle_status' => $arelleStatus,
+            'arelle_results' => $external,
+            'arelle_log_path' => trim((string)($external['log_path'] ?? '')) ?: null,
+            'overall_status' => $overallStatus,
+        ]);
+    }
+
+    private function validationComponentStatus(string $status): string
+    {
+        return match (strtolower(trim($status))) {
+            'passed' => 'passed',
+            'failed' => 'failed',
+            'not_configured', 'not_run' => 'not_configured',
+            default => 'error',
+        };
+    }
+
     /** @return list<mixed> */
     private function storedDiagnostics(array $result, string $kind): array
     {
@@ -320,5 +449,54 @@ final class IxbrlExternalValidationService
         }
         $configured = \AppConfigurationStore::get('arelle', []);
         return is_array($configured) ? $configured : [];
+    }
+
+    private function configurationForProfile(?IxbrlAuthorityProfile $profile): array
+    {
+        $configuration = $this->configuration();
+        if ($profile === null) {
+            return $configuration;
+        }
+
+        $flags = $this->commonArelleFlags((array)($configuration['flags'] ?? []));
+        if ($profile->authority() === 'HMRC') {
+            array_unshift($flags, '--disclosureSystem', 'hmrc');
+            array_unshift($flags, '--plugins', 'validate/UK');
+        }
+        if (!in_array('--validate', $flags, true)) {
+            $flags[] = '--validate';
+        }
+        $configuration['flags'] = array_values($flags);
+
+        return $configuration;
+    }
+
+    /** @return list<string> */
+    private function commonArelleFlags(array $configured): array
+    {
+        $flags = [];
+        $skipNext = false;
+        foreach ($configured as $rawFlag) {
+            if ($skipNext) {
+                $skipNext = false;
+                continue;
+            }
+            $flag = trim((string)$rawFlag);
+            if ($flag === '') {
+                continue;
+            }
+            if (in_array($flag, ['--plugins', '--disclosureSystem'], true)) {
+                $skipNext = true;
+                continue;
+            }
+            if (str_starts_with($flag, '--plugins=')
+                || str_starts_with($flag, '--disclosureSystem=')
+                || in_array($flag, ['--hmrc', '--validateHMRC'], true)) {
+                continue;
+            }
+            $flags[] = $flag;
+        }
+
+        return array_values(array_unique($flags));
     }
 }

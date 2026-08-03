@@ -40,7 +40,7 @@ function companiesHouseGatewayTestConversation(
             'company_authentication_code' => 'ABC123',
             'submission_number' => '000001',
             'date_signed' => '2026-07-17',
-            'accounts_xml' => '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+            'accounts_xml' => '<?xml version="1.0"?>'
                 . "\n<html>revised accounts</html>",
             'filename' => 'AP79-revised.xml',
             'customer_reference' => 'AP79REVISION',

@@ -242,6 +242,9 @@ $harness->check('GoldenCt600aLifecycle', 'reconciles transaction-backed CT600A e
         'UPDATE corporation_tax_periods SET status = :status WHERE id = :id',
         ['status' => 'accepted', 'id' => $firstCtPeriodId]
     );
+    // The fixture changes protocol state directly; invalidate request-scoped
+    // filing read models just as the real submission service does.
+    \eel_accounts\Support\RequestCache::clear();
     $harness->assertSame(true, (bool)($periodService->canSubmit($companyId, $secondCtPeriodId)['ok'] ?? false));
     $frozenHash = (string)$firstFiling['basis_hash'];
     goldenCt600aPostLateRepayment();
@@ -255,9 +258,31 @@ $harness->check('GoldenCt600aLifecycle', 'reconciles transaction-backed CT600A e
     $harness->assertSame(1012.5, (float)($liveAccepted['tax_payable'] ?? -1));
     $harness->assertSame(675.0, (float)($liveAccepted['separate_l2p_relief_due'] ?? -1));
     $frozenAfterRepayment = $filingService->build($companyId, $accountingPeriodId, $firstCtPeriodId);
-    $harness->assertTrue(!empty($frozenAfterRepayment['available']));
-    $harness->assertSame($frozenHash, (string)$frozenAfterRepayment['basis_hash']);
-    $harness->assertSame(1012.5, (float)($frozenAfterRepayment['model']['ct600a']['tax_payable'] ?? -1));
+    // The later evidence makes the combined approval stale for the unfiled
+    // second CT period, so the current-output model fails closed. The accepted
+    // first-period evidence itself remains immutable and independently
+    // verifiable in its bound filing-basis row.
+    $harness->assertFalse(!empty($frozenAfterRepayment['available']));
+    $harness->assertTrue(str_contains(
+        implode(' ', array_map('strval', (array)($frozenAfterRepayment['errors'] ?? []))),
+        'CT600A evidence changed'
+    ));
+    $storedFrozen = (array)(InterfaceDB::fetchOne(
+        'SELECT basis_hash, basis_json FROM ct_period_filing_bases
+         WHERE company_id = :company_id AND accounting_period_id = :period_id
+           AND ct_period_id = :ct_period_id AND basis_hash = :basis_hash
+         ORDER BY id DESC LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'period_id' => $accountingPeriodId,
+            'ct_period_id' => $firstCtPeriodId,
+            'basis_hash' => $frozenHash,
+        ]
+    ) ?: []);
+    $storedModel = json_decode((string)($storedFrozen['basis_json'] ?? ''), true);
+    $harness->assertSame($frozenHash, (string)($storedFrozen['basis_hash'] ?? ''));
+    $harness->assertTrue(is_array($storedModel));
+    $harness->assertSame(1012.5, (float)($storedModel['ct600a']['tax_payable'] ?? -1));
 
     $l2p = (new \eel_accounts\Service\Ct600aService())->fetchL2pReliefForAccountingPeriod(
         $companyId,
@@ -333,11 +358,46 @@ function goldenCt600aFreezeAndApprove(GeneratedServiceClassTestHarness $harness,
 
     ixbrl_test_complete_disclosures($companyId, $accountingPeriodId, 'golden_ct600a');
     goldenCt600aSaveReturnAuthorisation($companyId, $accountingPeriodId);
-    $approval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-        ->approveAndBuildFacts($companyId, $accountingPeriodId, 'golden_ct600a', 'Golden CT600A filing approval.');
-    if ((int)($approval['approval_id'] ?? 0) <= 0) {
-        throw new RuntimeException('The golden CT600A filing basis could not be approved.');
+    \eel_accounts\Support\RequestCache::clear();
+    $workflow = new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService();
+    $status = $workflow->status($companyId, $accountingPeriodId);
+    $stateToken = (string)($status['state_token'] ?? '');
+    if (strlen($stateToken) !== 64) {
+        throw new RuntimeException(
+            'The golden CT600A combined filing approval is unavailable: '
+            . implode(' ', array_map('strval', (array)($status['blockers'] ?? [])))
+        );
     }
+    $approval = $workflow->approveAll(
+        $companyId,
+        $accountingPeriodId,
+        [],
+        'golden_ct600a',
+        'Golden CT600A filing approval.',
+        $stateToken
+    );
+    if (empty($approval['success'])
+        || (int)($approval['accounts_approval_id'] ?? 0) <= 0
+        || (int)($approval['fact_run_id'] ?? 0) <= 0
+        || (int)($approval['hmrc_approval_id'] ?? 0) <= 0) {
+        throw new RuntimeException(
+            'The golden CT600A accounts and HMRC filing bases could not be approved: '
+            . implode(' ', array_map('strval', (array)($approval['errors'] ?? [])))
+        );
+    }
+    $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())
+        ->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+    $harness->assertSame(count($ctPeriods), count((array)($approval['ct_basis_ids'] ?? [])));
+    $approvedStatus = $workflow->status($companyId, $accountingPeriodId);
+    $harness->assertTrue(!empty($approvedStatus['both_current']));
+    $harness->assertSame(
+        (int)$approval['accounts_approval_id'],
+        (int)(($approvedStatus['accounts'] ?? [])['approval_id'] ?? 0)
+    );
+    $harness->assertSame(
+        (int)$approval['hmrc_approval_id'],
+        (int)(($approvedStatus['hmrc'] ?? [])['approval_id'] ?? 0)
+    );
 }
 
 function goldenCt600aSaveReturnAuthorisation(int $companyId, int $accountingPeriodId): void

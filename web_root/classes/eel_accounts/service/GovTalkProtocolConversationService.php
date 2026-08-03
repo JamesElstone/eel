@@ -357,10 +357,7 @@ final class GovTalkProtocolConversationService
             'UPDATE ' . self::EXCHANGES . '
              SET exchange_state = :state,
                  correlation_id = COALESCE(:correlation_id, correlation_id),
-                 govtalk_errors_json = CASE
-                     WHEN :replace_structured_errors = 1 THEN :structured_errors_json
-                     ELSE govtalk_errors_json
-                 END,
+                 govtalk_errors_json = COALESCE(:structured_errors_json, govtalk_errors_json),
                  outcome_code = :outcome_code,
                  outcome_summary = :outcome_summary,
                  error_summary = :error,
@@ -371,7 +368,6 @@ final class GovTalkProtocolConversationService
             [
                 'state' => $state,
                 'correlation_id' => $correlationId !== '' ? $correlationId : null,
-                'replace_structured_errors' => $structuredErrors !== null ? 1 : 0,
                 'structured_errors_json' => $structuredErrorsJson,
                 'outcome_code' => trim($outcomeCode) !== '' ? trim($outcomeCode) : null,
                 'outcome_summary' => trim($outcomeSummary) !== ''

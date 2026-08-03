@@ -62,24 +62,26 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
                 'period_start' => '2025-10-01',
                 'period_end' => '2025-12-31',
             ]]]],
-        ]);
+        ], false, []);
 
         $harness->assertTrue(str_contains($html, 'name="declarant_authority" required'));
         $harness->assertFalse(str_contains($html, 'data-ajax="true"'));
         $harness->assertFalse(str_contains($html, 'name="declarant_status"'));
         $harness->assertFalse(str_contains($html, 'name="declarant_name"'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="ct600_declarant_authority"'));
-        $harness->assertTrue(str_contains($html, 'data-state-target="save_ct600_return_authorisation_button"'));
-        $harness->assertTrue(str_contains($html, 'id="save_ct600_return_authorisation_button" type="submit" disabled'));
-        $harness->assertTrue(str_contains($html, 'covers every CT600 for the Accounting Period.'));
+        $harness->assertTrue(str_contains($html, 'data-ct600-authorisation-field="true"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-control="true"'));
+        foreach ([
+            'original_unfiled_confirmed',
+            'authority_confirmed',
+            'declaration_confirmed',
+        ] as $confirmation) {
+            $harness->assertTrue(str_contains($html, 'name="' . $confirmation . '" value="1" required'));
+        }
+        $harness->assertTrue(str_contains($html, 'declaration is saved as a draft'));
+        $harness->assertTrue(str_contains($html, 'combined approval below'));
         $harness->assertTrue(str_contains($html, '<th scope="row">CT Period 3</th><td>01/10/2024 to 30/09/2025</td>'));
         $harness->assertTrue(str_contains($html, '<th scope="row">CT Period 4</th><td>01/10/2025 to 31/12/2025</td>'));
         $harness->assertTrue(str_contains($html, 'for the CT periods listed above?'));
-        $projectScript = file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'project.js');
-        $harness->assertTrue(is_string($projectScript) && str_contains($projectScript, 'initialiseCt600AuthorisationForms'));
-        $harness->assertTrue(str_contains((string)$projectScript, 'confirmationChanged'));
-        $harness->assertTrue(str_contains((string)$projectScript, 'everyStatementConfirmed'));
-        $harness->assertTrue(str_contains((string)$projectScript, 'initialiseCt600AuthorisationForms(node)'));
     });
 
     $harness->check($service::class, 'resolves current people and capacities and freezes the selected authority', static function () use ($harness, $service): void {
@@ -113,6 +115,7 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
         $expiredOn = $today->modify('-1 day')->format('Y-m-d');
         $futureFrom = $today->modify('+1 day')->format('Y-m-d');
 
+        $fixtureCompanyNumber = '';
         InterfaceDB::beginTransaction();
         try {
             $lastInsertId = static fn(): int => (int)(InterfaceDB::fetchColumn(
@@ -121,9 +124,10 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
                     : 'SELECT LAST_INSERT_ID()'
             ) ?: 0);
             $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+            $fixtureCompanyNumber = 'CTA' . $marker;
             InterfaceDB::prepareExecute(
                 'INSERT INTO companies (company_name, company_number) VALUES (:name, :number)',
-                ['name' => 'CT Authority Fixture Limited', 'number' => 'CTA' . $marker]
+                ['name' => 'CT Authority Fixture Limited', 'number' => $fixtureCompanyNumber]
             );
             $companyId = $lastInsertId();
             InterfaceDB::prepareExecute(
@@ -341,6 +345,70 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
             $harness->assertSame('test-user', (string)($snapshot['saved_by'] ?? ''));
             $harness->assertSame('test-user', (string)($snapshot['saved_by_display_name'] ?? ''));
 
+            $originalId = (int)($snapshot['id'] ?? 0);
+            $originalSavedAt = (string)($snapshot['saved_at'] ?? '');
+            $unchanged = $service->saveIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'party-role:' . $agentRoleId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '1',
+            ], 'should-not-replace-evidence');
+            $harness->assertSame(true, (bool)($unchanged['success'] ?? false));
+            $harness->assertSame(false, (bool)($unchanged['changed'] ?? true));
+            $harness->assertSame($originalId, (int)($unchanged['authorisation']['id'] ?? 0));
+            $harness->assertSame($originalSavedAt, (string)($unchanged['authorisation']['saved_at'] ?? ''));
+            $harness->assertSame('test-user', (string)($unchanged['authorisation']['saved_by'] ?? ''));
+            $harness->assertTrue(InterfaceDB::inTransaction());
+
+            $changed = $service->saveIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'director:' . $directorId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '1',
+            ], 'semantic-change-user');
+            $harness->assertSame(true, (bool)($changed['success'] ?? false));
+            $harness->assertSame(true, (bool)($changed['changed'] ?? false));
+            $harness->assertSame($originalId, (int)($changed['authorisation']['id'] ?? 0));
+            $harness->assertSame('Director', (string)($changed['authorisation']['declarant_status'] ?? ''));
+            $harness->assertSame($directorId, (int)($changed['authorisation']['declarant_director_id'] ?? 0));
+            $harness->assertSame(0, (int)($changed['authorisation']['declarant_role_id'] ?? 0));
+            $harness->assertSame('semantic-change-user', (string)($changed['authorisation']['saved_by'] ?? ''));
+
+            $draftNo = $service->saveDraftIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'director:' . $directorId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '0',
+            ], 'draft-no-user');
+            $harness->assertSame(true, (bool)($draftNo['success'] ?? false));
+            $harness->assertSame(true, (bool)($draftNo['changed'] ?? false));
+            $harness->assertSame(0, (int)($draftNo['authorisation']['declaration_confirmed'] ?? 1));
+            $harness->assertSame([], $service->current($companyId, $periodId));
+            $unchangedDraftNo = $service->saveDraftIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'director:' . $directorId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '0',
+            ], 'must-not-rewrite-draft');
+            $harness->assertSame(false, (bool)($unchangedDraftNo['changed'] ?? true));
+            $harness->assertSame('draft-no-user', (string)($unchangedDraftNo['authorisation']['saved_by'] ?? ''));
+            $finalWithNo = $service->saveIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'director:' . $directorId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '0',
+            ], 'must-not-approve-no');
+            $harness->assertSame(false, (bool)($finalWithNo['success'] ?? true));
+
+            $restored = $service->saveIfChanged($companyId, $periodId, [
+                'declarant_authority' => 'director:' . $directorId,
+                'original_unfiled_confirmed' => '1',
+                'authority_confirmed' => '1',
+                'declaration_confirmed' => '1',
+            ], 'restored-final-user');
+            $harness->assertSame(true, (bool)($restored['success'] ?? false));
+            $harness->assertSame(true, (bool)($restored['changed'] ?? false));
+
             InterfaceDB::prepareExecute(
                 'INSERT INTO users (display_name, email_address, role_id)
                  VALUES (:display_name, :email_address, -1)',
@@ -364,7 +432,7 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
             $card = new _ixbrl_accounts_disclosuresCard();
             $panel = new ReflectionMethod($card, 'ct600AuthorisationPanel');
             $panel->setAccessible(true);
-            $panelHtml = (string)$panel->invoke($card, $companyId, $periodId, []);
+            $panelHtml = (string)$panel->invoke($card, $companyId, $periodId, [], false, []);
             $harness->assertTrue(str_contains($panelHtml, 'Last updated by</th><td>CT Authority Reviewer</td>'));
             $harness->assertFalse(str_contains($panelHtml, '>user:' . $userId . '<'));
 
@@ -412,6 +480,12 @@ $harness->run(\eel_accounts\Service\Ct600ReturnAuthorisationService::class, stat
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
             }
+        }
+        if ($fixtureCompanyNumber !== '') {
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM companies WHERE company_number = :number',
+                ['number' => $fixtureCompanyNumber]
+            ));
         }
     });
 });

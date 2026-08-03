@@ -1157,4 +1157,22 @@ function ixbrlTaxComputationMappings(array $model): array
             $h->assertTrue(str_contains($exception->getMessage(), 'unsupported HMRC context profile'));
         }
     });
+    $h->check($service::class, 'records failed revalidation attempts before marking the computation run failed', static function () use ($h): void {
+        $method = new ReflectionMethod(
+            \eel_accounts\Service\IxbrlTaxComputationService::class,
+            'failValidationAttempt'
+        );
+        $source = file($method->getFileName());
+        $h->assertTrue(is_array($source));
+        $body = implode('', array_slice(
+            $source,
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1
+        ));
+        $h->assertTrue(str_contains($body, 'recordComputationValidation('));
+        $h->assertTrue(str_contains($body, '$this->failRun('));
+        $h->assertTrue(
+            strpos($body, 'recordComputationValidation(') < strpos($body, '$this->failRun(')
+        );
+    });
 });

@@ -14,81 +14,18 @@ final class IxbrlArtifactDownloadService
 {
     public function accounts(int $companyId, int $accountingPeriodId): array
     {
-        $row = $this->accountsRow($companyId, $accountingPeriodId);
-        if (!is_array($row)) {
-            return $this->failure('missing', 'No current Accounting iXBRL artifact is available.');
-        }
-        $error = $this->accountsRowError($row);
-        return $error !== null
-            ? $this->failure('stale', $error)
-            : $this->verifiedFile($row, 'generated_path', 'generated_filename', 'output_sha256', 'external_validated_sha256');
+        return (new IxbrlFilingArtifactService())->locate($companyId, $accountingPeriodId);
     }
 
     public function companiesHouse(int $companyId, int $accountingPeriodId): array
     {
-        $accounts = $this->accounts($companyId, $accountingPeriodId);
-        if (empty($accounts['ok'])) {
-            return $this->failure('stale', 'Generate and validate the current Accounting iXBRL before downloading Companies House accounts.');
-        }
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
-                    artifact_path, artifact_sha256,
-                    revised_artifact_path, revised_artifact_sha256
-             FROM companies_house_accounts_submissions
-             WHERE company_id = :company_id AND accounting_period_id = :period_id
-             ORDER BY id DESC LIMIT 1',
-            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
-        );
-        if (!is_array($row)) {
-            return $this->failure('missing', 'No Companies House accounts artifact is prepared.');
-        }
-        $error = $this->companiesHouseRowError($row, (int)($accounts['run_id'] ?? 0));
-        if ($error !== null) {
-            return $this->failure('stale', $error);
-        }
-        return $this->verifiedFile(
-            $row,
-            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
-            '',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            (int)$accounts['run_id']
-        );
+        return $this->companiesHouseArtifact($companyId, $accountingPeriodId, null, true);
     }
 
     /** Locates the current prepared revised statutory artifact for another filing destination. */
     public function revisedAccounts(int $companyId, int $accountingPeriodId): array
     {
-        $accounts = $this->accounts($companyId, $accountingPeriodId);
-        if (empty($accounts['ok'])) {
-            return $this->failure('stale', 'Generate and validate the current Accounting iXBRL before using revised accounts.');
-        }
-        $row = \InterfaceDB::fetchOne(
-            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
-                    artifact_path, artifact_sha256,
-                    revised_artifact_path, revised_artifact_sha256
-             FROM companies_house_accounts_submissions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :period_id
-               AND filing_type = :filing_type
-             ORDER BY id DESC LIMIT 1',
-            ['company_id' => $companyId, 'period_id' => $accountingPeriodId, 'filing_type' => 'revised']
-        );
-        if (!is_array($row)) {
-            return $this->failure('missing', 'Prepare the current shared revised accounts artifact before filing with HMRC.');
-        }
-        $error = $this->companiesHouseRowError($row, (int)($accounts['run_id'] ?? 0));
-        if ($error !== null) {
-            return $this->failure('stale', $error);
-        }
-        return $this->verifiedFile(
-            $row,
-            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
-            '',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            (int)$accounts['run_id']
-        );
+        return $this->companiesHouseArtifact($companyId, $accountingPeriodId, 'revised', true);
     }
 
     /**
@@ -101,43 +38,82 @@ final class IxbrlArtifactDownloadService
         int $accountingPeriodId,
         int $accountsRunId
     ): array {
-        if ($accountsRunId <= 0) {
-            return $this->failure('missing', 'No current Accounting iXBRL artifact is available.');
+        unset($accountsRunId);
+        return $this->companiesHouseArtifact($companyId, $accountingPeriodId, 'revised', false);
+    }
+
+    private function companiesHouseArtifact(
+        int $companyId,
+        int $accountingPeriodId,
+        ?string $filingKind,
+        bool $verifyFileHash
+    ): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0
+            || !\InterfaceDB::tableExists('companies_house_accounts_submissions')) {
+            return $this->failure('missing', 'No Companies House accounts artifact is prepared.');
+        }
+        $params = ['company_id' => $companyId, 'period_id' => $accountingPeriodId];
+        $kindClause = '';
+        if ($filingKind !== null) {
+            $params['filing_type'] = $filingKind;
+            $kindClause = ' AND filing_type = :filing_type';
         }
         $row = \InterfaceDB::fetchOne(
-            'SELECT id, lifecycle, ixbrl_generation_run_id, filing_type,
-                    artifact_path, artifact_sha256,
+            'SELECT id, lifecycle, ixbrl_generation_run_id, accounts_artifact_id,
+                    accounts_validation_run_id, filing_type, artifact_path, artifact_sha256,
                     revised_artifact_path, revised_artifact_sha256
              FROM companies_house_accounts_submissions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :period_id
-               AND filing_type = :filing_type
+             WHERE company_id = :company_id AND accounting_period_id = :period_id'
+                . $kindClause . '
              ORDER BY id DESC LIMIT 1',
-            [
-                'company_id' => $companyId,
-                'period_id' => $accountingPeriodId,
-                'filing_type' => 'revised',
-            ]
+            $params
         );
         if (!is_array($row)) {
+            return $this->failure('missing', 'No Companies House accounts artifact is prepared.');
+        }
+        $stateError = $this->companiesHouseRowError($row);
+        if ($stateError !== null) {
+            return $this->failure('stale', $stateError);
+        }
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        $artifact = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())
+            ->findById((int)($row['accounts_artifact_id'] ?? 0));
+        $validation = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->findById((int)($row['accounts_validation_run_id'] ?? 0));
+        $path = trim((string)($row['artifact_path'] ?? $row['revised_artifact_path'] ?? ''));
+        $hash = strtolower(trim((string)($row['artifact_sha256'] ?? $row['revised_artifact_sha256'] ?? '')));
+        if (!is_array($artifact)
+            || !is_array($validation)
+            || (string)($artifact['authority'] ?? '') !== 'COMPANIES_HOUSE'
+            || (string)($artifact['filing_kind'] ?? '') !== (string)($row['filing_type'] ?? '')
+            || (string)($artifact['output_path'] ?? '') !== $path
+            || !hash_equals((string)($artifact['output_sha256'] ?? ''), $hash)
+            || !hash_equals((string)($artifact['profile_fingerprint'] ?? ''), $profile->fingerprint())
+            || (int)($validation['accounts_artifact_id'] ?? 0) !== (int)($artifact['id'] ?? 0)
+            || (string)($validation['overall_status'] ?? '') !== 'passed'
+            || !hash_equals((string)($validation['artifact_sha256'] ?? ''), $hash)
+            || !hash_equals((string)($validation['profile_fingerprint'] ?? ''), $profile->fingerprint())) {
             return $this->failure(
-                'missing',
-                'Prepare the current shared revised accounts artifact before filing with HMRC.'
+                'unvalidated',
+                'The Companies House iXBRL has no matching passed authority-profile validation record.'
             );
         }
-        $error = $this->companiesHouseRowError($row, $accountsRunId);
-        if ($error !== null) {
-            return $this->failure('stale', $error);
-        }
         return $this->verifiedFile(
-            $row,
-            !empty($row['artifact_path']) ? 'artifact_path' : 'revised_artifact_path',
+            ['path' => $path, 'hash' => $hash, 'validated_hash' => $hash],
+            'path',
             '',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            !empty($row['artifact_sha256']) ? 'artifact_sha256' : 'revised_artifact_sha256',
-            $accountsRunId,
-            false
-        );
+            'hash',
+            'validated_hash',
+            (int)($artifact['generation_run_id'] ?? 0),
+            $verifyFileHash
+        ) + [
+            'artifact_id' => (int)$artifact['id'],
+            'validation_run_id' => (int)$validation['id'],
+            'authority_profile' => $profile->key(),
+            'authority_profile_fingerprint' => $profile->fingerprint(),
+        ];
     }
 
     public function computation(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
@@ -158,10 +134,27 @@ final class IxbrlArtifactDownloadService
                     WHERE a.company_id = period.company_id
                       AND a.accounting_period_id = period.accounting_period_id
                )
+             LEFT JOIN hmrc_ct_filing_approvals hmrc_approval
+               ON hmrc_approval.id = (
+                    SELECT MAX(h.id) FROM hmrc_ct_filing_approvals h
+                    WHERE h.company_id = period.company_id
+                      AND h.accounting_period_id = period.accounting_period_id
+               )
              INNER JOIN ct_period_filing_bases basis
-               ON basis.filing_approval_id = approval.id
-              AND basis.ct_period_id = period.id
-              AND basis.computation_run_id = run.id
+               ON basis.id = (
+                    SELECT MAX(b.id) FROM ct_period_filing_bases b
+                     WHERE b.filing_approval_id = approval.id
+                       AND b.ct_period_id = period.id
+                       AND b.computation_run_id = run.id
+                       AND (hmrc_approval.id IS NULL OR EXISTS (
+                           SELECT 1
+                           FROM hmrc_ct_filing_approval_period_bases approval_basis
+                           WHERE approval_basis.hmrc_ct_filing_approval_id = hmrc_approval.id
+                             AND approval_basis.ct_period_filing_basis_id = b.id
+                             AND approval_basis.ct_period_id = b.ct_period_id
+                             AND approval_basis.basis_hash = b.basis_hash
+                       ))
+                )
              INNER JOIN year_end_reviews review
                ON review.company_id = period.company_id
               AND review.accounting_period_id = period.accounting_period_id
@@ -184,7 +177,32 @@ final class IxbrlArtifactDownloadService
         if ($error !== null) {
             return $this->failure('stale', $error);
         }
-        return $this->verifiedFile($row, 'generated_path', 'generated_filename', 'output_sha256', 'external_validated_sha256');
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+        );
+        $validation = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->latestForComputation(
+                (int)$row['id'],
+                (string)$row['output_sha256'],
+                $profile->fingerprint()
+            );
+        if (!is_array($validation) || (string)($validation['overall_status'] ?? '') !== 'passed') {
+            return $this->failure(
+                'unvalidated',
+                'The latest Corporation Tax computation validation decision has not passed the HMRC authority profile.'
+            );
+        }
+        return $this->verifiedFile(
+            $row,
+            'generated_path',
+            'generated_filename',
+            'output_sha256',
+            'external_validated_sha256'
+        ) + [
+            'validation_run_id' => (int)$validation['id'],
+            'authority_profile' => $profile->key(),
+            'authority_profile_fingerprint' => $profile->fingerprint(),
+        ];
     }
 
     private function accountsRow(int $companyId, int $accountingPeriodId): ?array
@@ -246,11 +264,8 @@ final class IxbrlArtifactDownloadService
         return null;
     }
 
-    private function companiesHouseRowError(array $row, int $accountsRunId): ?string
+    private function companiesHouseRowError(array $row): ?string
     {
-        if ((int)($row['ixbrl_generation_run_id'] ?? 0) !== $accountsRunId) {
-            return 'This Companies House iXBRL belongs to an earlier Accounting iXBRL run.';
-        }
         if (!in_array((string)($row['lifecycle'] ?? ''), [
             'prepared', 'submitting', 'transport_unknown', 'pending', 'parked', 'accepted',
         ], true)) {

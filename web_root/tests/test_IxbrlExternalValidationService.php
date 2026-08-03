@@ -25,6 +25,45 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $status['blocking'] ?? true);
         });
 
+        $harness->check(
+            \eel_accounts\Service\IxbrlExternalValidationService::class,
+            'keeps HMRC Arelle disclosure flags out of the Companies House profile',
+            static function () use ($harness): void {
+                $configPath = tempnam(test_tmp_directory(), 'arelle-profile-');
+                if (!is_string($configPath)) {
+                    $harness->skip('Could not create an Arelle profile configuration fixture.');
+                }
+                file_put_contents(
+                    $configPath,
+                    '<?php return ['
+                    . "'flags' => ['--plugins', 'legacy/plugin', '--disclosureSystem', 'legacy', '--validate']"
+                    . '];'
+                );
+                try {
+                    $profileService = new \eel_accounts\Service\IxbrlAuthorityProfileService();
+                    $validator = new \eel_accounts\Service\IxbrlExternalValidationService($configPath);
+                    $method = new ReflectionMethod($validator, 'configurationForProfile');
+                    $method->setAccessible(true);
+                    $hmrc = (array)$method->invoke(
+                        $validator,
+                        $profileService->profile($profileService::HMRC_CT_ACCOUNTS)
+                    );
+                    $companiesHouse = (array)$method->invoke(
+                        $validator,
+                        $profileService->profile($profileService::COMPANIES_HOUSE_ACCOUNTS)
+                    );
+
+                    $harness->assertSame(
+                        ['--plugins', 'validate/UK', '--disclosureSystem', 'hmrc', '--validate'],
+                        (array)$hmrc['flags']
+                    );
+                    $harness->assertSame(['--validate'], (array)$companiesHouse['flags']);
+                } finally {
+                    @unlink($configPath);
+                }
+            }
+        );
+
         $harness->check(\eel_accounts\Service\IxbrlExternalValidationService::class, 'prefers structured Arelle diagnostics when preparing validation results for storage', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'storedDiagnostics');
             $method->setAccessible(true);

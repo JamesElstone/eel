@@ -18,6 +18,7 @@ final class IxbrlOriginalAccountsArtifactService
         private readonly ?IxbrlFilingArtifactService $artifactService = null,
         private readonly ?IxbrlExternalValidationService $validationService = null,
         private readonly ?string $outputDirectory = null,
+        private readonly ?IxbrlAccountingService $accountingService = null,
     ) {
     }
 
@@ -33,23 +34,60 @@ final class IxbrlOriginalAccountsArtifactService
             return $this->failure('A current approved Original filing classification is required.');
         }
 
-        $base = ($this->artifactService ?? new IxbrlFilingArtifactService())
-            ->locate($companyId, $accountingPeriodId);
-        if (empty($base['ok'])) {
-            return [
-                'success' => false,
-                'errors' => (array)($base['errors'] ?? ['A filing-ready Accounting iXBRL artifact is required.']),
-                'warnings' => [],
+        if ($this->artifactService !== null) {
+            // Legacy test seam only. Runtime generation renders Companies House
+            // bytes directly from the approved fact snapshot below.
+            $base = $this->artifactService->locate($companyId, $accountingPeriodId);
+            if (empty($base['ok'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($base['errors'] ?? ['A filing-ready Accounting iXBRL artifact is required.']),
+                    'warnings' => [],
+                ];
+            }
+            $source = file_get_contents((string)$base['path']);
+            if (!is_string($source) || $source === '') {
+                return $this->failure('The approved Accounting iXBRL artifact could not be read.');
+            }
+        } else {
+            $rendered = ($this->accountingService ?? new IxbrlAccountingService())->buildAuthorityDocument(
+                $companyId,
+                $accountingPeriodId,
+                IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS,
+                $evidenceArtifactId
+            );
+            if (empty($rendered['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($rendered['errors'] ?? ['The Companies House accounts iXBRL could not be rendered.']),
+                    'warnings' => (array)($rendered['warnings'] ?? []),
+                ];
+            }
+            $run = (array)$rendered['run'];
+            $source = (string)$rendered['xhtml'];
+            $base = [
+                'ok' => true,
+                'run_id' => (int)($run['id'] ?? 0),
+                'filing_approval_id' => (int)($run['filing_approval_id'] ?? 0),
+                'basis_hash' => (string)($run['basis_hash'] ?? ''),
             ];
-        }
-        $source = file_get_contents((string)$base['path']);
-        if (!is_string($source) || $source === '') {
-            return $this->failure('The approved Accounting iXBRL artifact could not be read.');
         }
         $source = (new IxbrlEvidenceFooterService())->withFooter($source, $evidenceArtifactId);
         $sourceValidation = $this->validateSource($source);
         if (empty($sourceValidation['success'])) {
             return $sourceValidation;
+        }
+        $authorityValidation = (new IxbrlAuthorityValidationService())->validate(
+            $source,
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        if (empty($authorityValidation['ok'])) {
+            return [
+                'success' => false,
+                'errors' => $this->authorityErrors($authorityValidation),
+                'warnings' => [],
+                'authority_validation' => $authorityValidation,
+            ];
         }
 
         $period = \InterfaceDB::fetchOne(
@@ -109,13 +147,80 @@ final class IxbrlOriginalAccountsArtifactService
             fclose($handle);
         }
 
+        preg_match_all('/<ix:(?:nonNumeric|nonFraction)\b/i', $source, $matches);
+        $basis = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'filing_kind' => 'original',
+            'classification_approval_hash' => (string)$classification['approval_basis_hash'],
+            'base_run_id' => (int)$base['run_id'],
+            'base_sha256' => $sha256,
+            'base_basis_hash' => (string)($base['basis_hash'] ?? ''),
+        ];
+        $basisHash = hash(
+            'sha256',
+            \eel_accounts\Support\Utf8::json($basis, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+        );
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        try {
+            $activeTaxonomyPackage = (new FrcTaxonomyPackageService())->activePackage();
+            $artifactRecord = [
+                'generation_run_id' => (int)$base['run_id'],
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_approval_id' => (int)($base['filing_approval_id'] ?? 0),
+                'authority' => \eel_accounts\Repository\IxbrlAccountsArtifactRepository::AUTHORITY_COMPANIES_HOUSE,
+                'filing_kind' => 'original',
+                'render_model_sha256' => $basisHash,
+                'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
+                'generation_status' => 'generated',
+                'output_path' => $path,
+                'output_filename' => $filename,
+                'output_sha256' => $sha256,
+            ];
+            $taxonomyPackageId = is_array($activeTaxonomyPackage)
+                ? (int)($activeTaxonomyPackage['id'] ?? 0)
+                : 0;
+            $taxonomyPackageHash = is_array($activeTaxonomyPackage)
+                ? strtolower(trim((string)($activeTaxonomyPackage['sha256'] ?? '')))
+                : '';
+            if ($taxonomyPackageId > 0 && preg_match('/^[a-f0-9]{64}$/', $taxonomyPackageHash) === 1) {
+                $artifactRecord['taxonomy_package_id'] = $taxonomyPackageId;
+                $artifactRecord['taxonomy_package_sha256'] = $taxonomyPackageHash;
+            }
+            $artifactId = (new IxbrlValidationEvidenceService())->createAccountsArtifact($artifactRecord, $profile);
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
+
         $this->reportProgress(
             $progress,
             'Running Arelle validation for the Companies House original-accounts iXBRL…',
             45
         );
         $validation = ($this->validationService ?? new IxbrlExternalValidationService())
-            ->validateArtifact($path);
+            ->validateArtifact(
+                $path,
+                [],
+                [],
+                IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+            );
+        try {
+            $validationRunId = (new IxbrlValidationEvidenceService())->recordAccountsValidation(
+                $artifactId,
+                $profile,
+                'passed',
+                $sourceValidation,
+                'passed',
+                [],
+                $authorityValidation,
+                $validation
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
         if ((string)($validation['status'] ?? '') !== 'passed') {
             return [
                 'success' => false,
@@ -129,17 +234,6 @@ final class IxbrlOriginalAccountsArtifactService
             return $this->failure('The original artifact does not match the file validated by Arelle.');
         }
 
-        preg_match_all('/<ix:(?:nonNumeric|nonFraction)\b/i', $source, $matches);
-        $basis = [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'filing_kind' => 'original',
-            'classification_approval_hash' => (string)$classification['approval_basis_hash'],
-            'base_run_id' => (int)$base['run_id'],
-            'base_sha256' => $sha256,
-            'base_basis_hash' => (string)($base['basis_hash'] ?? ''),
-        ];
-
         return [
             'success' => true,
             'errors' => [],
@@ -148,7 +242,7 @@ final class IxbrlOriginalAccountsArtifactService
             'filename' => $filename,
             'sha256' => $sha256,
             'validated_sha256' => $validatedHash,
-            'basis_hash' => hash('sha256', \eel_accounts\Support\Utf8::json($basis, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
+            'basis_hash' => $basisHash,
             'base_run_id' => (int)$base['run_id'],
             'base_sha256' => $sha256,
             'fact_count' => count($matches[0] ?? []),
@@ -156,6 +250,11 @@ final class IxbrlOriginalAccountsArtifactService
                 'accounts_approval_date' => (string)($classification['accounts_approval_date'] ?? ''),
             ],
             'validation' => $validation,
+            'accounts_artifact_id' => $artifactId,
+            'accounts_validation_run_id' => $validationRunId,
+            'authority_validation' => $authorityValidation,
+            'authority_profile' => IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS,
+            'authority_profile_fingerprint' => (string)($authorityValidation['profile_fingerprint'] ?? ''),
             'evidence_artifact_id' => $evidenceArtifactId,
         ];
     }
@@ -199,6 +298,22 @@ final class IxbrlOriginalAccountsArtifactService
     private function failure(string $message): array
     {
         return ['success' => false, 'errors' => [$message], 'warnings' => []];
+    }
+
+    /** @return list<string> */
+    private function authorityErrors(array $validation): array
+    {
+        $errors = [];
+        foreach ((array)($validation['errors'] ?? []) as $error) {
+            $message = is_array($error) ? trim((string)($error['message'] ?? '')) : trim((string)$error);
+            if ($message !== '') {
+                $errors[] = $message;
+            }
+        }
+
+        return $errors !== []
+            ? array_values(array_unique($errors))
+            : ['The accounts do not satisfy the Companies House iXBRL authority profile.'];
     }
 
     private function reportProgress(mixed $progress, string $message, int $percent): void

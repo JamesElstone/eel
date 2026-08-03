@@ -370,8 +370,16 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                         $service,
                         '<IRenvelope xmlns="' . \eel_accounts\Service\Ct600BuilderService::CT_NAMESPACE
                             . '"><CompanyTaxReturn/></IRenvelope>',
-                        ['path' => $accountsPath, 'filename' => 'accounts.xhtml'],
-                        ['path' => $computationPath, 'filename' => 'computation.xhtml']
+                        [
+                            'path' => $accountsPath,
+                            'filename' => 'accounts.xhtml',
+                            'hash' => hash('sha256', $accountsBytes),
+                        ],
+                        [
+                            'path' => $computationPath,
+                            'filename' => 'computation.xhtml',
+                            'hash' => hash('sha256', $computationBytes),
+                        ]
                     );
                     $document = new DOMDocument();
                     $harness->assertSame(true, $document->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS));

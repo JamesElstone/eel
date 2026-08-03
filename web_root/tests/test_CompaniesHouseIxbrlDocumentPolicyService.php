@@ -13,7 +13,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
 
             $harness->assertSame(
-                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n" . $body,
+                '<?xml version="1.0"?>' . "\n" . $body,
                 $result
             );
         });
@@ -25,7 +25,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ' <?xml version="1.0"?>' . "\n" . $body,
                 $body,
                 '<?xml version="1.0"?>' . $body,
-                '<?xml version="1.0"?>' . "\n" . $body,
                 '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $body,
                 '<?xml version="1.0" standalone="yes"?>' . "\n" . $body,
                 '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . $body,

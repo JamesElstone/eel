@@ -37,7 +37,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertTrue(str_starts_with(
                 $xhtml,
-                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+                '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
             ));
             $harness->assertFalse(str_contains($xhtml, '<!DOCTYPE'));
             $harness->assertTrue(str_contains(

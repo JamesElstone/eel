@@ -211,10 +211,30 @@ function goldenCtIxbrlArelleFixture(): array
             . implode(' ', (array)($authorisation['errors'] ?? []))
         );
     }
-    $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-        ->approveAndBuildFacts($companyId, $accountingPeriodId, 'golden_ct_ixbrl_arelle', 'Golden CT iXBRL Arelle regression fixture.');
+    $accountsApprovalService = new \eel_accounts\Service\IxbrlAccountsFilingApprovalService();
+    $filingApproval = $accountsApprovalService->approveAndBuildFacts(
+        $companyId,
+        $accountingPeriodId,
+        'golden_ct_ixbrl_arelle',
+        'Golden CT iXBRL Arelle regression fixture.'
+    );
     if ((int)($filingApproval['approval_id'] ?? 0) <= 0) {
         throw new RuntimeException('Golden AP79 filing approval could not be created: ' . implode(' ', (array)($filingApproval['errors'] ?? [])));
+    }
+    $preparedCtBasis = $accountsApprovalService->prepareHmrcCtPeriodFilingBases(
+        $companyId,
+        $accountingPeriodId,
+        'golden_ct_ixbrl_arelle'
+    );
+    $hmrcApproval = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->approve(
+        $companyId,
+        $accountingPeriodId,
+        'golden_ct_ixbrl_arelle',
+        'Golden CT iXBRL Arelle regression fixture.',
+        (array)($preparedCtBasis['ct_basis_ids'] ?? [])
+    );
+    if ((int)($hmrcApproval['approval_id'] ?? 0) <= 0) {
+        throw new RuntimeException('Golden AP79 HMRC CT filing approval could not be created.');
     }
 
     $filingModels = [];

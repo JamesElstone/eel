@@ -683,9 +683,9 @@ $harness->run(HmrcSubmissionAction::class, static function (
             'Developer Options must be enabled to reprocess an archived HMRC response.'
         ));
         $harness->assertTrue(str_contains($source, '$exchangeId = (int)$request->input(\'exchange_id\', 0)'));
-        $harness->assertTrue(str_contains(
-            $source,
-            'reprocessArchivedResponse(' . PHP_EOL . '                        $submissionId,' . PHP_EOL . '                        $exchangeId,'
+        $harness->assertTrue((bool)preg_match(
+            '/reprocessArchivedResponse\s*\(\s*\$submissionId\s*,\s*\$exchangeId\s*,/',
+            $source
         ));
         $harness->assertFalse(str_contains($source, "return 'web_app';"));
         $harness->assertFalse((bool)preg_match('/stream_context_create|curl_exec|file_get_contents\s*\(\s*[\'\"]https?:/i', $source));

@@ -23,7 +23,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
     public int $archivedParseCalls = 0;
     public ?Closure $archivedParseHook = null;
     public bool $credentialsPlaceholder = false;
-    private int $exchangeSequence = 0;
+    private static int $exchangeSequence = 0;
     /** @var list<string> */
     public array $configurationEnvironments = [];
     /** @var list<string> */
@@ -196,7 +196,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
         ?string $transactionId
     ): array {
         $transactionId = $transactionId === null || $transactionId === ''
-            ? sprintf('FACE%012d', ++$this->exchangeSequence)
+            ? sprintf('FACE%012d', ++self::$exchangeSequence)
             : $transactionId;
         $xml = '<GovTalkMessage><Operation>' . $operation . '</Operation></GovTalkMessage>';
         return [
@@ -380,6 +380,10 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'filing_body_xml' => $body,
                         'source_manifest' => $manifest,
                         'body_sha256' => hash('sha256', $body),
+                        'accounts_artifact_id' => 1,
+                        'accounts_validation_run_id' => 2,
+                        'computation_validation_run_id' => 3,
+                        'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
                         'ct600_xml_path' => $ct600Path,
                         'validation' => ['mode' => $mode],
                     ];
@@ -529,11 +533,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'source_manifest' => $manifest,
                         'body_sha256' => $bodyHash,
                         'accounts_ixbrl_path' => 'fixture/accounts.html',
+                        'accounts_artifact_id' => 11,
+                        'accounts_validation_run_id' => 12,
                         'accounts_run_id' => 1,
                         'accounts_sha256' => str_repeat('a', 64),
                         'computations_ixbrl_path' => 'fixture/computations.html',
                         'computation_run_id' => 2,
+                        'computation_validation_run_id' => 13,
                         'computations_sha256' => str_repeat('b', 64),
+                        'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
                         'year_end_locked_at' => '2026-07-18 10:00:00',
                         'irmark' => 'FIXTURE',
                         'schema_version' => 'V3/V1.994',
@@ -657,8 +665,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         filingReadinessResolver: $filingReadiness
                     );
                     $submitted = $service->submitTest($companyId, $ctPeriodId, 42);
-                    $h->assertTrue((bool)$submitted['success']);
-                    $h->assertTrue((bool)$submitted['needs_poll']);
+                    $h->assertSame(true, (bool)$submitted['success']);
+                    $h->assertSame(true, (bool)$submitted['needs_poll']);
                     $h->assertSame('awaiting_poll', $submitted['protocol_state']);
                     $submissionId = (int)$submitted['submission_id'];
                     $persisted = InterfaceDB::fetchOne(
@@ -669,38 +677,51 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame(1, (int)$persisted['authority_confirmed']);
                     $h->assertSame('2026-07-19 10:00:00', (string)$persisted['authority_confirmed_at']);
                     $h->assertSame('user:42', (string)$persisted['authority_confirmed_by']);
-                    $h->assertTrue(is_file((string)$persisted['request_body_path']));
+                    $h->assertSame(true, is_file((string)$persisted['request_body_path']));
                     $h->assertSame(hash('sha256', $body), (string)$persisted['body_sha256']);
-                    $h->assertTrue(trim((string)$persisted['source_manifest_sha256']) !== '');
+                    $h->assertSame(true, trim((string)$persisted['source_manifest_sha256']) !== '');
 
-                    $now = '2026-07-19 10:00:05';
+                    $now = (string)$persisted['next_poll_at'];
                     $timedOut = $service->poll($submissionId, 42);
                     $h->assertFalse((bool)$timedOut['success']);
-                    $h->assertTrue((bool)$timedOut['needs_poll']);
+                    $h->assertSame(true, (bool)$timedOut['needs_poll']);
                     $h->assertSame('awaiting_poll', $timedOut['protocol_state']);
 
-                    $now = '2026-07-19 10:00:10';
+                    $now = (string)InterfaceDB::fetchColumn(
+                        'SELECT next_poll_at FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
                     $polled = $service->poll($submissionId, 42);
-                    $h->assertTrue((bool)$polled['success']);
+                    $h->assertSame(true, (bool)$polled['success']);
                     $h->assertSame('delete_pending', $polled['protocol_state']);
                     $h->assertSame('til_validated', $polled['business_outcome']);
                     $h->assertSame(2, $transport->pollCalls);
                     $h->assertSame(0, $transport->deleteCalls);
 
+                    $nextCleanupAt = (string)InterfaceDB::fetchColumn(
+                        'SELECT next_poll_at FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $now = (new DateTimeImmutable($nextCleanupAt, new DateTimeZone('UTC')))
+                        ->modify('-1 second')
+                        ->format('Y-m-d H:i:s');
                     $tooEarlyCleanup = $service->poll($submissionId, 42);
                     $h->assertFalse((bool)$tooEarlyCleanup['success']);
-                    $h->assertTrue((bool)$tooEarlyCleanup['needs_poll']);
+                    $h->assertSame(true, (bool)$tooEarlyCleanup['needs_poll']);
                     $h->assertSame(0, $transport->deleteCalls);
 
-                    $now = '2026-07-19 10:00:20';
+                    $now = $nextCleanupAt;
                     $cleanupFailed = $service->poll($submissionId, 42);
                     $h->assertFalse((bool)$cleanupFailed['success']);
                     $h->assertSame('delete_pending', $cleanupFailed['protocol_state']);
                     $h->assertSame(1, $transport->deleteCalls);
 
-                    $now = '2026-07-19 10:00:30';
+                    $now = (string)InterfaceDB::fetchColumn(
+                        'SELECT next_poll_at FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
                     $cleaned = $service->poll($submissionId, 42);
-                    $h->assertTrue((bool)$cleaned['success']);
+                    $h->assertSame(true, (bool)$cleaned['success']);
                     $h->assertSame('closed', $cleaned['protocol_state']);
                     $h->assertSame(2, $transport->deleteCalls);
                     $h->assertSame([
@@ -749,10 +770,10 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     }
                     $h->assertSame(8, count($exchangePaths));
                     $h->assertSame(count($exchangePaths), count(array_unique($exchangePaths)));
-                    $h->assertTrue(is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'manifest.json'));
+                    $h->assertSame(true, is_file($archiveDirectory . DIRECTORY_SEPARATOR . 'manifest.json'));
 
                     $status = $service->status($companyId, $accountingPeriodId);
-                    $h->assertTrue((bool)$status['success']);
+                    $h->assertSame(true, (bool)$status['success']);
                     $dependencies = (array)($status['periods'][0]['filing_dependencies'] ?? []);
                     $h->assertSame(true, (bool)($dependencies[0]['ready'] ?? false));
                     $h->assertSame(true, (bool)($dependencies[1]['ready'] ?? false));
@@ -793,13 +814,16 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'error' => '',
                     ];
                     $live = $service->submitLive($companyId, $ctPeriodId, 42);
-                    $h->assertTrue((bool)$live['success']);
+                    $h->assertSame(true, (bool)$live['success']);
                     $h->assertSame('live_accepted', $live['business_outcome']);
                     $h->assertSame('delete_pending', $live['protocol_state']);
                     $h->assertSame($submissionId, (int)$live['submission']['test_submission_id']);
-                    $now = '2026-07-19 10:00:40';
+                    $now = (string)InterfaceDB::fetchColumn(
+                        'SELECT next_poll_at FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => (int)$live['submission_id']]
+                    );
                     $liveCleaned = $service->poll((int)$live['submission_id'], 42);
-                    $h->assertTrue((bool)$liveCleaned['success']);
+                    $h->assertSame(true, (bool)$liveCleaned['success']);
                     $h->assertSame('closed', $liveCleaned['protocol_state']);
                     $h->assertSame(['TIL', 'LIVE'], $transport->submittedEnvironments);
                     $h->assertSame(2, count($transport->submittedBodies));
@@ -912,11 +936,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'source_manifest' => $manifest,
                         'body_sha256' => $bodyHash,
                         'accounts_ixbrl_path' => 'fixture/accounts.html',
+                        'accounts_artifact_id' => 21,
+                        'accounts_validation_run_id' => 22,
                         'accounts_run_id' => 1,
                         'accounts_sha256' => str_repeat('a', 64),
                         'computations_ixbrl_path' => 'fixture/computations.html',
                         'computation_run_id' => 2,
+                        'computation_validation_run_id' => 23,
                         'computations_sha256' => str_repeat('b', 64),
+                        'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
                         'year_end_locked_at' => '2026-07-19 11:00:00',
                         'irmark' => 'UNCERTAIN',
                         'schema_version' => 'V3/V1.994',
@@ -1439,11 +1467,15 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'source_manifest' => $manifest,
                         'body_sha256' => $bodyHash,
                         'accounts_ixbrl_path' => 'fixture/accounts.html',
+                        'accounts_artifact_id' => 31,
+                        'accounts_validation_run_id' => 32,
                         'accounts_run_id' => 1,
                         'accounts_sha256' => str_repeat('a', 64),
                         'computations_ixbrl_path' => 'fixture/computations.html',
                         'computation_run_id' => 2,
+                        'computation_validation_run_id' => 33,
                         'computations_sha256' => str_repeat('b', 64),
+                        'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
                         'year_end_locked_at' => $now,
                         'irmark' => 'GATEWAY',
                         'schema_version' => 'V3/V1.994',
@@ -1604,8 +1636,11 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                                 'raised_by' => 'Gateway',
                                 'number' => '1046',
                                 'type' => 'fatal',
-                                'texts' => ['Authentication Failure.'],
-                                'locations' => [],
+                                'texts' => [
+                                    'Authentication Failure.',
+                                    'Credentials failed validation.',
+                                ],
+                                'locations' => ['/Header/SenderDetails'],
                             ]],
                             'error' => '1046: Authentication Failure.',
                         ];

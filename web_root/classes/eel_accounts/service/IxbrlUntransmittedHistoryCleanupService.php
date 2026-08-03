@@ -34,13 +34,21 @@ final class IxbrlUntransmittedHistoryCleanupService
         $retainApprovalId = $retainApprovalId !== null && $retainApprovalId > 0
             ? $retainApprovalId
             : $this->latestApprovalId($companyId, $accountingPeriodId);
+        $authorityArtifactRetention = \InterfaceDB::tableExists('ixbrl_accounts_artifacts')
+            ? "\n                   AND NOT EXISTS (\n                       SELECT 1\n                       FROM ixbrl_accounts_artifacts authority_artifact\n                       WHERE authority_artifact.filing_approval_id = approval.id\n                   )"
+            : '';
+        $hmrcApprovalRetention = \InterfaceDB::tableExists('hmrc_ct_filing_approvals')
+            ? "\n                   AND NOT EXISTS (\n                       SELECT 1\n                       FROM hmrc_ct_filing_approvals hmrc_approval\n                       WHERE hmrc_approval.accounts_filing_approval_id = approval.id\n                          OR hmrc_approval.legacy_combined_approval_id = approval.id\n                   )"
+            : '';
 
         return (array)\InterfaceDB::transaction(function () use (
             $companyId,
             $accountingPeriodId,
             $retainApprovalId,
             $actor,
-            $automaticApprovalCleanup
+            $automaticApprovalCleanup,
+            $authorityArtifactRetention,
+            $hmrcApprovalRetention
         ): array {
             $deletedCh = \InterfaceDB::execute(
                 "DELETE FROM companies_house_accounts_submissions
@@ -86,6 +94,8 @@ final class IxbrlUntransmittedHistoryCleanupService
                  WHERE approval.company_id = :company_id
                    AND approval.accounting_period_id = :period_id
                    AND approval.id <> :retain_approval_id
+                   {$authorityArtifactRetention}
+                   {$hmrcApprovalRetention}
                    AND NOT EXISTS (
                        SELECT 1
                        FROM companies_house_accounts_submissions submission

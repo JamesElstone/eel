@@ -59,7 +59,12 @@ final class IxbrlGeneratorService
         $style = $stylesheet !== ''
             ? '<style type="text/css">' . $this->escape($stylesheet) . '</style>'
             : '';
-        return CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX
+        $documentPrefix = (string)($document['document_prefix']
+            ?? CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX);
+        if ($documentPrefix === '' || !str_starts_with($documentPrefix, '<?xml version="1.0"')) {
+            throw new \InvalidArgumentException('An authority-specific XML document prefix is required.');
+        }
+        return $documentPrefix
             . '<html xmlns="http://www.w3.org/1999/xhtml"' . $namespaceAttributes . ' xml:lang="en"><head><title>' . $title . '</title>'
             . '<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8"/>' . $metadata . $style . '</head><body>'
             . '<div style="display:none"><ix:header><ix:references>' . $references . '</ix:references><ix:resources>'

@@ -15,7 +15,12 @@ final class IxbrlAction implements ActionInterfaceFramework
         // CT600 construction performs external-schema validation and may take
         // longer than PHP's normal request limit.  This must be set before the
         // first database or filesystem check for the generation action.
-        if (in_array($intent, ['generate_all_filing_ixbrl', 'generate_ct600_xml', 'revalidate_arelle'], true)) {
+        if (in_array($intent, [
+            'generate_all_filing_ixbrl',
+            'generate_ct600_xml',
+            'revalidate_arelle',
+            'approve_ixbrl_accounts_and_ct',
+        ], true)) {
             $this->allowUnlimitedGenerationRuntime();
         }
         $companyId = (int)$request->input('company_id', 0);
@@ -48,6 +53,85 @@ final class IxbrlAction implements ActionInterfaceFramework
                     $ctPeriodId,
                     (int)$request->input('submission_id', 0)
                 );
+            }
+            if ($intent === 'edit_ixbrl_approval_draft') {
+                $input = $this->approvalFormInput($request);
+                $input['ixbrl_approval_editing'] = '1';
+                return ActionResultFramework::success(
+                    ['ixbrl.disclosures'],
+                    [],
+                    [],
+                    ['ixbrl_approval_form_input' => $input]
+                );
+            }
+            if ($intent === 'cancel_ixbrl_approval_edit') {
+                return ActionResultFramework::success(['ixbrl.disclosures']);
+            }
+            if ($intent === 'save_ixbrl_approval_draft') {
+                $input = $this->approvalFormInput($request);
+                try {
+                    $result = (new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService())->saveDraft(
+                        $companyId,
+                        $accountingPeriodId,
+                        $input,
+                        $this->actor($request),
+                        trim((string)$request->input('state_token', ''))
+                    );
+                    return $this->result(
+                        true,
+                        [],
+                        $changedFacts,
+                        (array)($result['messages'] ?? [
+                            'Filing approval draft saved. No statutory accounts or Corporation Tax filing approval was created.',
+                        ]),
+                        (array)($result['warnings'] ?? [])
+                    );
+                } catch (Throwable $exception) {
+                    return $this->result(
+                        false,
+                        [$exception->getMessage()],
+                        $changedFacts,
+                        [],
+                        [],
+                        ['ixbrl_approval_form_input' => $input]
+                    );
+                }
+            }
+            if ($intent === 'approve_ixbrl_accounts_and_ct') {
+                $input = $this->approvalFormInput($request);
+                $progress = $services->actionProgress();
+                $progress->report('Validating the combined accounts and Corporation Tax approval…', 0);
+                try {
+                    $result = (new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService())->approveAll(
+                        $companyId,
+                        $accountingPeriodId,
+                        $input,
+                        $this->actor($request),
+                        trim((string)$request->input('approval_note', '')),
+                        trim((string)$request->input('state_token', '')),
+                        static function (string $message, int $percent) use ($progress): void {
+                            $progress->report($message, $percent);
+                        }
+                    );
+                    return $this->result(
+                        true,
+                        [],
+                        $changedFacts,
+                        (array)($result['messages'] ?? [
+                            'The statutory accounts and Corporation Tax return are approved. No information was transmitted.',
+                        ]),
+                        (array)($result['warnings'] ?? [])
+                    );
+                } catch (Throwable $exception) {
+                    return $this->result(
+                        false,
+                        [$exception->getMessage()],
+                        $changedFacts,
+                        [],
+                        [],
+                        ['ixbrl_approval_form_input' => $input]
+                    );
+                }
             }
             if ($intent === 'save_ixbrl_disclosures') {
                 $result = $this->saveDisclosures($request, $companyId, $accountingPeriodId);
@@ -126,64 +210,68 @@ final class IxbrlAction implements ActionInterfaceFramework
                         // expensive tax-readiness card after every answer.
                         ? ['corporation.tax.filing.scope']
                         : [],
-                    !empty($result['success']) ? ['Corporation Tax filing scope updated. Approve the revised filing basis before generating or filing.'] : [],
+                    !empty($result['success']) ? ['Corporation Tax filing scope updated. Approve the Corporation Tax return again before generating or filing.'] : [],
                     []
                 );
             }
             if ($intent === 'save_ct600_return_authorisation') {
-                $result = (new \eel_accounts\Service\Ct600ReturnAuthorisationService())->save(
-                    $companyId,
-                    $accountingPeriodId,
-                    [
-                        'declarant_authority' => $request->input('declarant_authority', ''),
-                        'original_unfiled_confirmed' => $request->input('original_unfiled_confirmed', false),
-                        'authority_confirmed' => $request->input('authority_confirmed', false),
-                        'declaration_confirmed' => $request->input('declaration_confirmed', false),
-                    ],
-                    $this->actor($request)
+                return $this->result(
+                    false,
+                    ['This approval form is out of date. Reload the page and use Approve Accounts and Corporation Tax Return.'],
+                    $changedFacts
                 );
-                \eel_accounts\Support\RequestCache::clear();
-                return $this->result(!empty($result['success']), (array)($result['errors'] ?? []), $changedFacts,
-                    !empty($result['success']) ? ['Corporation Tax return authorisation saved.'] : []);
             }
             if ($intent === 'approve_ixbrl_accounts_filing_basis') {
-                $progress = $services->actionProgress();
-                @set_time_limit(0);
-                $progress->report('Validating the approved accounts filing basis…', 0);
-                $approved = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())->approveAndBuildFacts(
-                    $companyId,
-                    $accountingPeriodId,
-                    $this->actor($request),
-                    trim((string)$request->input('approval_note', '')),
-                    static function (string $message, int $percent) use ($progress): void {
-                        $progress->report($message, $percent);
-                    }
-                );
                 return $this->result(
-                    true,
-                    [],
-                    $changedFacts,
-                    [
-                        'Business Disclosures recorded and Statement of Facts updated.',
-                    ],
-                    []
+                    false,
+                    ['This approval form is out of date. Reload the page and use Approve Accounts and Corporation Tax Return.'],
+                    $changedFacts
                 );
             }
             if ($intent === 'rebuild_ixbrl_facts_from_current_approval') {
-                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+                $approvalService = new \eel_accounts\Service\IxbrlAccountsFilingApprovalService();
+                $approvalStatus = $approvalService->status($companyId, $accountingPeriodId);
+                $legacyUpgrade = !empty($approvalStatus['current'])
+                    && (string)($approvalStatus['approval_source'] ?? '') === 'legacy_combined';
+                if (!$developerOptions && !$legacyUpgrade) {
                     return $this->result(
                         false,
-                        ['Developer options must be enabled to rebuild the approved iXBRL fact snapshot.'],
+                        [
+                            'Developer options must be enabled to rebuild an approved iXBRL fact snapshot, '
+                            . 'except when upgrading a verified pre-split approval to the neutral report.',
+                        ],
                         $changedFacts
                     );
                 }
-                $runId = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-                    ->rebuildFactsFromCurrentApproval($companyId, $accountingPeriodId);
+                if (!$developerOptions && $legacyUpgrade) {
+                    $latestRun = (new \eel_accounts\Service\IxbrlFactBuilderService())->getLatestRun(
+                        $companyId,
+                        $accountingPeriodId
+                    );
+                    if (is_array($latestRun)
+                        && (string)(($latestRun['run_freshness'] ?? [])['state'] ?? '') === 'current') {
+                        return $this->result(
+                            false,
+                            ['The authority-neutral approved fact snapshot is already current.'],
+                            $changedFacts
+                        );
+                    }
+                }
+                $runId = $approvalService->rebuildFactsFromCurrentApproval(
+                    $companyId,
+                    $accountingPeriodId
+                );
                 return $this->result(
                     true,
                     [],
                     $changedFacts,
-                    ['Approved iXBRL fact snapshot rebuilt as run #' . $runId . '.'],
+                    [
+                        ($legacyUpgrade
+                            ? 'Authority-neutral facts rebuilt from the verified pre-split approval as run #'
+                            : 'Approved iXBRL fact snapshot rebuilt as run #')
+                        . $runId . '.',
+                    ],
                     []
                 );
             }
@@ -417,6 +505,39 @@ final class IxbrlAction implements ActionInterfaceFramework
         return $result;
     }
 
+    /** @return array<string,mixed> */
+    private function approvalFormInput(RequestFramework $request): array
+    {
+        return [
+            'accounting_standard' => $request->input('accounting_standard', 'FRS_105'),
+            'average_number_employees' => $request->input('average_number_employees', null),
+            'principal_activity_sic_code' => $request->input('principal_activity_sic_code', null),
+            'is_still_trading' => $request->input('is_still_trading', null),
+            'has_ever_traded' => $request->input('has_ever_traded', null),
+            'micro_entity_eligibility_confirmed' => $request->input('micro_entity_eligibility_confirmed', null),
+            'going_concern_basis_appropriate' => $request->input('going_concern_basis_appropriate', null),
+            'has_material_off_balance_sheet_arrangements' => $request->input('has_material_off_balance_sheet_arrangements', null),
+            'has_director_advances_credits_or_guarantees' => $request->input('has_director_advances_credits_or_guarantees', null),
+            'has_financial_commitments_guarantees_or_contingencies' => $request->input('has_financial_commitments_guarantees_or_contingencies', null),
+            'accounts_approval_date' => $request->input('accounts_approval_date', null),
+            'approving_director_id' => $request->input('approving_director_id', null),
+            'prepared_under_small_companies_regime' => $request->input('prepared_under_small_companies_regime', null),
+            'audit_exempt_section_477' => $request->input('audit_exempt_section_477', null),
+            'directors_acknowledge_responsibilities' => $request->input('directors_acknowledge_responsibilities', null),
+            'members_have_not_required_audit' => $request->input('members_have_not_required_audit', null),
+            'companies_house_revised_accounts_public_register_confirmed' => $request->input(
+                'companies_house_revised_accounts_public_register_confirmed',
+                null
+            ),
+            'declarant_authority' => $request->input('declarant_authority', ''),
+            'original_unfiled_confirmed' => $request->input('original_unfiled_confirmed', null),
+            'authority_confirmed' => $request->input('authority_confirmed', null),
+            'declaration_confirmed' => $request->input('declaration_confirmed', null),
+            'approval_note' => $request->input('approval_note', ''),
+            'ixbrl_approval_editing' => $request->input('ixbrl_approval_editing', '0'),
+        ];
+    }
+
     private function buildFacts(int $companyId, int $accountingPeriodId): array
     {
         $runId = (new \eel_accounts\Service\IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
@@ -456,7 +577,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                 'The export was generated, but Arelle validation did not pass.',
             ]);
             $progress?->report(
-                'HMRC Accounting iXBRL failed Arelle validation. Corporation Tax and Companies House generation will not run.',
+                'HMRC Accounting iXBRL failed Arelle validation. HMRC CT600 generation is blocked; Companies House generation remains independent.',
                 $validationPercent ?? 0
             );
             return [
@@ -680,7 +801,8 @@ final class IxbrlAction implements ActionInterfaceFramework
         array $errors,
         array $changedFacts,
         array $messages = [],
-        array $warnings = []
+        array $warnings = [],
+        array $context = []
     ): ActionResultFramework
     {
         $flash = [];
@@ -697,7 +819,7 @@ final class IxbrlAction implements ActionInterfaceFramework
             $flash[] = ['type' => 'warning', 'message' => (string)$warning];
         }
 
-        return new ActionResultFramework($success, $changedFacts, $flash);
+        return new ActionResultFramework($success, $changedFacts, $flash, [], $context);
     }
 
     private function withFilingLock(

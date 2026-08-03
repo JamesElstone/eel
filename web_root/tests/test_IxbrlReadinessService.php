@@ -93,6 +93,76 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(in_array('comparative:entity_name', $missing, true));
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'keeps authority profiles and missing outcomes independent', static function () use ($harness, $service): void {
+            $profiles = new \eel_accounts\Service\IxbrlAuthorityProfileService();
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'missingAuthorityStatus');
+            $method->setAccessible(true);
+            $hmrc = $method->invoke(
+                $service,
+                $profiles->profile(\eel_accounts\Service\IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS),
+                'HMRC artifact missing.'
+            );
+            $companiesHouse = $method->invoke(
+                $service,
+                $profiles->profile(\eel_accounts\Service\IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS),
+                'Companies House artifact missing.'
+            );
+
+            $harness->assertSame('hmrc_ct_accounts', (string)$hmrc['profile']['key']);
+            $harness->assertTrue(str_contains((string)$hmrc['profile']['transformation_namespace'], '/2011-'));
+            $harness->assertSame(['HMRC artifact missing.'], $hmrc['errors']);
+            $harness->assertSame('companies_house_accounts', (string)$companiesHouse['profile']['key']);
+            $harness->assertTrue(str_contains((string)$companiesHouse['profile']['transformation_namespace'], '/2015-'));
+            $harness->assertSame(['Companies House artifact missing.'], $companiesHouse['errors']);
+            $harness->assertFalse(in_array('HMRC artifact missing.', $companiesHouse['errors'], true));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'selects only the currently classified Companies House filing kind', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'latestCompaniesHouseArtifact');
+            $method->setAccessible(true);
+            $harness->assertSame(
+                null,
+                $method->invoke(
+                    $service,
+                    new \eel_accounts\Repository\IxbrlAccountsArtifactRepository(),
+                    0,
+                    0,
+                    ''
+                )
+            );
+
+            $source = file($method->getFileName());
+            $harness->assertTrue(is_array($source));
+            $body = implode('', array_slice(
+                $source,
+                $method->getStartLine() - 1,
+                $method->getEndLine() - $method->getStartLine() + 1
+            ));
+            $harness->assertTrue(str_contains($body, "['original', 'revised']"));
+            $harness->assertFalse(str_contains($body, 'foreach'));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires the mutable latest computation attempt and its ledger decision to pass', static function () use ($harness): void {
+            $method = new ReflectionMethod(
+                \eel_accounts\Service\IxbrlReadinessService::class,
+                'computationAuthorityStatus'
+            );
+            $source = file($method->getFileName());
+            $harness->assertTrue(is_array($source));
+            $body = implode('', array_slice(
+                $source,
+                $method->getStartLine() - 1,
+                $method->getEndLine() - $method->getStartLine() + 1
+            ));
+            foreach ([
+                "(string)(\$run['ixbrl_status'] ?? '') !== 'validated'",
+                "(string)(\$run['external_validation_status'] ?? '') !== 'passed'",
+                "(string)(\$validation['overall_status'] ?? '') !== 'passed'",
+            ] as $guard) {
+                $harness->assertTrue(str_contains($body, $guard));
+            }
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'requires both participator loan nominal settings', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(\eel_accounts\Service\IxbrlReadinessService::class, 'missingSettings');
             $method->setAccessible(true);

@@ -439,6 +439,15 @@ final class CompaniesHouseAccountsSubmissionService
         if (!is_array($submission)) {
             return $this->failure('The selected Companies House iXBRL submission is unavailable.');
         }
+        if ((string)($submission['lifecycle'] ?? '') !== 'prepared') {
+            return $this->failure(
+                'Only a prepared, untransmitted Companies House iXBRL submission can be revalidated.'
+            );
+        }
+        $classificationError = $this->classificationProvenanceError($submission);
+        if ($classificationError !== null) {
+            return $this->failure($classificationError);
+        }
         $path = trim((string)($submission['revised_artifact_path'] ?? $submission['artifact_path'] ?? ''));
         $expectedHash = strtolower(trim((string)($submission['revised_artifact_sha256'] ?? $submission['artifact_sha256'] ?? '')));
         if ($path === '' || !is_file($path) || $expectedHash === '') {
@@ -452,35 +461,218 @@ final class CompaniesHouseAccountsSubmissionService
             ? 'companies_house_original_accounts_ixbrl'
             : 'companies_house_revised_accounts_ixbrl';
         $evidence = \InterfaceDB::fetchOne(
-            'SELECT * FROM filing_evidence_artifacts WHERE bundle_id = :bundle_id AND artifact_role = :role ORDER BY id DESC LIMIT 1',
-            ['bundle_id' => (int)($submission['evidence_bundle_id'] ?? 0), 'role' => $role]
+            'SELECT * FROM filing_evidence_artifacts
+             WHERE bundle_id = :bundle_id
+               AND artifact_role = :role
+               AND storage_path = :path
+               AND sha256 = :sha256
+             ORDER BY id DESC LIMIT 1',
+            [
+                'bundle_id' => (int)($submission['evidence_bundle_id'] ?? 0),
+                'role' => $role,
+                'path' => $path,
+                'sha256' => $expectedHash,
+            ]
         );
         if (!is_array($evidence)) {
             return $this->failure('The prepared Companies House iXBRL evidence record is unavailable.');
         }
+        $artifactId = (int)($submission['accounts_artifact_id'] ?? 0);
+        $artifactEvidence = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())
+            ->findById($artifactId);
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        $baseRunId = (int)($submission['ixbrl_generation_run_id'] ?? 0);
+        if (!is_array($artifactEvidence)
+            || (string)($artifactEvidence['authority'] ?? '') !== 'COMPANIES_HOUSE'
+            || (int)($artifactEvidence['company_id'] ?? 0) !== $companyId
+            || (int)($artifactEvidence['accounting_period_id'] ?? 0) !== $accountingPeriodId
+            || (string)($artifactEvidence['filing_kind'] ?? '') !== $filingKind
+            || (int)($artifactEvidence['generation_run_id'] ?? 0) !== $baseRunId
+            || (string)($artifactEvidence['profile_key'] ?? '') !== $profile->key()
+            || (string)($artifactEvidence['profile_version'] ?? '') !== $profile->version()
+            || !hash_equals(
+                (string)($artifactEvidence['profile_fingerprint'] ?? ''),
+                $profile->fingerprint()
+            )
+            || (string)($artifactEvidence['transformation_registry_uri'] ?? '')
+                !== $profile->transformationNamespace()
+            || (string)($artifactEvidence['output_path'] ?? '') !== $path
+            || !hash_equals((string)($artifactEvidence['output_sha256'] ?? ''), $expectedHash)) {
+            return $this->failure(
+                'The prepared Companies House iXBRL is not bound to its immutable authority artifact.'
+            );
+        }
+        $bytes = file_get_contents($path);
+        if (!is_string($bytes)) {
+            return $this->failure('The prepared Companies House iXBRL artifact could not be read.');
+        }
+        $authorityValidation = (new IxbrlAuthorityValidationService())->validate($bytes, $profile);
+        $coreErrors = (new IxbrlGeneratorService())->validateStructure(
+            $bytes,
+            [IxbrlTaxonomyProfileService::SCHEMA_REF]
+        );
+        $sourceStatus = 'not_applicable';
+        $sourceResults = [];
+        if ((string)($submission['filing_type'] ?? '') === 'original') {
+            $sourceResults = (new IxbrlOriginalAccountsArtifactService())->validateSource($bytes);
+            $sourceStatus = !empty($sourceResults['success']) ? 'passed' : 'failed';
+        }
         $this->reportProgress($progress, 'Running Arelle validation for the prepared Companies House iXBRL…', 45);
-        $validation = (new IxbrlExternalValidationService())->validateArtifact($path);
+        $validation = (new IxbrlExternalValidationService())->validateArtifact(
+            $path,
+            [],
+            [],
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        try {
+            $validationRunId = (new IxbrlValidationEvidenceService())->recordAccountsValidation(
+                $artifactId,
+                $profile,
+                $sourceStatus,
+                $sourceResults,
+                $coreErrors === [] ? 'passed' : 'failed',
+                $coreErrors,
+                $authorityValidation,
+                $validation
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
         $metadata = json_decode((string)($evidence['metadata_json'] ?? ''), true);
         $metadata = is_array($metadata) ? $metadata : [];
         $metadata['arelle_validation'] = $validation;
-        $passed = (string)($validation['status'] ?? '') === 'passed';
-        \InterfaceDB::prepareExecute(
-            'UPDATE filing_evidence_artifacts SET artifact_status = :artifact_status, validator_name = :validator,
-             validator_version = :validator_version, validation_status = :validation_status, metadata_json = :metadata,
-             completed_at = CURRENT_TIMESTAMP WHERE id = :id',
-            [
-                'artifact_status' => $passed ? 'validated' : 'generated',
-                'validator' => 'arelle',
-                'validator_version' => (string)($validation['version'] ?? ''),
-                'validation_status' => (string)($validation['status'] ?? 'error'),
-                'metadata' => \eel_accounts\Support\PersistentJson::encode($metadata, JSON_UNESCAPED_SLASHES),
-                'id' => (int)$evidence['id'],
-            ]
+        $metadata['authority_validation'] = $authorityValidation;
+        $metadata['core_validation_errors'] = $coreErrors;
+        $metadata['source_conformance'] = $sourceResults;
+        $metadata['accounts_artifact_id'] = $artifactId;
+        $metadata['accounts_validation_run_id'] = $validationRunId;
+        $passed = (string)($validation['status'] ?? '') === 'passed'
+            && $coreErrors === []
+            && !empty($authorityValidation['ok'])
+            && in_array($sourceStatus, ['passed', 'not_applicable'], true);
+        $revalidationErrors = array_values((array)($validation['errors'] ?? []));
+        $revalidationErrors = array_merge(
+            $revalidationErrors,
+            $coreErrors,
+            array_values((array)($sourceResults['errors'] ?? []))
         );
+        foreach ((array)($authorityValidation['errors'] ?? []) as $authorityError) {
+            $message = is_array($authorityError)
+                ? trim((string)($authorityError['message'] ?? ''))
+                : trim((string)$authorityError);
+            if ($message !== '') {
+                $revalidationErrors[] = $message;
+            }
+        }
+        $revalidationErrors = array_values(array_unique(array_filter(array_map(
+            static fn(mixed $error): string => trim((string)$error),
+            $revalidationErrors
+        ))));
+        try {
+            \InterfaceDB::transaction(function () use (
+                $companyId,
+                $accountingPeriodId,
+                $submissionId,
+                $artifactId,
+                $baseRunId,
+                $path,
+                $expectedHash,
+                $validationRunId,
+                $evidence,
+                $role,
+                $metadata,
+                $validation,
+                $passed
+            ): void {
+                $lock = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
+                $currentSubmission = \InterfaceDB::fetchOne(
+                    'SELECT id, company_id, accounting_period_id, lifecycle, filing_type,
+                            ixbrl_generation_run_id, accounts_artifact_id, evidence_bundle_id,
+                            artifact_path, artifact_sha256, revised_artifact_path, revised_artifact_sha256
+                     FROM ' . self::SUBMISSIONS_TABLE . '
+                     WHERE id = :id AND company_id = :company_id AND accounting_period_id = :period_id'
+                        . $lock,
+                    [
+                        'id' => $submissionId,
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                    ]
+                );
+                $currentPath = trim((string)(
+                    ($currentSubmission['revised_artifact_path'] ?? '') !== ''
+                        ? $currentSubmission['revised_artifact_path']
+                        : ($currentSubmission['artifact_path'] ?? '')
+                ));
+                $currentHash = strtolower(trim((string)(
+                    ($currentSubmission['revised_artifact_sha256'] ?? '') !== ''
+                        ? $currentSubmission['revised_artifact_sha256']
+                        : ($currentSubmission['artifact_sha256'] ?? '')
+                )));
+                if (!is_array($currentSubmission)
+                    || (string)($currentSubmission['lifecycle'] ?? '') !== 'prepared'
+                    || (int)($currentSubmission['ixbrl_generation_run_id'] ?? 0) !== $baseRunId
+                    || (int)($currentSubmission['accounts_artifact_id'] ?? 0) !== $artifactId
+                    || $currentPath !== $path
+                    || !hash_equals($currentHash, $expectedHash)) {
+                    throw new \RuntimeException(
+                        'The prepared Companies House submission changed while it was being revalidated.'
+                    );
+                }
+
+                $currentEvidence = \InterfaceDB::fetchOne(
+                    'SELECT id, bundle_id, artifact_role, storage_path, sha256
+                     FROM filing_evidence_artifacts WHERE id = :id' . $lock,
+                    ['id' => (int)$evidence['id']]
+                );
+                if (!is_array($currentEvidence)
+                    || (int)($currentEvidence['bundle_id'] ?? 0)
+                        !== (int)($currentSubmission['evidence_bundle_id'] ?? 0)
+                    || (string)($currentEvidence['artifact_role'] ?? '') !== $role
+                    || (string)($currentEvidence['storage_path'] ?? '') !== $path
+                    || !hash_equals((string)($currentEvidence['sha256'] ?? ''), $expectedHash)) {
+                    throw new \RuntimeException(
+                        'The prepared Companies House evidence changed while it was being revalidated.'
+                    );
+                }
+
+                \InterfaceDB::prepareExecute(
+                    'UPDATE ' . self::SUBMISSIONS_TABLE . '
+                     SET accounts_validation_run_id = :validation_run_id, updated_at = CURRENT_TIMESTAMP
+                     WHERE id = :submission_id AND lifecycle = :lifecycle',
+                    [
+                        'validation_run_id' => $validationRunId,
+                        'submission_id' => $submissionId,
+                        'lifecycle' => 'prepared',
+                    ]
+                );
+                \InterfaceDB::prepareExecute(
+                    'UPDATE filing_evidence_artifacts SET artifact_status = :artifact_status, validator_name = :validator,
+                     validator_version = :validator_version, validation_status = :validation_status, metadata_json = :metadata,
+                     completed_at = CURRENT_TIMESTAMP WHERE id = :id',
+                    [
+                        'artifact_status' => $passed ? 'validated' : 'generated',
+                        'validator' => 'arelle',
+                        'validator_version' => (string)($validation['version'] ?? ''),
+                        'validation_status' => $passed
+                            ? 'passed'
+                            : ((string)($validation['status'] ?? '') === 'error' ? 'error' : 'failed'),
+                        'metadata' => \eel_accounts\Support\PersistentJson::encode($metadata, JSON_UNESCAPED_SLASHES),
+                        'id' => (int)$evidence['id'],
+                    ]
+                );
+            });
+        } catch (\Throwable $exception) {
+            return $this->failure($exception->getMessage());
+        }
         $this->reportProgress($progress, 'Updated the Companies House Arelle validation result.', 90);
         return [
             'success' => $passed,
-            'errors' => $passed ? [] : (array)($validation['errors'] ?? ['Arelle validation failed.']),
+            'errors' => $passed ? [] : ($revalidationErrors !== []
+                ? $revalidationErrors
+                : ['Companies House authority-profile validation failed.']),
             'warnings' => (array)($validation['warnings'] ?? []),
             'messages' => $passed ? ['Companies House iXBRL Arelle validation passed.'] : [],
         ];
@@ -896,9 +1088,23 @@ final class CompaniesHouseAccountsSubmissionService
         if (empty($context['can_prepare'])) {
             return $this->failure((string)(($context['preparation_blockers'] ?? [])[0] ?? 'Revised accounts cannot be prepared yet.'));
         }
+        $classification = (array)($context['filing_classification'] ?? []);
+        $classificationHash = strtolower(trim((string)($classification['approval_basis_hash'] ?? '')));
+        if (empty($classification['approved'])
+            || (string)($classification['filing_kind'] ?? '') !== 'revised'
+            || preg_match('/^[a-f0-9]{64}$/D', $classificationHash) !== 1) {
+            return $this->failure(
+                'Approve the current Revised Companies House filing classification before preparing accounts.'
+            );
+        }
         $eligibility = (array)$context['eligibility'];
         try {
             $input = $this->savedRevisionDeclarations($companyId, $accountingPeriodId, $context, $input);
+            $input['filing_classification'] = [
+                'filing_kind' => 'revised',
+                'approval_basis_hash' => $classificationHash,
+                'check_code' => (string)($classification['check_code'] ?? ''),
+            ];
         } catch (\Throwable $exception) {
             return $this->failure($exception->getMessage());
         }
@@ -918,7 +1124,11 @@ final class CompaniesHouseAccountsSubmissionService
                 $accountingPeriodId,
                 'companies_house_revised_accounts_ixbrl',
                 null,
-                ['original_document_id' => $originalDocumentId]
+                [
+                    'original_document_id' => $originalDocumentId,
+                    'filing_kind' => 'revised',
+                    'classification_approval_hash' => $classificationHash,
+                ]
             );
         } catch (\Throwable $exception) {
             return $this->failure('Current filing evidence is required: ' . $exception->getMessage());
@@ -962,7 +1172,12 @@ final class CompaniesHouseAccountsSubmissionService
                 (int)($artifact['base_run_id'] ?? 0),
                 $validation,
                 (int)($artifact['fact_count'] ?? 0),
-                (array)($artifact['declarations'] ?? [])
+                (array)($artifact['declarations'] ?? []),
+                (int)($artifact['accounts_artifact_id'] ?? 0),
+                (int)($artifact['accounts_validation_run_id'] ?? 0),
+                (string)($artifact['authority_profile_fingerprint'] ?? ''),
+                'revised',
+                $classificationHash
             ),
         ]);
 
@@ -974,6 +1189,8 @@ final class CompaniesHouseAccountsSubmissionService
             'eligibility_id' => (int)$eligibility['id'],
             'original_document_id' => $originalDocumentId,
             'environment' => $environment,
+            'filing_kind' => 'revised',
+            'classification_approval_hash' => $classificationHash,
             'basis_hash' => (string)$artifact['basis_hash'],
             'artifact_sha256' => (string)$artifact['sha256'],
         ]));
@@ -1010,20 +1227,23 @@ final class CompaniesHouseAccountsSubmissionService
             $now,
             $companyId,
             $accountingPeriodId,
-            $evidenceBundle
+            $evidenceBundle,
+            $classification
         ): void {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
                     evidence_bundle_id, eligibility_id, company_id, accounting_period_id, original_document_id,
                     original_transaction_id, original_document_external_id,
-                    ixbrl_generation_run_id, environment, filing_type, lifecycle,
+                    ixbrl_generation_run_id, accounts_artifact_id, accounts_validation_run_id,
+                    environment, filing_type, lifecycle,
                     submission_number, artifact_path, artifact_sha256,
                     revised_artifact_path, revised_artifact_sha256,
                     basis_hash, idempotency_key, filing_metadata_json, revision_declarations_json,
                     prepared_by, prepared_at, status_updated_at, created_at, updated_at
                  ) VALUES (
                     :evidence_bundle_id, :eligibility_id, :company_id, :accounting_period_id, :original_document_id,
-                    :transaction_id, :external_id, :run_id, :environment, :filing_type,
+                    :transaction_id, :external_id, :run_id, :accounts_artifact_id,
+                    :accounts_validation_run_id, :environment, :filing_type,
                     :lifecycle, :submission_number, :artifact_path, :artifact_sha256,
                     :artifact_path, :artifact_sha256,
                     :basis_hash, :idempotency_key, :filing_metadata, :declarations, :prepared_by,
@@ -1038,6 +1258,8 @@ final class CompaniesHouseAccountsSubmissionService
                     'transaction_id' => (string)$eligibility['original_transaction_id'],
                     'external_id' => (string)$eligibility['original_document_external_id'],
                     'run_id' => (int)($artifact['base_run_id'] ?? 0) ?: null,
+                    'accounts_artifact_id' => (int)($artifact['accounts_artifact_id'] ?? 0) ?: null,
+                    'accounts_validation_run_id' => (int)($artifact['accounts_validation_run_id'] ?? 0) ?: null,
                     'environment' => $environment,
                     'filing_type' => 'revised',
                     'lifecycle' => 'prepared',
@@ -1048,6 +1270,7 @@ final class CompaniesHouseAccountsSubmissionService
                     'idempotency_key' => $idempotencyKey,
                     'filing_metadata' => \eel_accounts\Support\PersistentJson::encode([
                         'filing_kind' => 'revised',
+                        'classification' => $classification,
                         'declarations' => (array)$artifact['declarations'],
                         'presentation_version' => (string)($artifact['presentation_version']
                             ?? IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION),
@@ -1197,8 +1420,12 @@ final class CompaniesHouseAccountsSubmissionService
             'metadata' => [
                 'filing_kind' => 'original',
                 'base_run_id' => (int)($artifact['base_run_id'] ?? 0),
+                'accounts_artifact_id' => (int)($artifact['accounts_artifact_id'] ?? 0),
+                'accounts_validation_run_id' => (int)($artifact['accounts_validation_run_id'] ?? 0),
                 'fact_count' => (int)($artifact['fact_count'] ?? 0),
                 'classification_approval_hash' => (string)$classification['approval_basis_hash'],
+                'authority_profile' => IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS,
+                'authority_profile_fingerprint' => (string)($artifact['authority_profile_fingerprint'] ?? ''),
                 'arelle_validation' => $validation,
             ],
         ]);
@@ -1245,14 +1472,16 @@ final class CompaniesHouseAccountsSubmissionService
             'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
                 evidence_bundle_id, eligibility_id, company_id, accounting_period_id,
                 original_document_id, original_transaction_id, original_document_external_id,
-                ixbrl_generation_run_id, environment, filing_type, lifecycle,
+                ixbrl_generation_run_id, accounts_artifact_id, accounts_validation_run_id,
+                environment, filing_type, lifecycle,
                 submission_number, artifact_path, artifact_sha256,
                 revised_artifact_path, revised_artifact_sha256,
                 basis_hash, idempotency_key, filing_metadata_json, revision_declarations_json,
                 prepared_by, prepared_at, status_updated_at, created_at, updated_at
              ) VALUES (
                 :evidence_bundle_id, NULL, :company_id, :accounting_period_id,
-                NULL, NULL, NULL, :run_id, :environment, :filing_type, :lifecycle,
+                NULL, NULL, NULL, :run_id, :accounts_artifact_id,
+                :accounts_validation_run_id, :environment, :filing_type, :lifecycle,
                 NULL, :artifact_path, :artifact_sha256, :legacy_path, :legacy_sha256,
                 :basis_hash, :idempotency_key, :filing_metadata, :legacy_metadata,
                 :prepared_by, :prepared_at, :status_updated_at, :created_at, :updated_at
@@ -1262,6 +1491,8 @@ final class CompaniesHouseAccountsSubmissionService
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'run_id' => (int)($artifact['base_run_id'] ?? 0) ?: null,
+                'accounts_artifact_id' => (int)($artifact['accounts_artifact_id'] ?? 0) ?: null,
+                'accounts_validation_run_id' => (int)($artifact['accounts_validation_run_id'] ?? 0) ?: null,
                 'environment' => $environment,
                 'filing_type' => 'original',
                 'lifecycle' => 'prepared',
@@ -1355,6 +1586,10 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
+        $classificationError = $this->classificationProvenanceError($submission);
+        if ($classificationError !== null) {
+            return $this->failure($classificationError);
+        }
         $activeSubmission = $this->activeSubmission(
             (int)$submission['company_id'],
             (int)$submission['accounting_period_id'],
@@ -1446,14 +1681,13 @@ final class CompaniesHouseAccountsSubmissionService
         $expectedArtifactHash = (string)($submission['artifact_sha256']
             ?? $submission['revised_artifact_sha256']
             ?? '');
-        $artifactHash = is_file($artifactPath) ? hash_file('sha256', $artifactPath) : false;
-        if (!is_string($artifactHash)
-            || !hash_equals(strtolower($expectedArtifactHash), strtolower($artifactHash))) {
-            return $this->failure('The Companies House accounts artifact has changed or is missing; it was not sent.');
-        }
-        $accountsXml = file_get_contents($artifactPath);
+        $accountsXml = is_file($artifactPath) ? file_get_contents($artifactPath) : false;
         if (!is_string($accountsXml) || $accountsXml === '') {
             return $this->failure('The Companies House accounts artifact could not be read.');
+        }
+        $artifactHash = hash('sha256', $accountsXml);
+        if (!hash_equals(strtolower($expectedArtifactHash), strtolower($artifactHash))) {
+            return $this->failure('The Companies House accounts artifact has changed or is missing; it was not sent.');
         }
         $this->reportProgress(
             $progress,
@@ -1490,6 +1724,10 @@ final class CompaniesHouseAccountsSubmissionService
                     (string)($submission['presenter_fingerprint'] ?? '')
                 )) {
                 throw new \RuntimeException('The allocated Companies House submission could not be reloaded.');
+            }
+            $classificationError = $this->classificationProvenanceError($submission);
+            if ($classificationError !== null) {
+                throw new \RuntimeException($classificationError);
             }
             $this->reportProgress(
                 $progress,
@@ -3336,36 +3574,8 @@ final class CompaniesHouseAccountsSubmissionService
             return 'Resolve the accounts iXBRL generation requirements before preparing Companies House accounts.';
         }
 
-        if (empty($readiness['can_validate'])) {
-            return 'Generate the HMRC Accounting iXBRL; internal and Arelle validation run automatically.';
-        }
-
-        if (empty($readiness['ready_for_filing'])) {
-            $external = (array)($readiness['external_validation'] ?? []);
-            if ((string)($external['status'] ?? '') !== 'passed') {
-                $detail = trim((string)($external['detail'] ?? ''));
-                if ($detail !== '') {
-                    return $detail;
-                }
-                foreach ((array)($external['errors'] ?? []) as $error) {
-                    $error = trim((string)$error);
-                    if ($error !== '') {
-                        return $error;
-                    }
-                }
-                return 'The generated HMRC Accounting iXBRL must pass Arelle validation before Companies House accounts can be prepared.';
-            }
-            if (empty($checks['ixbrl_validated_artifact_current']['complete'])) {
-                return 'The generated, Arelle-validated, and current-file SHA-256 values must match so the file Arelle checked is the unchanged file used for filing.';
-            }
-            foreach ((array)($readiness['filing_errors'] ?? []) as $error) {
-                $error = trim((string)$error);
-                if ($error !== '') {
-                    return $error;
-                }
-            }
-        }
-
+        // Companies House renders and validates its own authority artifact.
+        // HMRC generation/Arelle state must not become a CH prerequisite.
         return '';
     }
 
@@ -3595,6 +3805,43 @@ final class CompaniesHouseAccountsSubmissionService
             $result['errors'] = ['The prepared Companies House iXBRL artifact has changed since validation.'];
             return $result;
         }
+        $artifactId = (int)($submission['accounts_artifact_id'] ?? 0);
+        $validationRunId = (int)($submission['accounts_validation_run_id'] ?? 0);
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+        );
+        $artifactEvidence = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())
+            ->findById($artifactId);
+        $validationEvidence = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+            ->findById($validationRunId);
+        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        if (!is_array($artifactEvidence)
+            || !is_array($validationEvidence)
+            || (string)($artifactEvidence['authority'] ?? '') !== 'COMPANIES_HOUSE'
+            || (string)($artifactEvidence['filing_kind'] ?? '') !== $filingKind
+            || (int)($artifactEvidence['generation_run_id'] ?? 0) !== $baseRunId
+            || (string)($artifactEvidence['output_path'] ?? '') !== $path
+            || !hash_equals((string)($artifactEvidence['output_sha256'] ?? ''), $expectedHash)
+            || !hash_equals((string)($artifactEvidence['profile_fingerprint'] ?? ''), $profile->fingerprint())
+            || (int)($validationEvidence['accounts_artifact_id'] ?? 0) !== $artifactId
+            || (string)($validationEvidence['overall_status'] ?? '') !== 'passed'
+            || !hash_equals((string)($validationEvidence['artifact_sha256'] ?? ''), $expectedHash)
+            || !hash_equals((string)($validationEvidence['profile_fingerprint'] ?? ''), $profile->fingerprint())) {
+            $result['state'] = 'unvalidated';
+            $result['errors'] = [
+                'The prepared Companies House iXBRL has no matching passed authority-profile validation record.',
+            ];
+            return $result;
+        }
+        $bytes = file_get_contents($path);
+        $authorityValidation = is_string($bytes)
+            ? (new IxbrlAuthorityValidationService())->validate($bytes, $profile)
+            : ['ok' => false];
+        if (empty($authorityValidation['ok'])) {
+            $result['state'] = 'invalid';
+            $result['errors'] = ['The prepared iXBRL no longer satisfies the Companies House authority profile.'];
+            return $result;
+        }
         $result['fact_count'] = $this->inlineFactCount($path);
 
         $currentProvenance ??= $this->companiesHouseArtifactProvenance($submission);
@@ -3660,6 +3907,44 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
+    private function classificationProvenanceError(array $submission): ?string
+    {
+        $companyId = (int)($submission['company_id'] ?? 0);
+        $accountingPeriodId = (int)($submission['accounting_period_id'] ?? 0);
+        $filingKind = strtolower(trim((string)($submission['filing_type']
+            ?? $submission['filing_kind']
+            ?? '')));
+        $metadata = is_array($submission['filing_metadata'] ?? null)
+            ? (array)$submission['filing_metadata']
+            : json_decode((string)($submission['filing_metadata_json'] ?? ''), true);
+        $metadata = is_array($metadata) ? $metadata : [];
+        $frozenClassification = (array)($metadata['classification'] ?? []);
+        $frozenKind = strtolower(trim((string)($frozenClassification['filing_kind']
+            ?? $metadata['filing_kind']
+            ?? '')));
+        $frozenHash = strtolower(trim((string)($frozenClassification['approval_basis_hash']
+            ?? $metadata['classification_approval_hash']
+            ?? '')));
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || !in_array($filingKind, ['original', 'revised'], true)
+            || $frozenKind !== $filingKind
+            || preg_match('/^[a-f0-9]{64}$/D', $frozenHash) !== 1) {
+            return 'Regenerate the Companies House iXBRL so it is bound to the current approved Original/Revised filing classification.';
+        }
+
+        $current = $this->filingClassification($companyId, $accountingPeriodId);
+        $currentHash = strtolower(trim((string)($current['approval_basis_hash'] ?? '')));
+        if (empty($current['approved'])
+            || (string)($current['filing_kind'] ?? '') !== $filingKind
+            || preg_match('/^[a-f0-9]{64}$/D', $currentHash) !== 1
+            || !hash_equals($frozenHash, $currentHash)) {
+            return 'The approved Companies House Original/Revised filing classification changed after this artifact was prepared. Regenerate it before transmission.';
+        }
+
+        return null;
+    }
+
     /** @return array<string,mixed> */
     private function companiesHouseArtifactProvenance(array $submission): array
     {
@@ -3673,6 +3958,12 @@ final class CompaniesHouseAccountsSubmissionService
                     'Generate and validate the Companies House iXBRL for the current Disclosure Approval.',
                 ],
             ];
+        }
+        if ((string)($submission['lifecycle'] ?? '') === 'prepared') {
+            $classificationError = $this->classificationProvenanceError($submission);
+            if ($classificationError !== null) {
+                return ['ok' => false, 'errors' => [$classificationError]];
+            }
         }
 
         $approvalStatus = (new IxbrlAccountsFilingApprovalService())
@@ -4759,12 +5050,23 @@ final class CompaniesHouseAccountsSubmissionService
         int $baseRunId,
         array $validation,
         int $factCount = 0,
-        array $declarations = []
+        array $declarations = [],
+        int $accountsArtifactId = 0,
+        int $accountsValidationRunId = 0,
+        string $authorityProfileFingerprint = '',
+        string $filingKind = 'revised',
+        string $classificationApprovalHash = ''
     ): array {
         return [
             'base_run_id' => $baseRunId,
+            'accounts_artifact_id' => max(0, $accountsArtifactId),
+            'accounts_validation_run_id' => max(0, $accountsValidationRunId),
             'fact_count' => max(0, $factCount),
             'presentation_version' => IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION,
+            'authority_profile' => IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS,
+            'authority_profile_fingerprint' => $authorityProfileFingerprint,
+            'filing_kind' => $filingKind,
+            'classification_approval_hash' => strtolower(trim($classificationApprovalHash)),
             'original_approval_evidence' => (array)($declarations['original_approval_evidence'] ?? []),
             // Preserve the complete Arelle result so warnings, the exact
             // validated hash and immutable log provenance survive the prepare

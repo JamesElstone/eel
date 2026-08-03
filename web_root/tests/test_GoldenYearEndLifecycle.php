@@ -448,6 +448,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
     $initialFilingApprovalIds = [];
+    $initialHmrcApprovalIds = [];
     $initialFreezeHashes = [];
     goldenYearEndSavePartyLoanTerms($companyId);
     foreach ($periods as $periodId) {
@@ -646,11 +647,29 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $initialFreezeHashes[$periodId] = goldenYearEndPersistedFreezeHashes($companyId, $periodId);
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
-        $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-            ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle filing approval.');
-        $harness->assertTrue((int)($filingApproval['approval_id'] ?? 0) > 0);
+        $filingApproval = goldenYearEndApproveFilingEvidence(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            'Golden lifecycle filing approval.'
+        );
+        $harness->assertTrue((int)($filingApproval['accounts_approval_id'] ?? 0) > 0);
         $harness->assertTrue((int)($filingApproval['fact_run_id'] ?? 0) > 0);
-        $initialFilingApprovalIds[$periodId] = (int)$filingApproval['approval_id'];
+        $harness->assertTrue((int)($filingApproval['hmrc_approval_id'] ?? 0) > 0);
+        $harness->assertSame(count($ctPeriods), count((array)($filingApproval['ct_basis_ids'] ?? [])));
+        $initialFilingApprovalIds[$periodId] = (int)$filingApproval['accounts_approval_id'];
+        $initialHmrcApprovalIds[$periodId] = (int)$filingApproval['hmrc_approval_id'];
+        $combinedStatus = (new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService())
+            ->status($companyId, $periodId);
+        $harness->assertTrue(!empty($combinedStatus['both_current']));
+        $harness->assertSame(
+            (int)$filingApproval['accounts_approval_id'],
+            (int)(($combinedStatus['accounts'] ?? [])['approval_id'] ?? 0)
+        );
+        $harness->assertSame(
+            (int)$filingApproval['hmrc_approval_id'],
+            (int)(($combinedStatus['hmrc'] ?? [])['approval_id'] ?? 0)
+        );
         foreach ($ctPeriods as $ctPeriod) {
             $filingModel = (new \eel_accounts\Service\CtPeriodFilingModelService())
                 ->build($companyId, $periodId, (int)$ctPeriod['id']);
@@ -730,11 +749,24 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         );
         ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
         goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
-        $renewedApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
-            ->approveAndBuildFacts($companyId, $periodId, 'golden_year_end_test', 'Golden lifecycle re-lock filing approval.');
-        $harness->assertTrue((int)($renewedApproval['approval_id'] ?? 0) > 0);
+        $renewedApproval = goldenYearEndApproveFilingEvidence(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            'Golden lifecycle re-lock filing approval.'
+        );
+        $harness->assertTrue((int)($renewedApproval['accounts_approval_id'] ?? 0) > 0);
         $harness->assertTrue((int)($renewedApproval['fact_run_id'] ?? 0) > 0);
-        $harness->assertTrue((int)$renewedApproval['approval_id'] !== (int)($initialFilingApprovalIds[$periodId] ?? 0));
+        $harness->assertTrue((int)($renewedApproval['hmrc_approval_id'] ?? 0) > 0);
+        $harness->assertTrue(
+            (int)$renewedApproval['accounts_approval_id'] !== (int)($initialFilingApprovalIds[$periodId] ?? 0)
+        );
+        $harness->assertTrue(
+            (int)$renewedApproval['hmrc_approval_id'] !== (int)($initialHmrcApprovalIds[$periodId] ?? 0)
+        );
+        $renewedCtPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->fetchForAccountingPeriod($companyId, $periodId);
+        $harness->assertSame(count($renewedCtPeriods), count((array)($renewedApproval['ct_basis_ids'] ?? [])));
         $harness->assertSame(
             'current',
             (string)((new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
@@ -996,6 +1028,41 @@ function goldenYearEndSaveReturnAuthorisation(int $companyId, int $accountingPer
         throw new RuntimeException((string)(($result['errors'] ?? [])[0]
             ?? 'The golden Corporation Tax return authorisation could not be saved.'));
     }
+}
+
+/** @return array<string,mixed> */
+function goldenYearEndApproveFilingEvidence(
+    int $companyId,
+    int $accountingPeriodId,
+    string $actor,
+    string $note
+): array {
+    \eel_accounts\Support\RequestCache::clear();
+    $workflow = new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService();
+    $status = $workflow->status($companyId, $accountingPeriodId);
+    $stateToken = (string)($status['state_token'] ?? '');
+    if (strlen($stateToken) !== 64) {
+        throw new RuntimeException(
+            'The golden combined filing approval is unavailable: '
+            . implode(' ', array_map('strval', (array)($status['blockers'] ?? [])))
+        );
+    }
+
+    $result = $workflow->approveAll(
+        $companyId,
+        $accountingPeriodId,
+        [],
+        $actor,
+        $note,
+        $stateToken
+    );
+    if (empty($result['success'])) {
+        throw new RuntimeException(
+            'The golden accounts and HMRC filing evidence could not be approved: '
+            . implode(' ', array_map('strval', (array)($result['errors'] ?? [])))
+        );
+    }
+    return $result;
 }
 
 function goldenYearEndSavePartyLoanTerms(int $companyId): void

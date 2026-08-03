@@ -181,11 +181,12 @@ final class IxbrlTaxComputationService
         $generator = new IxbrlGeneratorService();
         $artifact = null;
         $evidenceArtifact = null;
+        $runArtifactPersisted = false;
         try {
             $evidenceArtifact = (new FilingEvidenceService())->reserveArtifact(
                 $companyId,
                 $accountingPeriodId,
-                'computation_ixbrl',
+                'hmrc_computation_ixbrl',
                 $ctPeriodId,
                 ['computation_run_id' => $runId]
             );
@@ -200,6 +201,16 @@ final class IxbrlTaxComputationService
             $errors = $generator->validateStructure($rendered['xhtml'], [$rendered['schema_ref']]);
             if ($errors !== []) {
                 throw new \RuntimeException(implode(' ', $errors));
+            }
+            $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+                IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+            );
+            $authorityValidation = (new IxbrlAuthorityValidationService())->validate(
+                $rendered['xhtml'],
+                $authorityProfile
+            );
+            if (empty($authorityValidation['ok'])) {
+                throw new \RuntimeException($this->authorityValidationMessage($authorityValidation));
             }
             $artifact = $generator->storeImmutableArtifact(
                 $companyId,
@@ -216,8 +227,11 @@ final class IxbrlTaxComputationService
             $external = (new IxbrlExternalValidationService())->validateArtifact(
                 (string)$artifact['path'],
                 [(string)$validationResources['package_archive']],
-                ['HMRC.TBD']
+                ['HMRC.TBD'],
+                IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
             );
+            $external['taxonomy_package_id'] = (int)$package['id'];
+            $external['taxonomy_sha256'] = $packageHash;
             $externalStatus = (string)($external['status'] ?? 'error');
             $validatorVersion = trim((string)($external['version'] ?? ''));
             $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
@@ -277,6 +291,15 @@ final class IxbrlTaxComputationService
                     'id' => $runId,
                 ]
             );
+            $runArtifactPersisted = true;
+            $validationRunId = (new IxbrlValidationEvidenceService())->recordComputationValidation(
+                $runId,
+                (string)$artifact['sha256'],
+                $authorityProfile,
+                [],
+                $authorityValidation,
+                $external
+            );
             (new FilingEvidenceService())->completeArtifact((int)$evidenceArtifact['id'], [
                 'status' => $fileable ? 'validated' : 'generated',
                 'filename' => (string)$artifact['filename'],
@@ -290,9 +313,12 @@ final class IxbrlTaxComputationService
                 'identifier_embedded' => true,
                 'metadata' => [
                     'computation_run_id' => $runId,
+                    'computation_validation_run_id' => $validationRunId,
                     'mapping_profile_hash' => $mappingProfileHash,
                     'tagging_version' => HmrcCtComputationReportProfile::TAGGING_VERSION,
                     'presentation_version' => self::PRESENTATION_VERSION,
+                    'authority_profile' => IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION,
+                    'authority_profile_fingerprint' => (string)($authorityValidation['profile_fingerprint'] ?? ''),
                 ],
             ]);
             return [
@@ -305,13 +331,16 @@ final class IxbrlTaxComputationService
                 'path' => $artifact['path'],
                 'sha256' => $artifact['sha256'],
                 'run_id' => $runId,
+                'computation_validation_run_id' => $validationRunId,
+                'authority_profile' => $authorityProfile->key(),
+                'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
                 'evidence_artifact_id' => (string)$evidenceArtifact['display_id'],
             ];
         } catch (\Throwable $exception) {
             if (is_array($evidenceArtifact)) {
                 (new FilingEvidenceService())->failArtifact((int)$evidenceArtifact['id'], $exception->getMessage());
             }
-            if (is_array($artifact) && !empty($artifact['created'])) {
+            if (!$runArtifactPersisted && is_array($artifact) && !empty($artifact['created'])) {
                 $generator->removeManagedArtifact((string)$artifact['path'], $companyId);
             }
             return $this->failRun($runId, $exception->getMessage());
@@ -365,22 +394,59 @@ final class IxbrlTaxComputationService
         $run = (array)$status['run'];
         $path = (string)$run['generated_path'];
         $package = (array)$status['package'];
+        $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+        );
+        $catalogue = new HmrcCtComputationCatalogueService();
+        $packageHash = $catalogue->verifiedPackageHash($package);
+        if ($packageHash === null) {
+            return $this->failValidationAttempt(
+                $run,
+                $authorityProfile,
+                'The applicable computation-taxonomy package is missing or has changed.',
+                'not_run'
+            );
+        }
         try {
-            $validationResources = (new HmrcCtComputationCatalogueService())->validationResources($package);
+            $validationResources = $catalogue->validationResources($package);
         } catch (\Throwable $exception) {
-            return $this->failRun((int)$run['id'], $exception->getMessage());
+            return $this->failValidationAttempt(
+                $run,
+                $authorityProfile,
+                $exception->getMessage(),
+                'not_run'
+            );
         }
         $schemaRef = (string)$validationResources['schema_ref'];
         $xhtml = file_get_contents($path);
         $internalErrors = is_string($xhtml) ? (new IxbrlGeneratorService())->validateStructure($xhtml, [$schemaRef]) : ['The artifact could not be read.'];
+        $authorityValidation = ['ok' => false, 'errors' => $internalErrors];
+        if ($internalErrors === [] && is_string($xhtml)) {
+            $authorityValidation = (new IxbrlAuthorityValidationService())->validate(
+                $xhtml,
+                $authorityProfile
+            );
+            if (empty($authorityValidation['ok'])) {
+                $internalErrors[] = $this->authorityValidationMessage($authorityValidation);
+            }
+        }
         if ($internalErrors !== []) {
-            return $this->failRun((int)$run['id'], implode(' ', $internalErrors));
+            return $this->failValidationAttempt(
+                $run,
+                $authorityProfile,
+                implode(' ', $internalErrors),
+                'failed',
+                $authorityValidation
+            );
         }
         $external = (new IxbrlExternalValidationService())->validateArtifact(
             $path,
             [(string)$validationResources['package_archive']],
-            ['HMRC.TBD']
+            ['HMRC.TBD'],
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
         );
+        $external['taxonomy_package_id'] = (int)$package['id'];
+        $external['taxonomy_sha256'] = $packageHash;
         $validatorVersion = trim((string)($external['version'] ?? ''));
         $validatedHash = strtolower(trim((string)($external['validated_sha256'] ?? '')));
         $passed = (string)($external['status'] ?? '') === 'passed'
@@ -395,7 +461,64 @@ final class IxbrlTaxComputationService
              external_validated_at = CURRENT_TIMESTAMP, external_validated_sha256 = :validated_sha256 WHERE id = :id',
             ['ixbrl_status' => $passed ? 'validated' : 'validation_failed', 'validation_status' => 'passed', 'validation_errors' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES), 'validator' => 'arelle', 'validator_version' => $validatorVersion !== '' ? $validatorVersion : null, 'external_status' => (string)($external['status'] ?? 'error'), 'external_errors' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'error'), JSON_UNESCAPED_SLASHES), 'external_warnings' => \eel_accounts\Support\Utf8::json($this->externalDiagnosticsForStorage($external, 'warning'), JSON_UNESCAPED_SLASHES), 'external_log' => ($external['log_path'] ?? null) ?: null, 'validated_sha256' => ($external['validated_sha256'] ?? null) ?: null, 'id' => (int)$run['id']]
         );
-        return ['success' => $passed, 'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== [] ? (array)$external['errors'] : ['Arelle validation did not return a complete validator identity and matching artifact hash.']), 'warnings' => (array)($external['warnings'] ?? [])];
+        try {
+            $validationRunId = (new IxbrlValidationEvidenceService())->recordComputationValidation(
+                (int)$run['id'],
+                (string)$run['output_sha256'],
+                $authorityProfile,
+                [],
+                $authorityValidation,
+                $external
+            );
+        } catch (\Throwable $exception) {
+            return $this->failRun((int)$run['id'], $exception->getMessage());
+        }
+        return [
+            'success' => $passed,
+            'errors' => $passed ? [] : ((array)($external['errors'] ?? []) !== []
+                ? (array)$external['errors']
+                : ['Arelle validation did not return a complete validator identity and matching artifact hash.']),
+            'warnings' => (array)($external['warnings'] ?? []),
+            'computation_validation_run_id' => $validationRunId,
+        ];
+    }
+
+    /** @param array<string,mixed> $run @param array<string,mixed>|null $authorityResult */
+    private function failValidationAttempt(
+        array $run,
+        IxbrlAuthorityProfile $profile,
+        string $message,
+        string $coreStatus,
+        ?array $authorityResult = null
+    ): array {
+        $message = trim($message) !== '' ? trim($message) : 'The computation validation attempt failed.';
+        $external = [
+            'status' => 'error',
+            'validator' => 'arelle',
+            'version' => 'not_run',
+            'errors' => [$message],
+            'warnings' => [],
+        ];
+        $validationRunId = 0;
+        try {
+            $validationRunId = (new IxbrlValidationEvidenceService())->recordComputationValidation(
+                (int)($run['id'] ?? 0),
+                (string)($run['output_sha256'] ?? ''),
+                $profile,
+                [$message],
+                $authorityResult ?? ['ok' => false, 'errors' => [$message]],
+                $external,
+                $coreStatus
+            );
+        } catch (\Throwable $exception) {
+            $message .= ' The failed validation decision could not be recorded: ' . $exception->getMessage();
+        }
+        $result = $this->failRun((int)($run['id'] ?? 0), $message);
+        if ($validationRunId > 0) {
+            $result['computation_validation_run_id'] = $validationRunId;
+        }
+
+        return $result;
     }
 
     /** @return list<mixed> */
@@ -511,9 +634,13 @@ final class IxbrlTaxComputationService
         if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
             throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
         }
+        $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+        );
         return ['schema_ref' => $schemaRef, 'xhtml' => $generator->renderDocument([
             'title' => (string)$report['document_title'],
-            'namespaces' => ['ixt' => 'http://www.xbrl.org/inlineXBRL/transformation/2015-02-26'] + $namespaces,
+            'namespaces' => ['ixt' => $authorityProfile->transformationNamespace()] + $namespaces,
+            'document_prefix' => (string)($authorityProfile->documentPolicy()['document_prefix'] ?? ''),
             'schema_refs' => [$schemaRef],
             'contexts' => array_values($contexts),
             'units' => [['id' => 'GBP', 'measure' => 'iso4217:GBP']],
@@ -521,6 +648,21 @@ final class IxbrlTaxComputationService
             'stylesheet' => $this->stylesheet(),
             'body' => $body,
         ])];
+    }
+
+    private function authorityValidationMessage(array $validation): string
+    {
+        $messages = [];
+        foreach ((array)($validation['errors'] ?? []) as $error) {
+            $message = is_array($error) ? trim((string)($error['message'] ?? '')) : trim((string)$error);
+            if ($message !== '') {
+                $messages[] = $message;
+            }
+        }
+
+        return $messages !== []
+            ? implode(' ', array_values(array_unique($messages)))
+            : 'The generated computation does not satisfy the HMRC iXBRL authority profile.';
     }
 
     private function renderReportBody(
@@ -1571,13 +1713,24 @@ CSS;
         }
         if ($requireValidation) {
             $validatedHash = strtolower(trim((string)($stored['external_validated_sha256'] ?? '')));
+            $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+                IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+            );
+            $validationRun = (new \eel_accounts\Repository\IxbrlValidationRunRepository())
+                ->latestForComputation(
+                    (int)($stored['id'] ?? 0),
+                    $outputHash,
+                    $authorityProfile->fingerprint()
+                );
             if ((string)($stored['ixbrl_status'] ?? '') !== 'validated'
                 || (string)($stored['validation_status'] ?? '') !== 'passed'
                 || (string)($stored['external_validation_status'] ?? '') !== 'passed'
                 || trim((string)($stored['external_validator'] ?? '')) === ''
                 || trim((string)($stored['external_validator_version'] ?? '')) === ''
-                || $outputHash === '' || !hash_equals($outputHash, $validatedHash)) {
-                $errors[] = 'The computation artifact has not passed current external validation.';
+                || $outputHash === '' || !hash_equals($outputHash, $validatedHash)
+                || !is_array($validationRun)
+                || (string)($validationRun['overall_status'] ?? '') !== 'passed') {
+                $errors[] = 'The computation artifact has not passed the HMRC authority profile and Arelle validation.';
             }
         }
         return array_values(array_unique($errors));

@@ -11,13 +11,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     ): void {
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
-            'fails complete preflight before invoking any generator',
+            'keeps HMRC generation independent when Companies House revision prerequisites are blocked',
             static function () use ($harness): void {
                 $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0];
                 $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
-                    readinessResolver: static function (): array {
-                        throw new RuntimeException('General iXBRL readiness must not run before the revision gate.');
-                    },
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => true,
+                        'ready_for_filing' => true,
+                    ],
                     revisionReadinessResolver: static fn(): array => [
                         'applicable' => true,
                         'ready' => false,
@@ -32,7 +33,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'filing_required' => true,
                         'filing_kind' => 'revised',
                         'can_prepare' => false,
-                        'can_prepare_after_accounts_generation' => false,
                         'preparation_blockers' => [
                             'The revision approval date must be later than the original accounts approval date (2025-06-28).',
                         ],
@@ -62,13 +62,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $result = $service->generate(49001, 80001, 'test');
                 $harness->assertFalse((bool)$result['success']);
+                $harness->assertSame('partial', (string)$result['outcome']);
                 $harness->assertSame(
-                    ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0],
+                    ['accounts' => 1, 'validation' => 1, 'computation' => 1, 'ct600' => 1, 'companies_house' => 0],
                     $calls
+                );
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['hmrc_accounts']['outcome']
+                );
+                $harness->assertSame(
+                    'failed',
+                    (string)$result['stages']['companies_house_accounts']['outcome']
                 );
                 $harness->assertTrue(str_contains(
                     implode(' ', (array)$result['errors']),
-                    'must be later'
+                    'Companies House accounts: The revision approval date must be later'
                 ));
             }
         );
@@ -89,7 +98,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'filing_required' => true,
                         'filing_kind' => 'revised',
                         'can_prepare' => true,
-                        'can_prepare_after_accounts_generation' => true,
                         'preparation_blockers' => [],
                         'prepared_artifact' => [],
                         'active_submission' => [
@@ -180,9 +188,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     implode(' ', (array)$result['messages']),
                     'reused'
                 ));
-                $harness->assertTrue(in_array('Generating the Accounting iXBRL…', $progressMessages, true));
+                $harness->assertTrue(in_array('Generating the HMRC accounts iXBRL…', $progressMessages, true));
                 $harness->assertTrue(in_array(
-                    'Generating iXBRL for Corporation Tax period 1 of 1…',
+                    'Generating HMRC computations iXBRL for Corporation Tax period 1 of 1…',
                     $progressMessages,
                     true
                 ));
@@ -280,7 +288,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
-            'reports separate validation boundaries with time-weighted filing-set progress',
+            'runs HMRC before Companies House without sharing the Companies House artifact',
             static function () use ($harness): void {
                 $accountsCurrent = false;
                 $ctCurrent = [71 => false, 72 => false];
@@ -304,7 +312,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'filing_required' => true,
                             'filing_kind' => 'revised',
                             'can_prepare' => true,
-                            'can_prepare_after_accounts_generation' => true,
                             'preparation_blockers' => [],
                             'prepared_artifact' => $companiesHouseCurrent
                                 ? ['state' => 'current', 'current' => true, 'filename' => 'revised.xhtml']
@@ -337,9 +344,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         return ['success' => true, 'warnings' => []];
                     },
                     ct600Generator: static function () use (&$companiesHouseCurrent): array {
-                        return $companiesHouseCurrent
-                            ? ['success' => true, 'warnings' => []]
-                            : ['success' => false, 'errors' => ['Revised accounts were prepared too late.']];
+                        if ($companiesHouseCurrent) {
+                            return ['success' => false, 'errors' => [
+                                'Companies House must not be prepared before the HMRC package.',
+                            ]];
+                        }
+                        return ['success' => true, 'warnings' => []];
                     },
                     companiesHousePreparer: static function (
                         int $companyId,
@@ -374,27 +384,187 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
 
                 $harness->assertTrue((bool)$result['success']);
-                $harness->assertSame([
-                    ['Checking the complete filing-set prerequisites…', 0],
-                    ['Generating the Accounting iXBRL…', 12],
-                    ['Running Arelle validation for the Accounting iXBRL…', 15],
-                    ['Preparing the Companies House revised-accounts iXBRL…', 20],
-                    ['Checking Companies House iXBRL preparation requirements…', 20],
-                    ['Preparing the filing-evidence bundle…', 24],
-                    ['Reserving the Companies House iXBRL evidence record…', 28],
-                    ['Generating the Companies House revised-accounts iXBRL…', 30],
-                    ['Running Arelle validation for the Companies House revised-accounts iXBRL…', 32],
-                    ['Recording the validated Companies House iXBRL…', 44],
-                    ['Creating the Companies House filing record…', 45],
-                    ['Companies House iXBRL prepared and validated.', 47],
-                    ['Generating iXBRL for Corporation Tax period 1 of 2…', 49],
-                    ['Running Arelle validation for Corporation Tax period 1 of 2…', 51],
-                    ['Generating CT600 XML for Corporation Tax period 1 of 2…', 55],
-                    ['Generating iXBRL for Corporation Tax period 2 of 2…', 61],
-                    ['Running Arelle validation for Corporation Tax period 2 of 2…', 63],
-                    ['Generating CT600 XML for Corporation Tax period 2 of 2…', 67],
-                    ['The filing iXBRL set is complete.', 100],
-                ], $progress);
+                $harness->assertSame('complete', (string)$result['outcome']);
+                $messages = array_column($progress, 0);
+                $firstCt600 = array_search(
+                    'Generating CT600 XML for Corporation Tax period 1 of 2…',
+                    $messages,
+                    true
+                );
+                $companiesHouse = array_search(
+                    'Preparing the Companies House revised-accounts iXBRL…',
+                    $messages,
+                    true
+                );
+                $harness->assertTrue(is_int($firstCt600));
+                $harness->assertTrue(is_int($companiesHouse));
+                $harness->assertTrue($firstCt600 < $companiesHouse);
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['hmrc_ct600'][71]['outcome']
+                );
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['companies_house_accounts']['outcome']
+                );
+                $harness->assertSame(
+                    'The authority-specific filing iXBRL set is complete.',
+                    (string)end($messages)
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'retains a successful Companies House artifact when the HMRC branch fails',
+            static function () use ($harness): void {
+                $companiesHouseCalls = 0;
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => true,
+                        'ready_for_filing' => false,
+                    ],
+                    periodProjectionResolver: static fn(): array => [
+                        'periods' => [['ct_period_id' => 81, 'sequence_no' => 1, 'status' => 'current']],
+                    ],
+                    companiesHouseResolver: static fn(): array => [
+                        'filing_required' => true,
+                        'filing_kind' => 'original',
+                        'can_prepare' => true,
+                        'prepared_artifact' => [],
+                    ],
+                    accountsGenerator: static fn(): array => [
+                        'success' => false,
+                        'errors' => ['Injected HMRC accounts profile failure.'],
+                    ],
+                    computationStatusResolver: static fn(): array => [
+                        'ready' => true,
+                        'fileable' => true,
+                    ],
+                    computationGenerator: static fn(): array => ['success' => true],
+                    ct600Generator: static fn(): array => ['success' => true],
+                    companiesHousePreparer: static function () use (&$companiesHouseCalls): array {
+                        $companiesHouseCalls++;
+                        return ['success' => true];
+                    },
+                    revisionReadinessResolver: static fn(): array => [
+                        'applicable' => false,
+                        'ready' => true,
+                    ],
+                );
+
+                $result = $service->generate(49006, 80006, 'test');
+
+                $harness->assertSame('partial', (string)$result['outcome']);
+                $harness->assertSame(1, $companiesHouseCalls);
+                $harness->assertSame(
+                    'failed',
+                    (string)$result['stages']['hmrc_accounts']['outcome']
+                );
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['hmrc_computations'][81]['outcome']
+                );
+                $harness->assertSame(
+                    'skipped',
+                    (string)$result['stages']['hmrc_ct600'][81]['outcome']
+                );
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['companies_house_accounts']['outcome']
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'retains successful HMRC outputs when Companies House preparation fails',
+            static function () use ($harness): void {
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => true,
+                        'ready_for_filing' => true,
+                    ],
+                    periodProjectionResolver: static fn(): array => [
+                        'periods' => [['ct_period_id' => 82, 'sequence_no' => 1, 'status' => 'current']],
+                    ],
+                    companiesHouseResolver: static fn(): array => [
+                        'filing_required' => true,
+                        'filing_kind' => 'original',
+                        'can_prepare' => true,
+                        'prepared_artifact' => [],
+                    ],
+                    accountsGenerator: static fn(): array => ['success' => true],
+                    accountsValidator: static fn(): array => ['status' => 'passed'],
+                    computationStatusResolver: static fn(): array => [
+                        'ready' => true,
+                        'fileable' => true,
+                    ],
+                    computationGenerator: static fn(): array => ['success' => true],
+                    ct600Generator: static fn(): array => ['success' => true],
+                    companiesHousePreparer: static fn(): array => [
+                        'success' => false,
+                        'errors' => ['Injected Companies House profile failure.'],
+                    ],
+                    revisionReadinessResolver: static fn(): array => [
+                        'applicable' => false,
+                        'ready' => true,
+                    ],
+                );
+
+                $result = $service->generate(49007, 80007, 'test');
+
+                $harness->assertSame('partial', (string)$result['outcome']);
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['hmrc_accounts']['outcome']
+                );
+                $harness->assertSame(
+                    'succeeded',
+                    (string)$result['stages']['hmrc_ct600'][82]['outcome']
+                );
+                $harness->assertSame(
+                    'failed',
+                    (string)$result['stages']['companies_house_accounts']['outcome']
+                );
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'reports failed when no authority-specific output succeeds',
+            static function () use ($harness): void {
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => false,
+                        'ready_for_filing' => false,
+                        'generation_errors' => ['HMRC accounts basis is unavailable.'],
+                    ],
+                    periodProjectionResolver: static fn(): array => ['periods' => []],
+                    companiesHouseResolver: static fn(): array => [
+                        'filing_required' => true,
+                        'filing_kind' => 'original',
+                        'can_prepare' => false,
+                        'preparation_blockers' => ['Companies House accounts basis is unavailable.'],
+                    ],
+                    revisionReadinessResolver: static fn(): array => [
+                        'applicable' => false,
+                        'ready' => true,
+                    ],
+                );
+
+                $result = $service->generate(49008, 80008, 'test');
+
+                $harness->assertFalse((bool)$result['success']);
+                $harness->assertSame('failed', (string)$result['outcome']);
+                $harness->assertSame(
+                    'failed',
+                    (string)$result['stages']['hmrc_accounts']['outcome']
+                );
+                $harness->assertSame(
+                    'failed',
+                    (string)$result['stages']['companies_house_accounts']['outcome']
+                );
             }
         );
     }

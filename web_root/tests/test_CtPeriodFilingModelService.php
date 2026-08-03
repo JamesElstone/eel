@@ -28,6 +28,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $fixture = ctPeriodFilingModelFixture($periodCount);
                 $approval = (array)$fixture['filing_approval'];
                 $h->assertSame($periodCount, count((array)($approval['ct_basis_ids'] ?? [])));
+                $hmrcApproval = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->current(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id']
+                );
+                $h->assertSame((int)$approval['hmrc_approval_id'], (int)($hmrcApproval['id'] ?? 0));
+                $h->assertSame(
+                    (string)$approval['hmrc_approval_hash'],
+                    (string)($hmrcApproval['basis_hash'] ?? '')
+                );
+                $boundBasisIds = array_map('intval', array_column(\InterfaceDB::fetchAll(
+                    'SELECT ct_period_filing_basis_id
+                     FROM hmrc_ct_filing_approval_period_bases
+                     WHERE hmrc_ct_filing_approval_id = :approval_id
+                     ORDER BY ct_period_filing_basis_id',
+                    ['approval_id' => (int)$approval['hmrc_approval_id']]
+                ), 'ct_period_filing_basis_id'));
+                $expectedBasisIds = array_values(array_map('intval', (array)$approval['ct_basis_ids']));
+                sort($expectedBasisIds, SORT_NUMERIC);
+                $h->assertSame($expectedBasisIds, $boundBasisIds);
                 foreach ($fixture['ct_period_ids'] as $ctPeriodId) {
                     $model = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $ctPeriodId);
                     $h->assertSame(true, (bool)($model['available'] ?? false));
@@ -37,6 +56,78 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $h->assertSame((string)$model['basis_hash'], (string)($model['seal']['basis_hash'] ?? ''));
                 }
             }
+        });
+
+        $h->check($service::class, 'keeps earlier HMRC approval basis links append-only', static function () use ($h): void {
+            $fixture = ctPeriodFilingModelFixture(2);
+            $firstApprovalId = (int)$fixture['filing_approval']['hmrc_approval_id'];
+            $basisIds = array_values(array_map('intval', (array)$fixture['filing_approval']['ct_basis_ids']));
+            sort($basisIds, SORT_NUMERIC);
+            $firstLinksBefore = \InterfaceDB::fetchAll(
+                'SELECT ct_period_filing_basis_id, ct_period_id, basis_hash
+                 FROM hmrc_ct_filing_approval_period_bases
+                 WHERE hmrc_ct_filing_approval_id = :approval_id
+                 ORDER BY ct_period_id, ct_period_filing_basis_id',
+                ['approval_id' => $firstApprovalId]
+            );
+            $h->assertCount(2, $firstLinksBefore);
+
+            $authorisationService = new \eel_accounts\Service\Ct600ReturnAuthorisationService();
+            $currentAuthorisation = $authorisationService->current(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $saved = $authorisationService->save(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                [
+                    'declarant_authority' => 'director:' . (int)($currentAuthorisation['declarant_director_id'] ?? 0),
+                    'original_unfiled_confirmed' => '1',
+                    'authority_confirmed' => '1',
+                    'declaration_confirmed' => '1',
+                ],
+                'second-approval-test'
+            );
+            $h->assertSame(true, (bool)($saved['success'] ?? false));
+            $replacementAuthorisation = $authorisationService->current(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $replacement = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->approve(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'second-approval-test',
+                'Append-only HMRC approval regression.',
+                $basisIds,
+                $replacementAuthorisation
+            );
+            $secondApprovalId = (int)($replacement['approval_id'] ?? 0);
+            $h->assertTrue($secondApprovalId > $firstApprovalId);
+
+            $firstLinksAfter = \InterfaceDB::fetchAll(
+                'SELECT ct_period_filing_basis_id, ct_period_id, basis_hash
+                 FROM hmrc_ct_filing_approval_period_bases
+                 WHERE hmrc_ct_filing_approval_id = :approval_id
+                 ORDER BY ct_period_id, ct_period_filing_basis_id',
+                ['approval_id' => $firstApprovalId]
+            );
+            $secondLinks = \InterfaceDB::fetchAll(
+                'SELECT ct_period_filing_basis_id, ct_period_id, basis_hash
+                 FROM hmrc_ct_filing_approval_period_bases
+                 WHERE hmrc_ct_filing_approval_id = :approval_id
+                 ORDER BY ct_period_id, ct_period_filing_basis_id',
+                ['approval_id' => $secondApprovalId]
+            );
+            $h->assertSame($firstLinksBefore, $firstLinksAfter);
+            $h->assertSame($firstLinksBefore, $secondLinks);
+
+            $legacyBindings = (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM ct_period_filing_bases
+                 WHERE id IN (' . implode(', ', array_fill(0, count($basisIds), '?')) . ')
+                   AND hmrc_ct_filing_approval_id IS NOT NULL',
+                $basisIds
+            );
+            $h->assertSame(0, $legacyBindings);
         });
 
         $h->check($service::class, 'seals a V2 Year End tax approval against the canonical computation manifest', static function () use ($h, $service): void {
@@ -284,7 +375,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
             $missingSeal = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $fixture['ct_period_ids'][0]);
             $h->assertSame(false, (bool)($missingSeal['available'] ?? true));
-            if (!str_contains(strtolower(implode(' ', (array)$missingSeal['errors'])), 'current disclosures and filing basis')) {
+            if (!str_contains(strtolower(implode(' ', (array)$missingSeal['errors'])), 'calculation seal is missing')) {
                 throw new RuntimeException('Unexpected missing-seal errors: ' . implode(' ', (array)$missingSeal['errors']));
             }
         });
@@ -573,6 +664,7 @@ function ctPeriodFilingModelFixture(
         'ixbrl_accounts_disclosures',
         'ixbrl_accounts_filing_approvals',
         'ct_period_filing_bases',
+        'hmrc_ct_filing_approval_period_bases',
     ] as $table) {
         if (!\InterfaceDB::tableExists($table)) {
             throw new RuntimeException('Required CT filing model test table is unavailable: ' . $table);
@@ -1042,8 +1134,21 @@ function ctPeriodFilingModelFixture(
             );
         }
         if ($approve) {
-            $filingApproval = (new \eel_accounts\Service\IxbrlAccountsFilingApprovalService())
+            $accountsApprovalService = new \eel_accounts\Service\IxbrlAccountsFilingApprovalService();
+            $filingApproval = $accountsApprovalService
                 ->approveAndBuildFacts($companyId, $accountingPeriodId, 'test', 'CT filing model fixture.');
+            $preparedCtBases = $accountsApprovalService
+                ->prepareHmrcCtPeriodFilingBases($companyId, $accountingPeriodId, 'test');
+            $hmrcApproval = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->approve(
+                $companyId,
+                $accountingPeriodId,
+                'test',
+                'CT filing model fixture.',
+                array_values(array_map('intval', (array)($preparedCtBases['ct_basis_ids'] ?? [])))
+            );
+            $filingApproval['ct_basis_ids'] = (array)($preparedCtBases['ct_basis_ids'] ?? []);
+            $filingApproval['hmrc_approval_id'] = (int)($hmrcApproval['approval_id'] ?? 0);
+            $filingApproval['hmrc_approval_hash'] = (string)($hmrcApproval['approval_hash'] ?? '');
         }
     }
 

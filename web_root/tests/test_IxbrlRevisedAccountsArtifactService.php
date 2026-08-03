@@ -14,6 +14,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue((array)($result['errors'] ?? []) !== []);
         });
 
+        $harness->check(
+            $service::class,
+            'includes the per-attempt evidence footer in the immutable artifact identity',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'prepare');
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    "'render_model_sha256' => \$sha256"
+                ));
+                $harness->assertFalse(str_contains(
+                    $body,
+                    "'render_model_sha256' => \$basisHash"
+                ));
+            }
+        );
+
         $harness->check($service::class, 'rejects a revision approval date that is not later than the original approval date', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'inputErrors');
             $method->setAccessible(true);
@@ -29,10 +52,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 implode(' ', $errors),
                 'must be later than the original accounts approval date'
             ));
+            $harness->assertTrue(str_contains(
+                implode(' ', $errors),
+                'approved Revised Companies House filing classification'
+            ));
+
+            $validClassificationErrors = (array)$method->invoke($service, 49, 80, [
+                'original_document_id' => 89,
+                'original_approval_date' => '2025-06-28',
+                'revision_approval_date' => '2026-07-21',
+                'non_compliance_explanation' => 'The original report contained an error.',
+                'significant_amendments' => 'The reported amounts were corrected.',
+                'filing_classification' => [
+                    'filing_kind' => 'revised',
+                    'approval_basis_hash' => str_repeat('a', 64),
+                ],
+            ]);
+            $harness->assertFalse(str_contains(
+                implode(' ', $validClassificationErrors),
+                'approved Revised Companies House filing classification'
+            ));
         });
 
         $harness->check($service::class, 'creates a separate revised page and hidden superseded facts without weakening the XML envelope', static function () use ($harness, $service): void {
-            $source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+            $source = '<?xml version="1.0"?>' . "\n"
                 . '<html xmlns="http://www.w3.org/1999/xhtml"'
                 . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
                 . ' xmlns:xbrli="http://www.xbrl.org/2003/instance"'
@@ -45,8 +88,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 . '<div class="ixbrl-header"><ix:header><ix:hidden></ix:hidden><ix:resources>'
                 . '<xbrli:context id="current_period_duration"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>'
                 . '<xbrli:context id="current_period_end"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
-                . '<xbrli:context id="current_period_end_creditors_within_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
-                . '<xbrli:context id="current_period_end_creditors_after_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
+                . '<xbrli:context id="current_period_end_creditors_within_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier><xbrli:segment><xbrldi:explicitMember dimension="core:MaturitiesOrExpirationPeriodsDimension">core:WithinOneYear</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
+                . '<xbrli:context id="current_period_end_creditors_after_one_year"><xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">01234567</xbrli:identifier><xbrli:segment><xbrldi:explicitMember dimension="core:MaturitiesOrExpirationPeriodsDimension">core:AfterOneYear</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>'
                 . '<xbrli:unit id="GBP"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>'
                 . '</ix:resources></ix:header></div>'
                 . '<div class="accountspage titlepage"><h1><ix:nonNumeric name="bus:EntityCurrentLegalOrRegisteredName" contextRef="current_period_duration">Example Limited</ix:nonNumeric></h1>'
@@ -120,7 +163,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $xhtml = (string)($result['xhtml'] ?? '');
             $harness->assertTrue(str_starts_with(
                 $xhtml,
-                '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+                '<?xml version="1.0"?>' . "\n"
             ));
             $harness->assertFalse(str_contains($xhtml, '<!DOCTYPE'));
             $harness->assertTrue(str_contains($xhtml, 'id="preserved"'));
@@ -276,7 +319,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $enhanced = $service->transform(
                 $source,
                 $enhancedDeclarations,
-                '',
+                'EEL-AR-0123-4567-89AB-CDEF-0123-4567-89AB-CDEF',
                 $superseded
             );
             $harness->assertTrue((bool)($enhanced['success'] ?? false));
@@ -296,7 +339,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $sentence = 'Creditors falling due within one year were restated from £64.00 to £279.00, and '
                 . 'creditors falling due after more than one year were restated from £0.00 to £1,035.63.';
             $harness->assertSame(1, substr_count($amendment->textContent, $sentence));
-            $harness->assertSame(1, substr_count($enhancedXhtml, $sentence));
+            $harness->assertSame(
+                1,
+                substr_count(
+                    $enhancedXhtml,
+                    'name="bus:StatementSignificantAmendmentsToPreviouslyFiledReport"'
+                )
+            );
             $harness->assertSame(1, $xpath->query('//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_creditors_within_one_year"]')->length);
             $harness->assertSame(1, $xpath->query('//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_creditors_after_one_year"]')->length);
             $harness->assertSame(1, $xpath->query('//ix:hidden//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_superseded_creditors_within_one_year"]')->length);
@@ -325,15 +374,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         . 'StatementSignificantAmendmentsToPreviouslyFiledReport',
                 ]
             );
-            $harness->assertTrue((bool)$comparison['passed']);
-            $harness->assertTrue((bool)$comparison['facts_unchanged_except_allowlist']);
-            $harness->assertTrue((bool)$comparison['contexts_unchanged']);
-            $harness->assertTrue((bool)$comparison['units_unchanged']);
-            $harness->assertTrue((bool)$comparison['other_visible_text_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['facts_unchanged_except_allowlist']);
+            $harness->assertSame(true, (bool)$comparison['numeric_facts_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['contexts_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['units_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['schema_refs_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['other_visible_text_unchanged']);
+            $harness->assertSame(true, (bool)$comparison['before_integrity_passed']);
+            $harness->assertSame(true, (bool)$comparison['after_integrity_passed']);
+            $harness->assertSame(true, (bool)$comparison['passed']);
         });
 
         $harness->check($service::class, 'fails rather than emit conflicting revision and board approval dates', static function () use ($harness, $service): void {
-            $source = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' . "\n"
+            $source = '<?xml version="1.0"?>' . "\n"
                 . '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:core="http://xbrl.frc.org.uk/fr/2026-01-01/core" lang="en" xml:lang="en"><head><title>Accounts</title></head><body>'
                 . '<div><ix:header><ix:hidden></ix:hidden><ix:resources><xbrli:context id="current_period_duration"/><xbrli:context id="current_period_end"/></ix:resources></ix:header></div>'
                 . '<div class="accountspage titlepage"><h2>MICRO-ENTITY ACCOUNTS</h2></div>'

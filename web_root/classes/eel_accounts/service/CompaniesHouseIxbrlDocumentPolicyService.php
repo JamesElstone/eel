@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Enforces the deterministic XML envelope used by generated Companies House iXBRL. */
 final class CompaniesHouseIxbrlDocumentPolicyService
 {
-    public const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>';
+    public const XML_DECLARATION = '<?xml version="1.0"?>';
     public const DOCUMENT_PREFIX = self::XML_DECLARATION . "\n";
 
     public function canonicaliseGeneratedDocument(string $xml): string

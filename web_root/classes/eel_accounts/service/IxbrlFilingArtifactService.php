@@ -17,31 +17,45 @@ final class IxbrlFilingArtifactService
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $this->failure('missing', 'Select a valid company and accounting period.');
         }
-        if (!\InterfaceDB::tableExists('ixbrl_generation_runs')) {
-            return $this->failure('missing', 'Accounts iXBRL generation table is missing.');
+        if (!\InterfaceDB::tableExists('ixbrl_accounts_artifacts')
+            || !\InterfaceDB::tableExists('ixbrl_validation_runs')) {
+            return $this->failure(
+                'missing',
+                'Apply the authority-specific iXBRL artifact migration before preparing an HMRC filing.'
+            );
         }
 
+        $profile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+        );
+        $artifact = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())->findCurrent(
+            $companyId,
+            $accountingPeriodId,
+            \eel_accounts\Repository\IxbrlAccountsArtifactRepository::AUTHORITY_HMRC,
+            'ordinary',
+            $profile->key()
+        );
+        if (!is_array($artifact)) {
+            return $this->failure(
+                'missing',
+                'No HMRC accounts iXBRL artifact exists for this period. Generate the HMRC accounts file.'
+            );
+        }
+
+        $runId = (int)($artifact['generation_run_id'] ?? 0);
         $row = \InterfaceDB::fetchOne(
-            'SELECT *
-             FROM ixbrl_generation_runs
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-             ORDER BY id DESC
-             LIMIT 1',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            'SELECT * FROM ixbrl_generation_runs WHERE id = :id LIMIT 1',
+            ['id' => $runId]
         );
         if (!is_array($row)) {
-            return $this->failure('missing', 'No accounts iXBRL run exists for this period.');
+            return $this->failure('missing', 'The HMRC accounts artifact generation run was not found.', $runId);
         }
-
-        $runId = (int)($row['id'] ?? 0);
-        if ((string)($row['status'] ?? '') !== 'generated') {
-            $failed = (string)($row['status'] ?? '') === 'failed';
+        if (!hash_equals((string)($artifact['profile_fingerprint'] ?? ''), $profile->fingerprint())
+            || (string)($artifact['profile_version'] ?? '') !== $profile->version()
+            || (string)($artifact['transformation_registry_uri'] ?? '') !== $profile->transformationNamespace()) {
             return $this->failure(
-                $failed ? 'validation_failed' : 'missing',
-                $failed
-                    ? 'The latest iXBRL generation run failed.'
-                    : 'The latest iXBRL run has not produced an accounts filing artifact.',
+                'stale',
+                'The HMRC accounts iXBRL was built under an obsolete authority profile. Regenerate it.',
                 $runId
             );
         }
@@ -57,80 +71,79 @@ final class IxbrlFilingArtifactService
             );
         }
 
-        $internalStatus = (string)($row['validation_status'] ?? 'not_validated');
-        if ($internalStatus !== 'passed') {
-            $state = $internalStatus === 'failed' ? 'validation_failed' : 'unvalidated';
-            return $this->failure(
-                $state,
-                $state === 'validation_failed'
-                    ? 'The latest accounts iXBRL failed internal validation.'
-                    : 'The latest accounts iXBRL has not passed internal validation.',
-                $runId
-            );
-        }
-
-        $externalStatus = (string)($row['external_validation_status'] ?? 'not_configured');
-        if ($externalStatus !== 'passed') {
-            $state = in_array($externalStatus, ['failed', 'error', 'tampered'], true)
-                ? 'validation_failed'
-                : 'unvalidated';
-            return $this->failure(
-                $state,
-                $state === 'validation_failed'
-                    ? 'The latest accounts iXBRL did not pass Arelle validation.'
-                    : 'The latest accounts iXBRL has not passed Arelle validation.',
-                $runId
-            );
-        }
-
-        $path = trim((string)($row['generated_path'] ?? ''));
-        if ($path === '' || !is_file($path)) {
-            return $this->failure('missing', 'The latest generated accounts iXBRL/XHTML file was not found.', $runId);
-        }
-
-        $outputHash = strtolower(trim((string)($row['output_sha256'] ?? '')));
-        $validatedHash = strtolower(trim((string)($row['external_validated_sha256'] ?? '')));
-        if ($outputHash === '' || $validatedHash === '') {
-            return $this->failure(
-                'unvalidated',
-                'The latest accounts iXBRL does not have complete generation and Arelle fingerprints.',
-                $runId
-            );
-        }
-        if (!hash_equals($outputHash, $validatedHash)) {
+        if ((int)($artifact['filing_approval_id'] ?? 0) !== (int)($row['filing_approval_id'] ?? 0)
+            || !hash_equals(
+                (string)($artifact['filing_approval_hash'] ?? ''),
+                (string)($row['filing_approval_hash'] ?? '')
+            )) {
             return $this->failure(
                 'tampered',
-                'The generated accounts iXBRL does not match the artifact validated by Arelle.',
+                'The HMRC accounts artifact is not bound to its approved generation basis.',
                 $runId
             );
         }
 
-        if (!$approvalPinnedOnly) {
-            $fileHash = (new IxbrlArtifactFingerprintService())->sha256($path);
-            if (!is_string($fileHash) || !hash_equals($outputHash, $fileHash)) {
-                return $this->failure(
-                    'tampered',
-                    'The generated accounts iXBRL file has changed since it was generated and validated.',
-                    $runId
-                );
-            }
+        $path = trim((string)($artifact['output_path'] ?? ''));
+        if ($path === '' || !is_file($path)) {
+            return $this->failure('missing', 'The HMRC accounts iXBRL file was not found.', $runId);
+        }
+        $outputHash = strtolower(trim((string)($artifact['output_sha256'] ?? '')));
+        $fileHash = (new IxbrlArtifactFingerprintService())->sha256($path);
+        if ($outputHash === '' || !is_string($fileHash) || !hash_equals($outputHash, $fileHash)) {
+            return $this->failure(
+                'tampered',
+                'The HMRC accounts iXBRL file has changed since its immutable artifact was recorded.',
+                $runId
+            );
+        }
+        if ((string)($row['validation_status'] ?? '') !== 'passed'
+            || (string)($row['external_validation_status'] ?? '') !== 'passed'
+            || trim((string)($row['external_validator'] ?? '')) === ''
+            || trim((string)($row['external_validator_version'] ?? '')) === ''
+            || !hash_equals(
+                $outputHash,
+                strtolower(trim((string)($row['external_validated_sha256'] ?? '')))
+            )) {
+            return $this->failure(
+                'unvalidated',
+                'The latest HMRC accounts iXBRL validation attempt is not filing-ready.',
+                $runId
+            );
+        }
+
+        $validation = (new \eel_accounts\Repository\IxbrlValidationRunRepository())->latestForArtifact(
+            (int)($artifact['id'] ?? 0),
+            $outputHash,
+            $profile->fingerprint()
+        );
+        if (!is_array($validation) || (string)($validation['overall_status'] ?? '') !== 'passed') {
+            return $this->failure(
+                'unvalidated',
+                'The latest HMRC accounts iXBRL validation decision has not passed the HMRC authority profile and Arelle validation.',
+                $runId
+            );
         }
 
         return [
             'ok' => true,
             'state' => 'ready',
             'run_id' => $runId,
-            'filing_approval_id' => (int)($row['filing_approval_id'] ?? 0),
+            'artifact_id' => (int)($artifact['id'] ?? 0),
+            'validation_run_id' => (int)($validation['id'] ?? 0),
+            'filing_approval_id' => (int)($artifact['filing_approval_id'] ?? 0),
             'path' => $path,
-            'filename' => basename($path),
+            'filename' => (string)($artifact['output_filename'] ?? basename($path)),
             'warnings' => [],
             'errors' => [],
             'hash' => $outputHash,
             'basis_hash' => (string)($row['basis_hash'] ?? ''),
-            'taxonomy_profile' => (string)($row['taxonomy_profile'] ?? ''),
-            'taxonomy_package_id' => (int)($row['external_taxonomy_package_id'] ?? 0),
-            'taxonomy_package_hash' => (string)($row['external_taxonomy_sha256'] ?? ''),
-            'validation_status' => (string)($row['external_validation_status'] ?? ''),
+            'taxonomy_profile' => (string)($artifact['taxonomy_profile'] ?? ''),
+            'taxonomy_package_id' => (int)($validation['taxonomy_package_id'] ?? 0),
+            'taxonomy_package_hash' => (string)($validation['taxonomy_package_sha256'] ?? ''),
+            'validation_status' => (string)($validation['overall_status'] ?? ''),
+            'authority_profile' => (string)($artifact['profile_key'] ?? ''),
+            'authority_profile_version' => (string)($artifact['profile_version'] ?? ''),
+            'authority_profile_fingerprint' => (string)($artifact['profile_fingerprint'] ?? ''),
         ];
     }
 
@@ -140,6 +153,8 @@ final class IxbrlFilingArtifactService
             'ok' => false,
             'state' => $state,
             'run_id' => $runId,
+            'artifact_id' => 0,
+            'validation_run_id' => 0,
             'filing_approval_id' => 0,
             'path' => null,
             'filename' => null,

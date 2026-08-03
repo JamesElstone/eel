@@ -29,7 +29,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 static fn(string $mode): array => ['ok' => true, 'errors' => []],
                 static fn(int $companyId, int $ctPeriodId): array => [
                     'ok' => true, 'state' => 'ready', 'run_id' => 82, 'errors' => [],
-                ]
+                ],
+                static fn(): string => 'TEST'
             );
 
             $summary = $service->fetch(

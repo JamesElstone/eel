@@ -258,56 +258,6 @@
         });
     }
 
-    function initialiseCt600AuthorisationForms(root = document) {
-        const forms = root.querySelectorAll
-            ? root.querySelectorAll('[data-ct600-authorisation-form="true"]')
-            : [];
-
-        forms.forEach((form) => {
-            if (!(form instanceof HTMLFormElement) || form.dataset.ct600AuthorisationBound === '1') {
-                return;
-            }
-
-            const declarant = form.querySelector('#ct600_declarant_authority');
-            const saveButton = form.querySelector('#save_ct600_return_authorisation_button');
-            if (!(declarant instanceof HTMLSelectElement) || !(saveButton instanceof HTMLButtonElement)) {
-                return;
-            }
-
-            const defaultValues = {
-                original_unfiled_confirmed: String(form.dataset.originalUnfiledDefault || '0'),
-                authority_confirmed: String(form.dataset.authorityDefault || '0'),
-                declaration_confirmed: String(form.dataset.declarationDefault || '0'),
-            };
-            const radioNames = Object.keys(defaultValues);
-            const currentRadioValue = (name) => {
-                const checked = form.querySelector('input[type="radio"][name="' + name + '"]:checked');
-                return checked instanceof HTMLInputElement ? checked.value : '';
-            };
-            const sync = () => {
-                const declarantChanged = declarant.value !== String(declarant.dataset.stateDefault || '');
-                const confirmationChanged = radioNames.some(
-                    (name) => currentRadioValue(name) !== defaultValues[name]
-                );
-                const everyStatementConfirmed = radioNames.every(
-                    (name) => currentRadioValue(name) === '1'
-                );
-                saveButton.disabled = declarant.value === ''
-                    || !everyStatementConfirmed
-                    || (!declarantChanged && !confirmationChanged);
-            };
-
-            form.querySelectorAll('[data-ct600-authorisation-field="true"]').forEach((field) => {
-                field.addEventListener('input', sync);
-                field.addEventListener('change', sync);
-            });
-            declarant.addEventListener('input', sync);
-            declarant.addEventListener('change', sync);
-            form.dataset.ct600AuthorisationBound = '1';
-            sync();
-        });
-    }
-
     function initialiseDirectorLoanOffsetAcknowledgements(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('[data-director-loan-offset-ack-form="true"], [data-year-end-ack-form="true"]') : [];
 
@@ -1145,23 +1095,35 @@
             if (!(form instanceof HTMLFormElement) || form.dataset.ixbrlDisclosuresBound === '1') {
                 return;
             }
-            const controls = Array.from(form.querySelectorAll('[data-ixbrl-disclosure-control="true"]'))
+            const controls = Array.from(form.querySelectorAll('[data-ixbrl-approval-control="true"]'))
                 .filter((control) => control instanceof HTMLInputElement
                     || control instanceof HTMLSelectElement
                     || control instanceof HTMLTextAreaElement
                     || control instanceof HTMLButtonElement);
+            const mirrors = Array.from(form.querySelectorAll('[data-ixbrl-approval-mirror="true"]'))
+                .filter((control) => control instanceof HTMLInputElement);
             const editButton = form.querySelector('[data-ixbrl-disclosures-edit="true"]');
             const saveButton = form.querySelector('[data-ixbrl-disclosures-save="true"]');
             const cancelButton = form.querySelector('[data-ixbrl-disclosures-cancel="true"]');
+            const approvalButton = form.querySelector('[data-ixbrl-approval-submit="true"]');
+            const editingFlag = form.querySelector('[data-ixbrl-approval-editing-flag="true"]');
             if (controls.length === 0
                 || !(editButton instanceof HTMLButtonElement)
                 || !(saveButton instanceof HTMLButtonElement)
-                || !(cancelButton instanceof HTMLButtonElement)) {
+                || !(cancelButton instanceof HTMLButtonElement)
+                || !(approvalButton instanceof HTMLButtonElement)
+                || !(editingFlag instanceof HTMLInputElement)) {
                 return;
             }
 
             const canEdit = form.dataset.ixbrlDisclosuresCanEdit === '1';
             const initiallyLocked = form.dataset.ixbrlDisclosuresInitiallyLocked === '1';
+            const serverCanApprove = form.dataset.ixbrlApprovalCanApprove === '1';
+            const ctConfirmationNames = [
+                'original_unfiled_confirmed',
+                'authority_confirmed',
+                'declaration_confirmed',
+            ];
             const valueControls = controls.filter((control) => !(control instanceof HTMLButtonElement));
             const state = () => valueControls.map((control) => {
                 if (control instanceof HTMLInputElement
@@ -1174,6 +1136,7 @@
 
             const setEditing = (editing) => {
                 form.dataset.ixbrlDisclosuresEditing = editing ? '1' : '0';
+                editingFlag.value = editing ? '1' : '0';
                 controls.forEach((control) => {
                     control.disabled = !editing || !canEdit;
                     if (control.disabled) {
@@ -1182,26 +1145,38 @@
                         control.removeAttribute('aria-disabled');
                     }
                 });
+                mirrors.forEach((mirror) => {
+                    mirror.disabled = editing && canEdit;
+                });
                 form.dispatchEvent(new CustomEvent('ixbrl-disclosures-edit-state'));
             };
             const sync = () => {
                 const editing = form.dataset.ixbrlDisclosuresEditing === '1';
                 const changed = state() !== initialState;
+                const ctConfirmationsAreYes = ctConfirmationNames.every((name) => {
+                    const selected = form.querySelector(`input[name="${name}"]:checked`);
+                    return selected instanceof HTMLInputElement && selected.value === '1';
+                });
                 editButton.disabled = !canEdit || !initiallyLocked || editing;
                 saveButton.disabled = !canEdit || !editing || !changed || !form.checkValidity();
                 cancelButton.disabled = !canEdit || (!changed && (!initiallyLocked || !editing));
+                approvalButton.disabled = !(serverCanApprove || changed)
+                    || !ctConfirmationsAreYes
+                    || !form.checkValidity();
             };
 
             valueControls.forEach((control) => {
                 control.addEventListener('input', sync);
                 control.addEventListener('change', sync);
             });
-            editButton.addEventListener('click', () => {
+            editButton.addEventListener('click', (event) => {
+                event.preventDefault();
                 setEditing(true);
                 sync();
                 valueControls.find((control) => !control.disabled)?.focus({ preventScroll: true });
             });
-            cancelButton.addEventListener('click', () => {
+            cancelButton.addEventListener('click', (event) => {
+                event.preventDefault();
                 form.reset();
                 setEditing(!initiallyLocked);
                 sync();
@@ -1457,7 +1432,6 @@
     initialiseOwnershipPartyForms(document);
     initialiseShareAllocationForms(document);
     initialiseHmrcNoticeRequiredFields(document);
-    initialiseCt600AuthorisationForms(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
     initialiseVehicleRows(document);
@@ -1481,7 +1455,6 @@
                     initialiseOwnershipPartyForms(node);
                     initialiseShareAllocationForms(node);
                     initialiseHmrcNoticeRequiredFields(node);
-                    initialiseCt600AuthorisationForms(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
                     initialiseVehicleRows(node);

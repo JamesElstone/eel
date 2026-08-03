@@ -11,6 +11,8 @@ namespace eel_accounts\Service;
 
 final class IxbrlAccountingService
 {
+    private string $renderAuthority = 'HMRC';
+
     public function generatePreview(int $companyId, int $accountingPeriodId): array
     {
         return $this->generateFilingExport($companyId, $accountingPeriodId);
@@ -18,6 +20,9 @@ final class IxbrlAccountingService
 
     public function generateFilingExport(int $companyId, int $accountingPeriodId): array
     {
+        $authorityProfile = (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+        );
         $builder = new IxbrlFactBuilderService();
         $run = $builder->getLatestRun($companyId, $accountingPeriodId);
         if (!is_array($run) || (int)($run['fact_count'] ?? 0) <= 0) {
@@ -37,18 +42,27 @@ final class IxbrlAccountingService
             $evidenceArtifact = (new FilingEvidenceService())->reserveArtifact(
                 $companyId,
                 $accountingPeriodId,
-                'accounts_ixbrl',
+                'hmrc_accounts_ixbrl',
                 null,
-                ['ixbrl_generation_run_id' => (int)$run['id']]
+                [
+                    'ixbrl_generation_run_id' => (int)$run['id'],
+                    'authority_profile' => $authorityProfile->key(),
+                    'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
+                ]
             );
             $xhtml = $this->renderXhtml(
                 $facts,
                 $this->comparativeFactsRequired($companyId, $accountingPeriodId),
-                (string)$evidenceArtifact['display_id']
+                (string)$evidenceArtifact['display_id'],
+                $authorityProfile
             );
-            $validationErrors = $this->validateInlineXbrl($xhtml, $facts);
+            $validationErrors = $this->validateInlineXbrl($xhtml, $facts, $authorityProfile);
             if ($validationErrors !== []) {
                 throw new \RuntimeException('Generated iXBRL failed internal validation: ' . implode(' ', $validationErrors));
+            }
+            $authorityValidation = (new IxbrlAuthorityValidationService())->validate($xhtml, $authorityProfile);
+            if (empty($authorityValidation['ok'])) {
+                throw new \RuntimeException($this->authorityValidationMessage($authorityValidation));
             }
 
             $artifact = $this->accountingArtifactLocation($companyId, $accountingPeriodId);
@@ -68,56 +82,110 @@ final class IxbrlAccountingService
             $newGeneratedPath = $path;
             $hash = (string)$stored['sha256'];
 
-            \InterfaceDB::prepareExecute(
-                'UPDATE ixbrl_generation_runs
-                 SET status = :status,
-                     export_type = :export_type,
-                     taxonomy_profile = :taxonomy_profile,
-                     validation_status = :validation_status,
-                     validation_errors_json = :validation_errors_json,
-                     external_validator = NULL,
-                     external_validator_version = NULL,
-                     external_validation_status = :external_validation_status,
-                     external_validation_errors_json = NULL,
-                     external_validation_warnings_json = NULL,
-                     external_validation_log_path = NULL,
-                     external_validated_at = NULL,
-                     external_validated_sha256 = NULL,
-                     generated_filename = :filename,
-                     generated_path = :path,
-                     output_sha256 = :sha,
-                     generated_at = CURRENT_TIMESTAMP,
-                     error_message = NULL
-                 WHERE id = :id',
-                [
+            $activeTaxonomyPackage = (new FrcTaxonomyPackageService())->activePackage();
+            $artifactRecord = [
+                'generation_run_id' => (int)$run['id'],
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_approval_id' => (int)($run['filing_approval_id'] ?? 0),
+                'filing_approval_hash' => (string)($run['filing_approval_hash'] ?? ''),
+                'authority' => \eel_accounts\Repository\IxbrlAccountsArtifactRepository::AUTHORITY_HMRC,
+                'filing_kind' => 'ordinary',
+                'profile_key' => $authorityProfile->key(),
+                'profile_version' => $authorityProfile->version(),
+                'profile_fingerprint' => $authorityProfile->fingerprint(),
+                // The evidence footer is part of the render input, so its
+                // resulting byte hash is also the immutable render identity.
+                'render_model_sha256' => $hash,
+                'transformation_registry_uri' => $authorityProfile->transformationNamespace(),
+                'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
+                'generation_status' => 'generated',
+                'output_path' => $path,
+                'output_filename' => $filename,
+                'output_sha256' => $hash,
+            ];
+            $taxonomyPackageId = is_array($activeTaxonomyPackage)
+                ? (int)($activeTaxonomyPackage['id'] ?? 0)
+                : 0;
+            $taxonomyPackageHash = is_array($activeTaxonomyPackage)
+                ? strtolower(trim((string)($activeTaxonomyPackage['sha256'] ?? '')))
+                : '';
+            if ($taxonomyPackageId > 0 && preg_match('/^[a-f0-9]{64}$/', $taxonomyPackageHash) === 1) {
+                $artifactRecord['taxonomy_package_id'] = $taxonomyPackageId;
+                $artifactRecord['taxonomy_package_sha256'] = $taxonomyPackageHash;
+            }
+            $artifactId = (int)\InterfaceDB::transaction(function () use (
+                $run,
+                $filename,
+                $path,
+                $hash,
+                $artifactRecord,
+                $evidenceArtifact,
+                $generationWarnings,
+                $authorityProfile
+            ): int {
+                \InterfaceDB::prepareExecute(
+                    'UPDATE ixbrl_generation_runs
+                     SET status = :status,
+                         export_type = :export_type,
+                         taxonomy_profile = :taxonomy_profile,
+                         validation_status = :validation_status,
+                         validation_errors_json = :validation_errors_json,
+                         external_validator = NULL,
+                         external_validator_version = NULL,
+                         external_validation_status = :external_validation_status,
+                         external_validation_errors_json = NULL,
+                         external_validation_warnings_json = NULL,
+                         external_validation_log_path = NULL,
+                         external_validated_at = NULL,
+                         external_validated_sha256 = NULL,
+                         generated_filename = :filename,
+                         generated_path = :path,
+                         output_sha256 = :sha,
+                         generated_at = CURRENT_TIMESTAMP,
+                         error_message = NULL
+                     WHERE id = :id',
+                    [
+                        'status' => 'generated',
+                        'export_type' => 'filing_export',
+                        'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
+                        'validation_status' => 'passed',
+                        'validation_errors_json' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES),
+                        'external_validation_status' => 'not_validated',
+                        'filename' => $filename,
+                        'path' => $path,
+                        'sha' => $hash,
+                        'id' => (int)$run['id'],
+                    ]
+                );
+                $artifactId = (new \eel_accounts\Repository\IxbrlAccountsArtifactRepository())
+                    ->create($artifactRecord);
+                (new FilingEvidenceService())->completeArtifact((int)$evidenceArtifact['id'], [
                     'status' => 'generated',
-                    'export_type' => 'filing_export',
-                    'taxonomy_profile' => IxbrlTaxonomyProfileService::PROFILE,
-                    'validation_status' => 'passed',
-                    'validation_errors_json' => \eel_accounts\Support\Utf8::json([], JSON_UNESCAPED_SLASHES),
-                    'external_validation_status' => 'not_validated',
                     'filename' => $filename,
                     'path' => $path,
-                    'sha' => $hash,
-                    'id' => (int)$run['id'],
-                ]
-            );
-            (new FilingEvidenceService())->completeArtifact((int)$evidenceArtifact['id'], [
-                'status' => 'generated',
-                'filename' => $filename,
-                'path' => $path,
-                'sha256' => $hash,
-                'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
-                'validation_status' => 'passed',
-                'identifier_embedded' => true,
-                'metadata' => [
-                    'ixbrl_generation_run_id' => (int)$run['id'],
-                    'generation_warnings' => $generationWarnings,
-                ],
-            ]);
+                    'sha256' => $hash,
+                    'schema_identity' => IxbrlTaxonomyProfileService::SCHEMA_REF,
+                    'validation_status' => 'passed',
+                    'identifier_embedded' => true,
+                    'metadata' => [
+                        'ixbrl_generation_run_id' => (int)$run['id'],
+                        'accounts_artifact_id' => $artifactId,
+                        'generation_warnings' => $generationWarnings,
+                        'authority_profile' => $authorityProfile->key(),
+                        'authority_profile_version' => $authorityProfile->version(),
+                        'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
+                    ],
+                ]);
+
+                return $artifactId;
+            });
 
             return ['success' => true, 'errors' => [], 'filename' => $filename, 'path' => $path, 'sha256' => $hash,
+                'accounts_artifact_id' => $artifactId,
                 'evidence_artifact_id' => (string)$evidenceArtifact['display_id'],
+                'authority_profile' => $authorityProfile->key(),
+                'authority_profile_fingerprint' => $authorityProfile->fingerprint(),
                 'warnings' => $generationWarnings];
         } catch (\Throwable $exception) {
             if (is_array($evidenceArtifact)) {
@@ -156,6 +224,66 @@ final class IxbrlAccountingService
                     'id' => (int)$run['id'],
                 ]
             );
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+    }
+
+    /**
+     * Render an authority-specific accounts document from the immutable approved
+     * fact snapshot without storing or selecting another authority's bytes.
+     */
+    public function buildAuthorityDocument(
+        int $companyId,
+        int $accountingPeriodId,
+        string $profileKey,
+        string $evidenceArtifactId = ''
+    ): array {
+        $builder = new IxbrlFactBuilderService();
+        $run = $builder->getLatestRun($companyId, $accountingPeriodId);
+        if (!is_array($run) || (int)($run['fact_count'] ?? 0) <= 0) {
+            return ['success' => false, 'errors' => ['Build iXBRL facts before generating the accounts file.']];
+        }
+        $freshness = (array)($run['run_freshness'] ?? $builder->getRunFreshness((int)$run['id']));
+        if ((string)($freshness['state'] ?? '') !== 'current') {
+            return ['success' => false, 'errors' => [(string)($freshness['detail'] ?? 'Rebuild iXBRL facts before generating.')]];
+        }
+
+        try {
+            $profile = (new IxbrlAuthorityProfileService())->profile($profileKey);
+            $facts = $builder->getFacts((int)$run['id']);
+            $xhtml = $this->renderXhtml(
+                $facts,
+                $this->comparativeFactsRequired($companyId, $accountingPeriodId),
+                $evidenceArtifactId,
+                $profile
+            );
+            $coreErrors = $this->validateInlineXbrl($xhtml, $facts, $profile);
+            if ($coreErrors !== []) {
+                return ['success' => false, 'errors' => $coreErrors];
+            }
+            $authorityValidation = (new IxbrlAuthorityValidationService())->validate($xhtml, $profile);
+            if (empty($authorityValidation['ok'])) {
+                return [
+                    'success' => false,
+                    'errors' => [$this->authorityValidationMessage($authorityValidation)],
+                    'authority_validation' => $authorityValidation,
+                ];
+            }
+
+            return [
+                'success' => true,
+                'errors' => [],
+                'warnings' => $profile->authority() === 'HMRC'
+                    ? $this->negativeEquityOmissionWarnings($facts)
+                    : [],
+                'xhtml' => $xhtml,
+                'run' => $run,
+                'facts' => $facts,
+                'profile' => $profile->toArray(),
+                'profile_fingerprint' => $profile->fingerprint(),
+                'authority_validation' => $authorityValidation,
+            ];
+        } catch (\Throwable $exception) {
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
     }
@@ -246,8 +374,17 @@ final class IxbrlAccountingService
         ) > 0;
     }
 
-    private function renderXhtml(array $facts, bool $comparativeRequired = false, string $evidenceArtifactId = ''): string
+    private function renderXhtml(
+        array $facts,
+        bool $comparativeRequired = false,
+        string $evidenceArtifactId = '',
+        ?IxbrlAuthorityProfile $authorityProfile = null
+    ): string
     {
+        $authorityProfile ??= (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+        );
+        $this->renderAuthority = $authorityProfile->authority();
         $indexed = $this->indexFacts($facts);
         $missingFactKeys = [];
         $missingComparativeFactKeys = [];
@@ -354,10 +491,10 @@ final class IxbrlAccountingService
             $namespaceAttributes .= ' xmlns:' . $prefix . '="' . $this->e($uri) . '"';
         }
 
-        $xhtml = CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX
+        $xhtml = (string)($authorityProfile->documentPolicy()['document_prefix'] ?? '')
             . '<html xmlns="http://www.w3.org/1999/xhtml"'
             . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
-            . ' xmlns:ixt="http://www.xbrl.org/inlineXBRL/transformation/2015-02-26"'
+            . ' xmlns:ixt="' . $this->e($authorityProfile->transformationNamespace()) . '"'
             . ' xmlns:xbrli="http://www.xbrl.org/2003/instance"'
             . ' xmlns:xbrldi="http://xbrl.org/2006/xbrldi"'
             . ' xmlns:link="http://www.xbrl.org/2003/linkbase"'
@@ -446,8 +583,12 @@ final class IxbrlAccountingService
             . '</div>' . "\n"
             . '</body></html>' . "\n";
 
-        return (new CompaniesHouseIxbrlDocumentPolicyService())
-            ->canonicaliseGeneratedDocument($xhtml);
+        if ($authorityProfile->authority() === 'COMPANIES_HOUSE') {
+            return (new CompaniesHouseIxbrlDocumentPolicyService())
+                ->canonicaliseGeneratedDocument($xhtml);
+        }
+
+        return $xhtml;
     }
 
     private function profitAndLossTable(array $indexed): string
@@ -601,7 +742,8 @@ final class IxbrlAccountingService
 
     private function statementFact(array $fact, array $options): string
     {
-        if ((string)($fact['taxonomy_concept'] ?? '') === 'core:Equity'
+        if ($this->renderAuthority === 'HMRC'
+            && (string)($fact['taxonomy_concept'] ?? '') === 'core:Equity'
             && (string)($fact['value_type'] ?? '') === 'numeric'
             && (float)($fact['numeric_value'] ?? 0) < 0) {
             return $this->visibleAmount((float)$fact['numeric_value']);
@@ -1232,11 +1374,19 @@ CSS;
         }
     }
 
-    private function validateInlineXbrl(string $xhtml, array $sourceFacts = []): array
+    private function validateInlineXbrl(
+        string $xhtml,
+        array $sourceFacts = [],
+        ?IxbrlAuthorityProfile $authorityProfile = null
+    ): array
     {
+        $authorityProfile ??= (new IxbrlAuthorityProfileService())->profile(
+            IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
+        );
         $errors = [];
-        if (!str_starts_with($xhtml, CompaniesHouseIxbrlDocumentPolicyService::DOCUMENT_PREFIX)) {
-            $errors[] = 'The deterministic UTF-8 XML declaration is missing.';
+        $expectedPrefix = (string)($authorityProfile->documentPolicy()['document_prefix'] ?? '');
+        if ($expectedPrefix === '' || !str_starts_with($xhtml, $expectedPrefix)) {
+            $errors[] = 'The authority-specific XML declaration is missing.';
         }
         if (preg_match('/<!DOCTYPE|<!ENTITY/i', $xhtml) === 1) {
             $errors[] = 'DOCTYPE and entity declarations are not permitted.';
@@ -1482,11 +1632,14 @@ CSS;
             $errors[] = 'Negative transformed numbers must use the sign attribute and positive lexical content.';
             break;
         }
-        if (($xpath->query('//ix:nonFraction[@name="core:Equity" and @sign="-"]')->length ?? 0) > 0) {
+        if ($authorityProfile->authority() === 'HMRC'
+            && ($xpath->query('//ix:nonFraction[@name="core:Equity" and @sign="-"]')->length ?? 0) > 0) {
             $errors[] = 'A negative core:Equity fact must not be emitted because it fails HMRC.5.3.';
         }
-        foreach ($this->equityOutputPolicyErrors($xpath, $sourceFacts) as $equityError) {
-            $errors[] = $equityError;
+        if ($authorityProfile->authority() === 'HMRC') {
+            foreach ($this->equityOutputPolicyErrors($xpath, $sourceFacts) as $equityError) {
+                $errors[] = $equityError;
+            }
         }
         foreach ($xpath->query('//ix:nonFraction[@sign="-" and not(ancestor::ix:hidden)]') ?: [] as $negativeFact) {
             if (!$negativeFact instanceof \DOMElement) {
@@ -1509,6 +1662,21 @@ CSS;
         }
 
         return array_values(array_unique($errors));
+    }
+
+    private function authorityValidationMessage(array $validation): string
+    {
+        $messages = [];
+        foreach ((array)($validation['errors'] ?? []) as $error) {
+            $message = is_array($error) ? trim((string)($error['message'] ?? '')) : trim((string)$error);
+            if ($message !== '') {
+                $messages[] = $message;
+            }
+        }
+
+        return $messages !== []
+            ? implode(' ', array_values(array_unique($messages)))
+            : 'The generated accounts do not satisfy the selected iXBRL authority profile.';
     }
 
     /** @return list<string> */

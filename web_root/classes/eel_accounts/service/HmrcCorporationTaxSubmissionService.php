@@ -1631,10 +1631,13 @@ final class HmrcCorporationTaxSubmissionService
             $now = $this->sqlNow();
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ' . self::SUBMISSIONS . ' (
-                    evidence_bundle_id, company_id, accounting_period_id, ct_period_id, mode, environment,
+                    evidence_bundle_id, company_id, accounting_period_id, ct_period_id,
+                    hmrc_ct_filing_approval_id, hmrc_ct_filing_approval_hash, mode, environment,
                     status, protocol_state, business_outcome, submission_type,
-                    accounts_ixbrl_path, accounts_run_id, accounts_sha256,
-                    computations_ixbrl_path, computation_run_id, computations_sha256,
+                    accounts_ixbrl_path, accounts_run_id, accounts_artifact_id,
+                    accounts_validation_run_id, accounts_sha256,
+                    computations_ixbrl_path, computation_run_id,
+                    computation_validation_run_id, computations_sha256,
                     year_end_locked_at, package_hash, idempotency_key, irmark,
                     schema_version, body_sha256, ct600_sha256, validation_json,
                     source_manifest_json, source_manifest_sha256, test_submission_id,
@@ -1644,10 +1647,13 @@ final class HmrcCorporationTaxSubmissionService
                     declaration_approved_at, declaration_approved_by,
                     approved_package_hash, prepared_by, created_at, updated_at
                  ) VALUES (
-                    :evidence_bundle_id, :company_id, :accounting_period_id, :ct_period_id, :mode, :environment,
+                    :evidence_bundle_id, :company_id, :accounting_period_id, :ct_period_id,
+                    :hmrc_ct_filing_approval_id, :hmrc_ct_filing_approval_hash, :mode, :environment,
                     :status, :protocol_state, :business_outcome, :submission_type,
-                    :accounts_path, :accounts_run_id, :accounts_sha256,
-                    :computations_path, :computation_run_id, :computations_sha256,
+                    :accounts_path, :accounts_run_id, :accounts_artifact_id,
+                    :accounts_validation_run_id, :accounts_sha256,
+                    :computations_path, :computation_run_id,
+                    :computation_validation_run_id, :computations_sha256,
                     :year_end_locked_at, :package_hash, :idempotency_key, :irmark,
                     :schema_version, :body_sha256, :ct600_sha256, :validation_json,
                     :source_manifest_json, :source_manifest_sha256, :test_submission_id,
@@ -1662,6 +1668,8 @@ final class HmrcCorporationTaxSubmissionService
                     'company_id' => (int)$package['company_id'],
                     'accounting_period_id' => (int)$package['accounting_period_id'],
                     'ct_period_id' => (int)$package['ct_period_id'],
+                    'hmrc_ct_filing_approval_id' => $package['hmrc_ct_filing_approval_id'],
+                    'hmrc_ct_filing_approval_hash' => $package['hmrc_ct_filing_approval_hash'],
                     'mode' => $mode,
                     'environment' => $mode,
                     'status' => 'ready',
@@ -1670,9 +1678,12 @@ final class HmrcCorporationTaxSubmissionService
                     'submission_type' => 'original',
                     'accounts_path' => $package['accounts_ixbrl_path'],
                     'accounts_run_id' => $package['accounts_run_id'],
+                    'accounts_artifact_id' => $package['accounts_artifact_id'],
+                    'accounts_validation_run_id' => $package['accounts_validation_run_id'],
                     'accounts_sha256' => $package['accounts_sha256'],
                     'computations_path' => $package['computations_ixbrl_path'],
                     'computation_run_id' => $package['computation_run_id'],
+                    'computation_validation_run_id' => $package['computation_validation_run_id'],
                     'computations_sha256' => $package['computations_sha256'],
                     'year_end_locked_at' => $package['year_end_locked_at'],
                     'package_hash' => $package['package_hash'],
@@ -2204,6 +2215,23 @@ final class HmrcCorporationTaxSubmissionService
         if (!preg_match('/^[a-f0-9]{64}$/D', $packageHash)) {
             return ['ok' => false, 'errors' => ['The CT600 package hash is invalid.']];
         }
+        foreach ([
+            'accounts_artifact_id' => 'accounts artifact',
+            'accounts_validation_run_id' => 'accounts validation',
+            'computation_validation_run_id' => 'computation validation',
+        ] as $field => $label) {
+            if ((int)($package[$field] ?? 0) <= 0) {
+                return ['ok' => false, 'errors' => [
+                    'The CT600 package has no immutable ' . $label . ' identity.',
+                ]];
+            }
+        }
+        $hmrcApprovalHash = strtolower(trim((string)($package['hmrc_ct_filing_approval_hash'] ?? '')));
+        if (preg_match('/^[a-f0-9]{64}$/D', $hmrcApprovalHash) !== 1) {
+            return ['ok' => false, 'errors' => [
+                'The CT600 package has no valid HMRC Corporation Tax approval fingerprint.',
+            ]];
+        }
 
         return array_replace($package, [
             'ok' => true,
@@ -2217,10 +2245,13 @@ final class HmrcCorporationTaxSubmissionService
             'body_sha256' => $bodyHash,
             'package_hash' => $packageHash,
             'accounts_ixbrl_path' => $package['accounts_ixbrl_path'] ?? $package['accounts_path'] ?? null,
+            'accounts_artifact_id' => isset($package['accounts_artifact_id']) ? (int)$package['accounts_artifact_id'] : null,
+            'accounts_validation_run_id' => isset($package['accounts_validation_run_id']) ? (int)$package['accounts_validation_run_id'] : null,
             'accounts_run_id' => isset($package['accounts_run_id']) ? (int)$package['accounts_run_id'] : null,
             'accounts_sha256' => $package['accounts_sha256'] ?? null,
             'computations_ixbrl_path' => $package['computations_ixbrl_path'] ?? $package['computations_path'] ?? null,
             'computation_run_id' => isset($package['computation_run_id']) ? (int)$package['computation_run_id'] : null,
+            'computation_validation_run_id' => isset($package['computation_validation_run_id']) ? (int)$package['computation_validation_run_id'] : null,
             'computations_sha256' => $package['computations_sha256'] ?? null,
             'year_end_locked_at' => $package['year_end_locked_at'] ?? null,
             'irmark' => (string)($package['irmark'] ?? ''),
@@ -2229,6 +2260,10 @@ final class HmrcCorporationTaxSubmissionService
             'approval_declaration' => (array)($package['approval_declaration'] ?? []),
             'filing_approval_id' => (int)($package['filing_approval_id'] ?? 0),
             'filing_approval_hash' => (string)($package['filing_approval_hash'] ?? ''),
+            'hmrc_ct_filing_approval_id' => isset($package['hmrc_ct_filing_approval_id'])
+                ? (int)$package['hmrc_ct_filing_approval_id'] ?: null
+                : null,
+            'hmrc_ct_filing_approval_hash' => $hmrcApprovalHash,
             'errors' => [],
             'warnings' => (array)($package['warnings'] ?? []),
         ]);

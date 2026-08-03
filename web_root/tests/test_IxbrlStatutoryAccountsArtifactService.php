@@ -38,30 +38,33 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlStatutoryAccountsArtifactService::class,
-            'uses the shared revised artifact for revised periods while preserving the approved basis',
+            'uses the HMRC accounts artifact independently of the Companies House filing kind',
             static function () use ($harness, $ordinary): void {
+                $filingKindCalls = 0;
+                $revisedCalls = 0;
                 $service = new \eel_accounts\Service\IxbrlStatutoryAccountsArtifactService(
                     static fn(): array => $ordinary,
-                    static fn(): string => 'revised',
-                    static fn(): array => [
-                        'ok' => true,
-                        'state' => 'ready',
-                        'run_id' => 80,
-                        'path' => 'revised.xhtml',
-                        'filename' => 'revised.xhtml',
-                        'hash' => str_repeat('c', 64),
-                    ]
+                    static function () use (&$filingKindCalls): string {
+                        $filingKindCalls++;
+                        return 'revised';
+                    },
+                    static function () use (&$revisedCalls): array {
+                        $revisedCalls++;
+                        return ['ok' => false];
+                    }
                 );
                 $result = $service->locate(49, 79);
-                $harness->assertSame('revised.xhtml', (string)$result['path']);
+                $harness->assertSame('ordinary.xhtml', (string)$result['path']);
                 $harness->assertSame(str_repeat('b', 64), (string)$result['basis_hash']);
-                $harness->assertSame('shared_revised_accounts', (string)$result['destination']);
+                $harness->assertSame('hmrc_accounts', (string)$result['destination']);
+                $harness->assertSame(0, $filingKindCalls);
+                $harness->assertSame(0, $revisedCalls);
             }
         );
 
         $harness->check(
             \eel_accounts\Service\IxbrlStatutoryAccountsArtifactService::class,
-            'fails closed when a revised period has no prepared shared artifact',
+            'does not block HMRC when Companies House has no prepared revised artifact',
             static function () use ($harness, $ordinary): void {
                 $service = new \eel_accounts\Service\IxbrlStatutoryAccountsArtifactService(
                     static fn(): array => $ordinary,
@@ -69,8 +72,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     static fn(): array => ['ok' => false, 'state' => 'missing', 'errors' => ['Prepare revised accounts.']]
                 );
                 $result = $service->locate(49, 80);
-                $harness->assertFalse((bool)($result['ok'] ?? true));
-                $harness->assertSame('missing', (string)($result['state'] ?? ''));
+                $harness->assertTrue((bool)($result['ok'] ?? false));
+                $harness->assertSame('ordinary.xhtml', (string)($result['path'] ?? ''));
+                $harness->assertSame('hmrc_accounts', (string)($result['destination'] ?? ''));
             }
         );
     }

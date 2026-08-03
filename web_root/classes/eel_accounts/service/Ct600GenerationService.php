@@ -21,9 +21,13 @@ final class Ct600GenerationService
     private const TABLE = 'ct600_generated_artifacts';
     private const REQUIRED_COLUMNS = [
         'source_manifest_json',
+        'hmrc_ct_filing_approval_hash',
         'ct_filing_basis_hash',
+        'accounts_artifact_id',
+        'accounts_validation_run_id',
         'accounts_run_id',
         'accounts_sha256',
+        'computation_validation_run_id',
         'computation_run_id',
         'computations_sha256',
         'rim_package_id',
@@ -131,6 +135,7 @@ final class Ct600GenerationService
         $identity = (array)($filingModel['identity'] ?? []);
         $ctPeriod = (array)($filingModel['ct_period'] ?? []);
         $approval = (array)$context['approval'];
+        $hmrcApproval = (array)$context['hmrc_approval'];
         $companyNumber = strtoupper(trim((string)($identity['company_number'] ?? '')));
         if (preg_match('/^[A-Z0-9]{1,20}$/D', $companyNumber) !== 1) {
             return $this->failure(
@@ -166,6 +171,12 @@ final class Ct600GenerationService
             'sha256' => $sha256,
         ];
         $manifest['corporation_tax_return_authorisation'] = $declaration;
+        $manifest['hmrc_ct_filing_approval'] = [
+            'id' => (int)($hmrcApproval['id'] ?? 0) ?: null,
+            'basis_version' => (string)($hmrcApproval['basis_version'] ?? ''),
+            'basis_hash' => (string)($hmrcApproval['basis_hash'] ?? ''),
+            'legacy_combined_approval_id' => (int)($hmrcApproval['legacy_combined_approval_id'] ?? 0) ?: null,
+        ];
         $manifest['filing_evidence_id'] = (string)$context['filing_evidence']['evidence_id'];
         $manifest['filing_evidence_bundle_hash'] = (string)$context['filing_evidence']['bundle_hash'];
         $manifestJson = $this->canonicalJson($manifest);
@@ -179,12 +190,17 @@ final class Ct600GenerationService
             'ct_period_id' => $ctPeriodId,
             'filing_approval_id' => (int)$approval['id'],
             'filing_approval_hash' => (string)$approval['basis_hash'],
+            'hmrc_ct_filing_approval_id' => (int)($hmrcApproval['id'] ?? 0) ?: null,
+            'hmrc_ct_filing_approval_hash' => (string)$hmrcApproval['basis_hash'],
             'source_manifest_sha256' => $manifestHash,
             'source_manifest_json' => $manifestJson,
             'ct_filing_basis_hash' => (string)($return['filing_model']['basis_hash'] ?? ''),
             'accounts_run_id' => (int)$accounts['run_id'],
+            'accounts_artifact_id' => (int)($accounts['artifact_id'] ?? 0),
+            'accounts_validation_run_id' => (int)($accounts['validation_run_id'] ?? 0),
             'accounts_sha256' => strtolower((string)$accounts['hash']),
             'computation_run_id' => (int)$computation['run_id'],
+            'computation_validation_run_id' => (int)($computation['validation_run_id'] ?? 0),
             'computations_sha256' => strtolower((string)$computation['hash']),
             'rim_package_id' => (int)($source['rim_package_id'] ?? 0),
             'rim_form_version' => (string)($source['rim_form_version'] ?? ''),
@@ -404,6 +420,7 @@ final class Ct600GenerationService
         $filingModel = (array)($return['filing_model']['model'] ?? []);
         $filingIdentity = (array)($filingModel['filing_identity'] ?? []);
         $approval = (array)$source['approval'];
+        $hmrcApproval = (array)$source['hmrc_approval'];
         $declaration = (array)$source['declaration'];
         $accounts = (array)$source['accounts'];
         $computation = (array)$source['computation'];
@@ -435,10 +452,13 @@ final class Ct600GenerationService
                     . $manifestHash . '|' . $bodyHash
             ),
             'accounts_ixbrl_path' => (string)$accounts['path'],
+            'accounts_artifact_id' => (int)($accounts['artifact_id'] ?? 0),
+            'accounts_validation_run_id' => (int)($accounts['validation_run_id'] ?? 0),
             'accounts_run_id' => (int)$accounts['run_id'],
             'accounts_sha256' => (string)$accounts['hash'],
             'computations_ixbrl_path' => (string)$computation['path'],
             'computation_run_id' => (int)$computation['run_id'],
+            'computation_validation_run_id' => (int)($computation['validation_run_id'] ?? 0),
             'computations_sha256' => (string)$computation['hash'],
             'year_end_locked_at' => (string)($approval['year_end_locked_at'] ?? ''),
             'irmark' => (string)$artifact['irmark'],
@@ -448,6 +468,8 @@ final class Ct600GenerationService
             'approval_declaration' => $declaration,
             'filing_approval_id' => (int)$approval['id'],
             'filing_approval_hash' => (string)$approval['basis_hash'],
+            'hmrc_ct_filing_approval_id' => (int)($hmrcApproval['id'] ?? 0) ?: null,
+            'hmrc_ct_filing_approval_hash' => (string)($hmrcApproval['basis_hash'] ?? ''),
         ];
     }
 
@@ -570,7 +592,7 @@ final class Ct600GenerationService
             ]];
         }
         $approvalService = new IxbrlAccountsFilingApprovalService();
-        $report('Verifying the frozen accounts approval and return authorisation…', 12);
+        $report('Verifying the statutory-accounts and HMRC CT approvals…', 12);
         if ($deep) {
             $approvalProgress = 12;
             $approvalResult = $approvalService->status(
@@ -591,7 +613,27 @@ final class Ct600GenerationService
                     ?? 'A current approved filing basis is required.'),
             ]];
         }
-        $declarationResult = $this->frozenDeclaration($approval);
+        $hmrcApprovalResult = (new HmrcCtFilingApprovalService())->status(
+            $companyId,
+            $accountingPeriodId
+        );
+        $hmrcApproval = (array)($hmrcApprovalResult['approval'] ?? []);
+        if ((string)($hmrcApprovalResult['state'] ?? '') !== 'current' || $hmrcApproval === []) {
+            return ['ready' => false, 'errors' => [
+                (string)(((array)($hmrcApprovalResult['errors'] ?? []))[0]
+                    ?? 'A current HMRC Corporation Tax filing approval is required.'),
+            ]];
+        }
+        if ((int)($hmrcApproval['accounts_filing_approval_id'] ?? 0) !== (int)($approval['id'] ?? 0)
+            || !hash_equals(
+                (string)($hmrcApproval['accounts_filing_approval_hash'] ?? ''),
+                (string)($approval['basis_hash'] ?? '')
+            )) {
+            return ['ready' => false, 'errors' => [
+                'The HMRC Corporation Tax approval is not bound to the current statutory-accounts approval.',
+            ]];
+        }
+        $declarationResult = $this->frozenDeclaration($hmrcApproval);
         if (empty($declarationResult['ok'])) {
             return ['ready' => false, 'errors' => (array)$declarationResult['errors']];
         }
@@ -654,6 +696,7 @@ final class Ct600GenerationService
             'errors' => [],
             'period' => $period,
             'approval' => $approval,
+            'hmrc_approval' => $hmrcApproval,
             'declaration' => (array)$declarationResult['declaration'],
             'filing_evidence' => $filingEvidence,
             'return' => $return,
@@ -665,21 +708,19 @@ final class Ct600GenerationService
     /** @return array<string,mixed> */
     private function frozenDeclaration(array $approval): array
     {
-        $basisJson = (string)($approval['basis_json'] ?? '');
-        $basisHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
-        if ($basisJson === '' || preg_match('/^[a-f0-9]{64}$/D', $basisHash) !== 1
-            || !hash_equals($basisHash, hash('sha256', $basisJson))) {
+        $authorisationJson = (string)($approval['return_authorisation_json'] ?? '');
+        $authorisationHash = strtolower(trim((string)($approval['return_authorisation_hash'] ?? '')));
+        if ($authorisationJson === '' || preg_match('/^[a-f0-9]{64}$/D', $authorisationHash) !== 1
+            || !hash_equals($authorisationHash, hash('sha256', $authorisationJson))) {
             return $this->packageFailure(
                 'The current filing approval failed its Corporation Tax authorisation integrity check.'
             );
         }
-        $basis = json_decode($basisJson, true);
-        $authorisation = is_array($basis)
-            ? (array)($basis['corporation_tax_return_authorisation'] ?? [])
-            : [];
+        $authorisation = json_decode($authorisationJson, true);
+        $authorisation = is_array($authorisation) ? $authorisation : [];
         $name = trim((string)($authorisation['declarant_name'] ?? ''));
         $status = trim((string)($authorisation['declarant_status'] ?? ''));
-        $declaredAt = trim((string)($authorisation['declaration_at'] ?? ''));
+        $declaredAt = trim((string)($authorisation['declared_at'] ?? ''));
         $errors = [];
         if ($name === '' || $status === '' || $declaredAt === '') {
             $errors[] = 'The filing approval has no complete frozen Corporation Tax return authorisation.';
@@ -693,10 +734,6 @@ final class Ct600GenerationService
                 $errors[] = 'The filing approval does not contain all Corporation Tax return confirmations.';
                 break;
             }
-        }
-        if (!hash_equals($name, trim((string)($approval['declarant_name'] ?? '')))
-            || !hash_equals($status, trim((string)($approval['declarant_status'] ?? '')))) {
-            $errors[] = 'The frozen Corporation Tax authorisation does not match the filing approval record.';
         }
         if ($errors !== []) {
             return $this->packageFailure($errors[0], array_slice($errors, 1));
@@ -730,6 +767,7 @@ final class Ct600GenerationService
             }
         }
         $approval = (array)$context['approval'];
+        $hmrcApproval = (array)$context['hmrc_approval'];
         $return = (array)$context['return'];
         $accounts = (array)$context['accounts'];
         $computation = (array)$context['computation'];
@@ -743,6 +781,14 @@ final class Ct600GenerationService
                 strtolower((string)$approval['basis_hash']),
                 strtolower((string)($row['filing_approval_hash'] ?? '')),
             ],
+            'HMRC CT filing approval' => [
+                (string)(int)($hmrcApproval['id'] ?? 0),
+                (string)(int)($row['hmrc_ct_filing_approval_id'] ?? 0),
+            ],
+            'HMRC CT filing approval hash' => [
+                strtolower((string)($hmrcApproval['basis_hash'] ?? '')),
+                strtolower((string)($row['hmrc_ct_filing_approval_hash'] ?? '')),
+            ],
             'CT-period filing basis' => [
                 strtolower((string)($return['filing_model']['basis_hash'] ?? '')),
                 strtolower((string)($row['ct_filing_basis_hash'] ?? '')),
@@ -751,6 +797,14 @@ final class Ct600GenerationService
                 (string)(int)$accounts['run_id'],
                 (string)(int)($row['accounts_run_id'] ?? 0),
             ],
+            'accounts iXBRL artifact' => [
+                (string)(int)($accounts['artifact_id'] ?? 0),
+                (string)(int)($row['accounts_artifact_id'] ?? 0),
+            ],
+            'accounts iXBRL validation' => [
+                (string)(int)($accounts['validation_run_id'] ?? 0),
+                (string)(int)($row['accounts_validation_run_id'] ?? 0),
+            ],
             'accounts iXBRL hash' => [
                 strtolower((string)$accounts['hash']),
                 strtolower((string)($row['accounts_sha256'] ?? '')),
@@ -758,6 +812,10 @@ final class Ct600GenerationService
             'computation iXBRL run' => [
                 (string)(int)$computation['run_id'],
                 (string)(int)($row['computation_run_id'] ?? 0),
+            ],
+            'computation iXBRL validation' => [
+                (string)(int)($computation['validation_run_id'] ?? 0),
+                (string)(int)($row['computation_validation_run_id'] ?? 0),
             ],
             'computation iXBRL hash' => [
                 strtolower((string)$computation['hash']),
@@ -1051,6 +1109,11 @@ final class Ct600GenerationService
             'ct_period_id',
             'filing_approval_id',
             'filing_approval_hash',
+            'hmrc_ct_filing_approval_id',
+            'hmrc_ct_filing_approval_hash',
+            'accounts_artifact_id',
+            'accounts_validation_run_id',
+            'computation_validation_run_id',
             'source_manifest_sha256',
             'output_path',
             'output_filename',
@@ -1071,6 +1134,11 @@ final class Ct600GenerationService
             'ct_period_id' => (int)($row['ct_period_id'] ?? 0),
             'filing_approval_id' => (int)($row['filing_approval_id'] ?? 0),
             'filing_approval_hash' => (string)($row['filing_approval_hash'] ?? ''),
+            'hmrc_ct_filing_approval_id' => (int)($row['hmrc_ct_filing_approval_id'] ?? 0) ?: null,
+            'hmrc_ct_filing_approval_hash' => (string)($row['hmrc_ct_filing_approval_hash'] ?? ''),
+            'accounts_artifact_id' => (int)($row['accounts_artifact_id'] ?? 0),
+            'accounts_validation_run_id' => (int)($row['accounts_validation_run_id'] ?? 0),
+            'computation_validation_run_id' => (int)($row['computation_validation_run_id'] ?? 0),
             'source_manifest_json' => (string)($row['source_manifest_json'] ?? ''),
             'source_manifest_sha256' => (string)($row['source_manifest_sha256'] ?? ''),
             'filename' => (string)($row['output_filename'] ?? ''),

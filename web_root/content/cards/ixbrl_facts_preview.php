@@ -24,6 +24,10 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
         $freshness = (array)($readiness['run_freshness'] ?? []);
         $freshnessState = (string)($freshness['state'] ?? ($facts === [] ? 'missing' : 'unknown'));
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
+        $filingApproval = (array)($readiness['filing_approval'] ?? []);
+        $legacyUpgrade = (string)($filingApproval['state'] ?? '') === 'current'
+            && (string)($filingApproval['approval_source'] ?? '') === 'legacy_combined'
+            && $freshnessState !== 'current';
 
         $rows = '';
         foreach ($facts as $fact) {
@@ -41,22 +45,37 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
             ? '<div class="helper">No approved fact snapshot yet. Approve the disclosures once the readiness checks pass to create it.</div>'
             : '<div class="table-scroll"><table class="data-table"><thead><tr><th>Section</th><th>Concept</th><th>Type / unit</th><th>Context / dimensions</th><th>Value</th><th>Source</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
 
+        $rebuildControl = '';
+        if ($developerOptions || $legacyUpgrade) {
+            $isDeveloperControl = $developerOptions && !$legacyUpgrade;
+            $buttonClass = $isDeveloperControl ? 'button danger' : 'button primary';
+            $buttonLabel = $legacyUpgrade
+                ? 'Rebuild Facts for Neutral Report'
+                : 'Rebuild Approved Fact Snapshot';
+            $explanation = $legacyUpgrade
+                ? '<div class="helper">The verified pre-split approval remains the immutable approval evidence, but its fact snapshot predates the authority-neutral report. Rebuilding creates a new fact run and does not create or alter an approval.</div>'
+                : '';
+            $confirmation = $isDeveloperControl
+                ? ' data-chicken-check="true" data-chicken-title="Rebuild approved fact snapshot" data-chicken-message="Rebuild the accounts iXBRL fact snapshot from the current approved filing basis?<br><br>This creates a new generation run and fact snapshot without recording a new disclosure approval." data-chicken-confirm-text="Rebuild facts" data-chicken-button-class="button danger"'
+                : '';
+            $rebuildControl = $explanation
+                . '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+                . '<input type="hidden" name="card_action" value="Ixbrl">'
+                . '<input type="hidden" name="intent" value="rebuild_ixbrl_facts_from_current_approval">'
+                . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">'
+                . '<input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
+                . '<button class="' . $buttonClass . '" type="submit"' . $confirmation . '>'
+                . $buttonLabel . '</button></form></div>';
+        }
+
         return '<div class="settings-stack">
             <section class="panel-soft">
                 <div class="status-head"><h3 class="card-title">Latest fact snapshot</h3><span class="badge ' . \eel_accounts\Support\Utf8::html($this->freshnessClass($freshnessState)) . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($freshnessState, '_')) . '</span></div>
                 <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($freshness['detail'] ?? 'Approving the disclosures creates a traceable snapshot of the current accounts report.')) . '</div>
             </section>
             ' . $table . '
-            ' . ($developerOptions
-                ? '<div class="form-row-actions"><form method="post" action="?page=disclosures" data-ajax="true">'
-                    . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                    . '<input type="hidden" name="card_action" value="Ixbrl">'
-                    . '<input type="hidden" name="intent" value="rebuild_ixbrl_facts_from_current_approval">'
-                    . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">'
-                    . '<input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
-                    . '<button class="button danger" type="submit" title="Developer only" data-chicken-check="true" data-chicken-title="Rebuild approved fact snapshot" data-chicken-message="Rebuild the accounts iXBRL fact snapshot from the current approved filing basis?<br><br>This creates a new generation run and fact snapshot without recording a new disclosure approval." data-chicken-confirm-text="Rebuild facts" data-chicken-button-class="button danger">Rebuild Approved Fact Snapshot</button>'
-                    . '</form></div>'
-                : '') . '
+            ' . $rebuildControl . '
         </div>';
     }
 

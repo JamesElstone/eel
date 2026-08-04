@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
  */
 final class HmrcCtComputationReportProfile
 {
-    public const TAGGING_VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v2';
+    public const TAGGING_VERSION = 'hmrc-ct-computations-format-1.1/loss-and-allowance-tagging-v3';
     private const MATERIAL_ZERO_TOLERANCE = 0.005;
 
     /**
@@ -125,6 +125,13 @@ final class HmrcCtComputationReportProfile
         $outputMappings = [];
         foreach ($mappings as $mapping) {
             $key = (string)($mapping['canonical_key'] ?? '');
+            if (in_array($key, [
+                'accounting_period.start_date',
+                'accounting_period.end_date',
+                'supported_return_profile.company_is_partner_in_firm',
+            ], true)) {
+                $mapping['context_role'] = 'statutory_accounts_period';
+            }
             // This aggregate is not the Format 1.1 adjusted-period fact for a
             // split statutory period.  The profile supplies the prescribed
             // profit or loss concept below instead.

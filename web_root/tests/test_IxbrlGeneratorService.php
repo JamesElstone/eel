@@ -24,6 +24,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertTrue(!str_contains($positive, ' sign="-"'));
         $h->assertTrue(!str_contains($zero, ' sign="-"'));
     });
+    $h->check($service::class, 'serializes boolean false and true using XBRL lexical values', static function () use ($h, $service): void {
+        $falseFact = $service->renderFact([
+            'qname' => 'ct:CompanyIsAPartnerInAFirm',
+            'context_ref' => 'ct',
+            'value' => false,
+        ]);
+        $trueFact = $service->renderFact([
+            'qname' => 'ct:CompanyIsAPartnerInAFirm',
+            'context_ref' => 'ct',
+            'value' => true,
+        ]);
+        $h->assertTrue(str_contains($falseFact, '>false</ix:nonNumeric>'));
+        $h->assertFalse(str_contains($falseFact, 'xsi:nil'));
+        $h->assertTrue(str_contains($trueFact, '>true</ix:nonNumeric>'));
+    });
     $h->check($service::class, 'recovers legacy Windows-1252 narrative facts as valid UTF-8', static function () use ($h, $service): void {
         $fact = $service->renderFact([
             'qname' => 'ct:Label',

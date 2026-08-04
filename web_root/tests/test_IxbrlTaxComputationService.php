@@ -125,6 +125,9 @@ function ixbrlTaxComputationValue(array $model, string $key): mixed
     if ($key === 'return_position.ct600a_a80' || $key === 'return_position.tax_payable') {
         return 0.00;
     }
+    if ($key === 'supported_return_profile.company_is_partner_in_firm') {
+        return false;
+    }
     $value = $model['model'];
     foreach (explode('.', $key) as $part) {
         $value = is_array($value) && array_key_exists($part, $value) ? $value[$part] : null;
@@ -146,8 +149,11 @@ function ixbrlTaxComputationMappings(array $model): array
     $specs = [
         ['identity.company_name', 'CompanyName', 'text', 'instant', 'identity'],
         ['filing_identity.utr', 'TaxReference', 'text', 'instant', 'identity'],
+        ['accounting_period.start_date', 'PeriodOfAccountStartDate', 'date', 'instant', 'identity'],
+        ['accounting_period.end_date', 'PeriodOfAccountEndDate', 'date', 'instant', 'identity'],
         ['ct_period.start_date', 'StartOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
         ['ct_period.end_date', 'EndOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
+        ['supported_return_profile.company_is_partner_in_firm', 'CompanyIsAPartnerInAFirm', 'boolean', 'duration', 'identity'],
         ['computation.summary.accounting_profit', 'ProfitLossPerAccounts', 'numeric', 'duration', 'detailed_profit_and_loss'],
         ['computation.summary.disallowable_add_backs', 'AdjustmentsMiscellaneousExpensesPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.capital_expenditure_add_backs', 'AdjustmentsCapitalExpenditure', 'numeric', 'duration', 'accounts_adjustments'],
@@ -208,6 +214,25 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($source, 'reviewedTemplate('));
         $h->assertTrue(str_contains($source, 'prepareMappingsForPackage('));
         $h->assertTrue(str_contains($source, "'ct-computation-ixbrl'"));
+    });
+    $h->check($service::class, 'derives the non-partnership fact only for the frozen supported return profile', static function () use ($h, $service): void {
+        $model = ixbrlTaxComputationModel();
+        $model['facts'] = ['identity.company_name' => 'ELSTONE ELECTRICALS LIMITED'];
+        $immutableHash = hash('sha256', (string)json_encode($model['model'], JSON_UNESCAPED_SLASHES));
+        $method = new ReflectionMethod($service::class, 'withSupportedReturnProfileFacts');
+        $method->setAccessible(true);
+        $derived = $method->invoke($service, $model);
+        $h->assertSame(false, $derived['facts']['supported_return_profile.company_is_partner_in_firm']);
+        $h->assertSame($immutableHash, hash('sha256', (string)json_encode($derived['model'], JSON_UNESCAPED_SLASHES)));
+
+        $unsupported = $model;
+        $unsupported['model']['supported_return_profile']['ordinary_trading_company_confirmed'] = false;
+        try {
+            $method->invoke($service, $unsupported);
+            $h->assertTrue(false);
+        } catch (RuntimeException $exception) {
+            $h->assertTrue(str_contains($exception->getMessage(), 'mandatory HMRC partnership fact'));
+        }
     });
     $h->check($service::class, 'fails closed without a locked filing context', static function () use ($h, $service): void {
         $result = $service->generateFilingExport(0, 0, 0);
@@ -423,7 +448,15 @@ function ixbrlTaxComputationMappings(array $model): array
         $zeroFact = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForward"]')->item(0);
         $h->assertSame('', $zeroFact?->getAttribute('sign'));
         $h->assertSame('0.00', trim((string)$zeroFact?->parentNode?->textContent));
-        foreach (['CompanyName', 'TaxReference', 'StartOfPeriodCoveredByReturn', 'EndOfPeriodCoveredByReturn'] as $identityFact) {
+        foreach ([
+            'CompanyName',
+            'TaxReference',
+            'PeriodOfAccountStartDate',
+            'PeriodOfAccountEndDate',
+            'StartOfPeriodCoveredByReturn',
+            'EndOfPeriodCoveredByReturn',
+            'CompanyIsAPartnerInAFirm',
+        ] as $identityFact) {
             $h->assertSame(1, $xpath->query('//ix:nonNumeric[@name="ct:' . $identityFact . '"]')->length);
         }
         $report = $service->buildReportModel($model, ixbrlTaxComputationMappings($model));
@@ -520,6 +553,25 @@ function ixbrlTaxComputationMappings(array $model): array
         $xpath = new DOMXPath($document);
         $xpath->registerNamespace('ix', \eel_accounts\Service\IxbrlGeneratorService::IX_NAMESPACE);
         $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+        foreach ([
+            'PeriodOfAccountStartDate' => '5 September 2022',
+            'PeriodOfAccountEndDate' => '30 September 2023',
+            'StartOfPeriodCoveredByReturn' => '5 September 2023',
+            'EndOfPeriodCoveredByReturn' => '30 September 2023',
+        ] as $name => $displayValue) {
+            $fact = $xpath->query('//ix:nonNumeric[@name="ct:' . $name . '"]')->item(0);
+            $h->assertTrue($fact instanceof DOMElement);
+            $h->assertSame($displayValue, $fact?->textContent);
+            $h->assertSame('2023-09-30', $xpath->evaluate(
+                'string(//xbrli:context[@id="' . $fact?->getAttribute('contextRef') . '"]/xbrli:period/xbrli:instant)'
+            ));
+        }
+        $partner = $xpath->query('//ix:nonNumeric[@name="ct:CompanyIsAPartnerInAFirm"]')->item(0);
+        $h->assertTrue($partner instanceof DOMElement);
+        $h->assertSame('false', $partner?->textContent);
+        $partnerContext = (string)$partner?->getAttribute('contextRef');
+        $h->assertSame('2022-09-05', $xpath->evaluate('string(//xbrli:context[@id="' . $partnerContext . '"]/xbrli:period/xbrli:startDate)'));
+        $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $partnerContext . '"]/xbrli:period/xbrli:endDate)'));
         $broughtForward = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForward"]')->item(0);
         $used = $xpath->query('//ix:nonFraction[@name="ct:TradingLossesBroughtForwardAmountUsedAgainstTotalProfits"]')->item(0);
         $carriedForward = $xpath->query('//ix:nonFraction[@name="ct:BalanceOfLossesBroughtForwardCarriedForward"]')->item(0);
@@ -550,6 +602,7 @@ function ixbrlTaxComputationMappings(array $model): array
         $carriedForwardContext = (string)$carriedForward?->getAttribute('contextRef');
         $h->assertSame('2023-09-30', $xpath->evaluate('string(//xbrli:context[@id="' . $carriedForwardContext . '"]/xbrli:period/xbrli:instant)'));
         $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
+        $h->assertTrue(str_contains($body, 'No (false)'));
         $h->assertTrue(str_contains($body, '26 / 391 days'));
         $h->assertTrue(str_contains($body, 'Time apportionment figure (26 / 391 days)'));
         $h->assertFalse(str_contains($body, 'Apportionment rounding adjustment'));

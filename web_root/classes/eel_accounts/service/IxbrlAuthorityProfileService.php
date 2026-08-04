@@ -25,7 +25,7 @@ final class IxbrlAuthorityProfileService
     public const INLINE_XBRL_NAMESPACE = 'http://www.xbrl.org/2013/inlineXBRL';
 
     private const HMRC_CT_ACCOUNTS_VERSION = '1.0.0';
-    private const HMRC_CT_COMPUTATION_VERSION = '1.0.0';
+    private const HMRC_CT_COMPUTATION_VERSION = '1.1.0';
     private const COMPANIES_HOUSE_ACCOUNTS_VERSION = '1.0.0';
     private const SUPPORTED_TRANSFORMS = [
         'numdotdecimal',
@@ -91,6 +91,26 @@ final class IxbrlAuthorityProfileService
             'root_namespace' => self::XHTML_NAMESPACE,
             'embedded_document' => false,
         ];
+        $hmrcComputationFactPolicy = [
+            'version' => 'hmrc-ct-computation-mandatory-facts-v1',
+            'allowed_namespaces' => [
+                'http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01',
+                'http://www.hmrc.gov.uk/schemas/ct/comp/2025-01-01',
+            ],
+            'namespace_anchor_fact' => 'CompanyName',
+            'required_facts' => [
+                ['local_name' => 'CompanyName'],
+                ['local_name' => 'TaxReference'],
+                ['local_name' => 'PeriodOfAccountStartDate'],
+                ['local_name' => 'PeriodOfAccountEndDate'],
+                ['local_name' => 'StartOfPeriodCoveredByReturn'],
+                ['local_name' => 'EndOfPeriodCoveredByReturn'],
+                [
+                    'local_name' => 'CompanyIsAPartnerInAFirm',
+                    'allowed_lexical_values' => ['false'],
+                ],
+            ],
+        ];
 
         return $this->profiles = [
             self::HMRC_CT_ACCOUNTS => new IxbrlAuthorityProfile(
@@ -107,7 +127,8 @@ final class IxbrlAuthorityProfileService
                 self::HMRC_CT_COMPUTATION_VERSION,
                 self::TRANSFORMATION_REGISTRY_2011,
                 self::SUPPORTED_TRANSFORMS,
-                $hmrcDocumentPolicy
+                $hmrcDocumentPolicy,
+                $hmrcComputationFactPolicy
             ),
             self::COMPANIES_HOUSE_ACCOUNTS => new IxbrlAuthorityProfile(
                 self::COMPANIES_HOUSE_ACCOUNTS,

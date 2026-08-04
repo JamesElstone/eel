@@ -105,13 +105,16 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_COMPUTATION
             && in_array($version, ['2024', '2025'], true) && $artifactVersion === 'V1.0.0') {
             return [
-                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v4',
+                'profile_name' => 'reviewed_ct_computation_' . $version . '_v1_0_0_return_v5',
                 'natural_identity' => ['taxonomy_version' => $version, 'artifact_version' => 'V1.0.0'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'local_name' => 'CompanyName', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'filing_identity.utr', 'local_name' => 'TaxReference', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'accounting_period.start_date', 'local_name' => 'PeriodOfAccountStartDate', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'accounting_period.end_date', 'local_name' => 'PeriodOfAccountEndDate', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'ct_period.start_date', 'local_name' => 'StartOfPeriodCoveredByReturn', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'ct_period.end_date', 'local_name' => 'EndOfPeriodCoveredByReturn', 'period_type' => 'instant', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
+                    ['canonical_key' => 'supported_return_profile.company_is_partner_in_firm', 'local_name' => 'CompanyIsAPartnerInAFirm', 'period_type' => 'duration', 'context_profile' => self::CONTEXT_HMRC_CT_COMPANY],
                     ['canonical_key' => 'computation.summary.accounting_profit', 'local_name' => 'ProfitLossPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.disallowable_add_backs', 'local_name' => 'AdjustmentsMiscellaneousExpensesPerAccounts', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
                     ['canonical_key' => 'computation.summary.capital_expenditure_add_backs', 'local_name' => 'AdjustmentsCapitalExpenditure', 'context_profile' => self::CONTEXT_HMRC_CT_UK_TRADE],
@@ -584,6 +587,20 @@ final class CtFilingMappingService
         $column = (string)$profile['target_type'] === self::TARGET_RIM ? 'rim_package_id' : 'computation_package_id';
         \InterfaceDB::beginTransaction();
         try {
+            $predecessorProfileIds = array_values(array_map(
+                static fn(array $row): int => (int)$row['id'],
+                \InterfaceDB::fetchAll(
+                    'SELECT id FROM ct_filing_mapping_profiles
+                     WHERE target_type = :target_type AND ' . $column . ' = :package_id
+                       AND status = :active AND id <> :id',
+                    [
+                        'target_type' => $profile['target_type'],
+                        'package_id' => $profile[$column],
+                        'active' => 'active',
+                        'id' => $profileId,
+                    ]
+                )
+            ));
             \InterfaceDB::prepareExecute(
                 'UPDATE ct_filing_mapping_profiles SET status = :retired, retired_by = :actor, retired_at = CURRENT_TIMESTAMP
                  WHERE target_type = :target_type AND ' . $column . ' = :package_id AND status = :active AND id <> :id',
@@ -593,6 +610,20 @@ final class CtFilingMappingService
                 'UPDATE ct_filing_mapping_profiles SET status = :active, activated_by = :actor, activated_at = CURRENT_TIMESTAMP WHERE id = :id',
                 ['active' => 'active', 'actor' => $actor, 'id' => $profileId]
             );
+            if ((string)$profile['target_type'] === self::TARGET_COMPUTATION && $predecessorProfileIds !== []) {
+                $runParams = ['run_status' => 'stale'];
+                $runProfilePlaceholders = [];
+                foreach ($predecessorProfileIds as $index => $predecessorProfileId) {
+                    $param = 'predecessor_' . $index;
+                    $runProfilePlaceholders[] = ':' . $param;
+                    $runParams[$param] = $predecessorProfileId;
+                }
+                \InterfaceDB::prepareExecute(
+                    'UPDATE corporation_tax_computation_runs SET ixbrl_status = :run_status
+                     WHERE ixbrl_mapping_profile_id IN (' . implode(', ', $runProfilePlaceholders) . ')',
+                    $runParams
+                );
+            }
             $this->audit($profileId, 'activated', $actor, [
                 'predecessor_profile_id' => (int)($profile['parent_profile_id'] ?? 0),
                 'replacement_reason' => 'Validated reviewed profile activated transactionally.',

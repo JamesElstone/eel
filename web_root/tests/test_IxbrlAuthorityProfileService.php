@@ -20,6 +20,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame($service::TRANSFORMATION_REGISTRY_2011, $hmrcAccounts->transformationNamespace());
             $harness->assertSame($service::TRANSFORMATION_REGISTRY_2011, $hmrcComputation->transformationNamespace());
             $harness->assertSame($service::TRANSFORMATION_REGISTRY_2015, $companiesHouse->transformationNamespace());
+            $harness->assertSame('1.1.0', $hmrcComputation->version());
+            $harness->assertSame([], $hmrcAccounts->factPolicy());
+            $harness->assertSame([], $companiesHouse->factPolicy());
+            $harness->assertSame(
+                'hmrc-ct-computation-mandatory-facts-v1',
+                $hmrcComputation->factPolicy()['version'] ?? null
+            );
+            $harness->assertCount(7, $hmrcComputation->factPolicy()['required_facts'] ?? []);
             $harness->assertFalse(hash_equals($hmrcAccounts->fingerprint(), $hmrcComputation->fingerprint()));
             $harness->assertFalse(hash_equals($hmrcAccounts->fingerprint(), $companiesHouse->fingerprint()));
         });

@@ -110,7 +110,9 @@ final class IxbrlGeneratorService
             }
             return '<ix:nonFraction' . $attributes . '>' . $this->escape($rendered) . '</ix:nonFraction>';
         }
-        $rendered = $hasDisplayValue ? (string)$fact['display_value'] : (string)$fact['value'];
+        $rendered = $hasDisplayValue
+            ? (string)$fact['display_value']
+            : (is_bool($fact['value']) ? ($fact['value'] ? 'true' : 'false') : (string)$fact['value']);
         return '<ix:nonNumeric' . $attributes . '>' . $this->escape($rendered) . '</ix:nonNumeric>';
     }
 

@@ -300,6 +300,10 @@ function goldenCtIxbrlRender(array $periodFixture, array $package): array
 {
     $filing = (array)$periodFixture['model'];
     $mappingModel = $filing;
+    $service = new \eel_accounts\Service\IxbrlTaxComputationService();
+    $supportedProfileFacts = new ReflectionMethod($service, 'withSupportedReturnProfileFacts');
+    $supportedProfileFacts->setAccessible(true);
+    $mappingModel = (array)$supportedProfileFacts->invoke($service, $mappingModel);
     $ct600aTax = round((float)($filing['model']['ct600a']['tax_payable'] ?? 0), 2);
     $ordinaryTax = round((float)($filing['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
     $mappingModel['facts']['return_position.ct600a_a80'] = $ct600aTax;
@@ -309,7 +313,6 @@ function goldenCtIxbrlRender(array $periodFixture, array $package): array
     $mapped = goldenCtIxbrlMapFrozenFacts($mappingModel, $package);
     $catalogue = new \eel_accounts\Service\HmrcCtComputationCatalogueService();
     $resources = $catalogue->validationResources($package);
-    $service = new \eel_accounts\Service\IxbrlTaxComputationService();
     $report = $service->buildReportModel($filing, (array)$mapped['mappings']);
     $method = new ReflectionMethod($service, 'renderMappedDocument');
     $method->setAccessible(true);
@@ -352,7 +355,14 @@ function goldenCtIxbrlMapFrozenFacts(array $filing, array $package): array
             throw new RuntimeException('The real CT2024 package has no mapped concept ' . $localName . '.');
         }
         $canonicalKey = (string)$templateMapping['canonical_key'];
-        $numeric = !in_array($canonicalKey, ['identity.company_name', 'filing_identity.utr', 'ct_period.start_date', 'ct_period.end_date'], true);
+        $valueType = match ($canonicalKey) {
+            'identity.company_name', 'filing_identity.utr' => 'text',
+            'accounting_period.start_date', 'accounting_period.end_date',
+            'ct_period.start_date', 'ct_period.end_date' => 'date',
+            'supported_return_profile.company_is_partner_in_firm' => 'boolean',
+            default => 'numeric',
+        };
+        $numeric = $valueType === 'numeric';
         $knownMappings[] = [
             'id' => $index + 1,
             'profile_id' => 1,
@@ -360,7 +370,7 @@ function goldenCtIxbrlMapFrozenFacts(array $filing, array $package): array
             'taxonomy_concept' => (string)$concept['qname'],
             'namespace_uri' => (string)$concept['namespace_uri'],
             'local_name' => $localName,
-            'value_type' => $numeric ? 'numeric' : (str_starts_with($canonicalKey, 'ct_period.') ? 'date' : 'text'),
+            'value_type' => $valueType,
             'period_type' => (string)($templateMapping['period_type'] ?? $concept['period_type'] ?? 'duration'),
             'context_profile' => (string)$templateMapping['context_profile'],
             'unit_ref' => $numeric ? 'GBP' : null,
@@ -390,7 +400,11 @@ function goldenCtIxbrlMapFrozenFacts(array $filing, array $package): array
 function goldenCtIxbrlSection(string $canonicalKey): string
 {
     return match (true) {
-        str_starts_with($canonicalKey, 'identity.') || str_starts_with($canonicalKey, 'filing_identity.') || str_starts_with($canonicalKey, 'ct_period.') => 'identity',
+        str_starts_with($canonicalKey, 'identity.')
+            || str_starts_with($canonicalKey, 'filing_identity.')
+            || str_starts_with($canonicalKey, 'accounting_period.')
+            || str_starts_with($canonicalKey, 'ct_period.')
+            || str_starts_with($canonicalKey, 'supported_return_profile.') => 'identity',
         str_contains($canonicalKey, 'accounting_profit') => 'detailed_profit_and_loss',
         str_contains($canonicalKey, 'allowances') => 'capital_allowances',
         str_contains($canonicalKey, 'loss') || str_contains($canonicalKey, 'taxable_before') => 'losses',

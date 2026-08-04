@@ -22,8 +22,11 @@ final class IxbrlTaxComputationService
         'identity.company_name' => 'Company name',
         'identity.company_number' => 'Company number',
         'filing_identity.utr' => 'Unique Taxpayer Reference',
+        'accounting_period.start_date' => 'Statutory accounting period start',
+        'accounting_period.end_date' => 'Statutory accounting period end',
         'ct_period.start_date' => 'Period start',
         'ct_period.end_date' => 'Period end',
+        'supported_return_profile.company_is_partner_in_firm' => 'Company is a partner in a firm',
         'computation.summary.accounting_profit' => 'Profit/(loss) before tax per statutory accounts',
         'computation.summary.disallowable_add_backs' => 'Disallowable expenses added back',
         'computation.summary.capital_expenditure_add_backs' => 'Capital expenditure added back',
@@ -157,6 +160,11 @@ final class IxbrlTaxComputationService
         }
         $mappingProfileHash = strtolower((string)$profile['content_hash']);
         $mappingModel = $model;
+        try {
+            $mappingModel = $this->withSupportedReturnProfileFacts($mappingModel);
+        } catch (\RuntimeException $exception) {
+            return $this->failRun($runId, $exception->getMessage());
+        }
         $ct600aTax = round((float)($model['model']['ct600a']['tax_payable'] ?? 0), 2);
         $ordinaryTax = round((float)($model['model']['computation']['summary']['ordinary_corporation_tax'] ?? 0), 2);
         $mappingModel['facts']['return_position.ct600a_a80'] = $ct600aTax;
@@ -691,8 +699,19 @@ final class IxbrlTaxComputationService
             . $this->textRow($generator, 'Accounting framework', $generator->escape((string)$report['framework_label']))
             . $this->textRow(
                 $generator,
+                'Statutory accounting period',
+                $this->factHtml($facts, 'accounting_period.start_date') . ' to '
+                    . $this->factHtml($facts, 'accounting_period.end_date')
+            )
+            . $this->textRow(
+                $generator,
                 'CT period',
                 $this->factHtml($facts, 'ct_period.start_date') . ' to ' . $this->factHtml($facts, 'ct_period.end_date')
+            )
+            . $this->textRow(
+                $generator,
+                'Company is a partner in a firm',
+                $this->booleanFactHtml($facts, 'supported_return_profile.company_is_partner_in_firm')
             )
             . '</tbody></table></div>';
 
@@ -1266,12 +1285,47 @@ final class IxbrlTaxComputationService
         return $filing;
     }
 
+    /**
+     * The current supported-return profile is deliberately limited to an
+     * ordinary UK trading company which is not itself a partner in a firm.
+     * Derive that required HMRC fact without changing the immutable approval
+     * or CT-period filing basis stored inside the model.
+     */
+    private function withSupportedReturnProfileFacts(array $filing): array
+    {
+        $profile = (array)($filing['model']['supported_return_profile'] ?? []);
+        if ((string)($profile['profile_code'] ?? '') !== 'ordinary-uk-trading-frs105'
+            || ($profile['supported'] ?? null) !== true
+            || ($profile['ordinary_trading_company_confirmed'] ?? null) !== true) {
+            throw new \RuntimeException(
+                'The frozen supported-return profile cannot supply the mandatory HMRC partnership fact.'
+            );
+        }
+        if (array_key_exists('supported_return_profile.company_is_partner_in_firm', (array)($filing['facts'] ?? []))
+            && ($filing['facts']['supported_return_profile.company_is_partner_in_firm'] ?? null) !== false) {
+            throw new \RuntimeException(
+                'The frozen supported-return profile conflicts with the supported non-partnership filing profile.'
+            );
+        }
+        $filing['facts']['supported_return_profile.company_is_partner_in_firm'] = false;
+        return $filing;
+    }
+
     private function factHtml(array $facts, string $canonicalKey): string
     {
         if (!isset($facts[$canonicalKey])) {
             throw new \RuntimeException('The computation report is missing required fact ' . $canonicalKey . '.');
         }
         return (string)$facts[$canonicalKey]['html'];
+    }
+
+    private function booleanFactHtml(array $facts, string $canonicalKey): string
+    {
+        if (!isset($facts[$canonicalKey]) || !is_bool($facts[$canonicalKey]['value'] ?? null)) {
+            throw new \RuntimeException('The computation report is missing required boolean fact ' . $canonicalKey . '.');
+        }
+        return (!empty($facts[$canonicalKey]['value']) ? 'Yes' : 'No')
+            . ' (' . (string)$facts[$canonicalKey]['html'] . ')';
     }
 
     /**

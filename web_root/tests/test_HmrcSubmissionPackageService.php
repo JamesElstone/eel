@@ -43,6 +43,21 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
         . '</body></html>';
 }
 
+/** Sanitised computation shape from submission 000005: the three required dependants are absent. */
+function hmrcPackageTestMissingMandatoryComputationFacts(): string
+{
+    return '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+        . '<html xmlns="http://www.w3.org/1999/xhtml"'
+        . ' xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"'
+        . ' xmlns:ct="http://www.hmrc.gov.uk/schemas/ct/comp/2024-01-01">'
+        . '<head><title>Rejected computation fixture</title></head><body>'
+        . '<ix:nonNumeric name="ct:CompanyName" contextRef="instant">Package Fixture Limited</ix:nonNumeric>'
+        . '<ix:nonNumeric name="ct:TaxReference" contextRef="instant">0123456789</ix:nonNumeric>'
+        . '<ix:nonNumeric name="ct:StartOfPeriodCoveredByReturn" contextRef="instant">2024-01-01</ix:nonNumeric>'
+        . '<ix:nonNumeric name="ct:EndOfPeriodCoveredByReturn" contextRef="instant">2024-12-31</ix:nonNumeric>'
+        . '</body></html>';
+}
+
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\HmrcSubmissionPackageService::class,
     static function (
@@ -76,6 +91,166 @@ function hmrcPackageTestIxbrl(string $startDate, string $endDate, bool $includeU
                 $harness->assertSame(false, (bool)($result['ok'] ?? true));
                 $harness->assertSame('Select a persisted CT600 submission.', (string)($result['errors'][0] ?? ''));
                 $harness->assertSame('', $service->hashPackage(0));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\HmrcSubmissionPackageService::class,
+            'ships mandatory HMRC computation sources in migration and master schema',
+            static function () use ($harness): void {
+                $root = dirname(__DIR__, 2);
+                $migrationName = '2026_08_04_001_hmrc_computation_mandatory_facts.sql';
+                $migration = (string)file_get_contents(
+                    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR
+                        . 'migrations' . DIRECTORY_SEPARATOR . $migrationName
+                );
+                $master = (string)file_get_contents(
+                    $root . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
+                );
+                $rows = [
+                    "('computation_ixbrl', 'accounting_period.start_date', 'Statutory accounting period start', 'date', 'identity', 1)",
+                    "('computation_ixbrl', 'accounting_period.end_date', 'Statutory accounting period end', 'date', 'identity', 1)",
+                    "('computation_ixbrl', 'supported_return_profile.company_is_partner_in_firm', 'Company is a partner in a firm', 'boolean', 'identity', 1)",
+                ];
+
+                foreach ([$migration, $master] as $schema) {
+                    foreach ($rows as $row) {
+                        $harness->assertTrue(str_contains($schema, $row));
+                    }
+                }
+                $harness->assertTrue(str_contains($master, "('" . $migrationName . "')"));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\HmrcSubmissionPackageService::class,
+            'rejects submission 000005 computation omissions at the final package gate',
+            static function () use ($harness, $service): void {
+                $path = tempnam(test_tmp_directory(), 'hmrc-000005-computation-');
+                if (!is_string($path)) {
+                    throw new RuntimeException('Unable to create the rejected computation fixture.');
+                }
+                $bytes = hmrcPackageTestMissingMandatoryComputationFacts();
+                file_put_contents($path, $bytes, LOCK_EX);
+                $hash = hash('sha256', $bytes);
+
+                InterfaceDB::beginTransaction();
+                try {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO companies (id, company_name, company_number)
+                         VALUES (:id, :company_name, :company_number)',
+                        ['id' => 996001, 'company_name' => 'Package Fixture Limited', 'company_number' => '12345678']
+                    );
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                        [
+                            'id' => 996002,
+                            'company_id' => 996001,
+                            'label' => 'Package mandatory facts 2024',
+                            'period_start' => '2024-01-01',
+                            'period_end' => '2024-12-31',
+                        ]
+                    );
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO corporation_tax_periods
+                            (id, company_id, accounting_period_id, sequence_no, period_start, period_end, status)
+                         VALUES
+                            (:id, :company_id, :accounting_period_id, 1, :period_start, :period_end, :status)',
+                        [
+                            'id' => 996003,
+                            'company_id' => 996001,
+                            'accounting_period_id' => 996002,
+                            'period_start' => '2024-01-01',
+                            'period_end' => '2024-12-31',
+                            'status' => 'ready',
+                        ]
+                    );
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO corporation_tax_computation_runs (
+                            id, company_id, accounting_period_id, ct_period_id, period_start, period_end,
+                            status, computation_hash, summary_json, generated_path, generated_filename, output_sha256
+                         ) VALUES (
+                            :id, :company_id, :accounting_period_id, :ct_period_id, :period_start, :period_end,
+                            :status, :computation_hash, :summary_json, :generated_path, :generated_filename, :output_sha256
+                         )',
+                        [
+                            'id' => 996004,
+                            'company_id' => 996001,
+                            'accounting_period_id' => 996002,
+                            'ct_period_id' => 996003,
+                            'period_start' => '2024-01-01',
+                            'period_end' => '2024-12-31',
+                            'status' => 'generated',
+                            'computation_hash' => str_repeat('c', 64),
+                            'summary_json' => '{}',
+                            'generated_path' => $path,
+                            'generated_filename' => basename($path),
+                            'output_sha256' => $hash,
+                        ]
+                    );
+
+                    $profile = (new \eel_accounts\Service\IxbrlAuthorityProfileService())->profile(
+                        \eel_accounts\Service\IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION
+                    );
+                    // Model the historic passed evidence: package assembly must still re-read and revalidate the bytes.
+                    $validationId = (new \eel_accounts\Service\IxbrlValidationEvidenceService())
+                        ->recordComputationValidation(
+                            996004,
+                            $hash,
+                            $profile,
+                            [],
+                            ['ok' => true, 'errors' => []],
+                            [
+                                'status' => 'passed',
+                                'validator' => 'arelle',
+                                'version' => 'test',
+                                'validated_sha256' => $hash,
+                                'validation_profile_key' => $profile->key(),
+                                'validation_profile_version' => $profile->version(),
+                                'validation_profile_fingerprint' => $profile->fingerprint(),
+                                'validator_options_sha256' => hash('sha256', 'package-mandatory-facts'),
+                                'errors' => [],
+                                'warnings' => [],
+                            ]
+                    );
+
+                    $assertArtifact = new ReflectionMethod($service, 'assertHmrcArtifact');
+                    $assertArtifact->setAccessible(true);
+                    $rejection = null;
+                    try {
+                        $assertArtifact->invoke(
+                            $service,
+                            [
+                                'path' => $path,
+                                'filename' => basename($path),
+                                'hash' => $hash,
+                                'run_id' => 996004,
+                                'validation_run_id' => $validationId,
+                                'taxonomy_package_id' => 0,
+                                'taxonomy_package_hash' => '',
+                                'authority_profile' => $profile->key(),
+                                'authority_profile_fingerprint' => $profile->fingerprint(),
+                            ],
+                            \eel_accounts\Service\IxbrlAuthorityProfileService::HMRC_CT_COMPUTATION,
+                            'Computation'
+                        );
+                    } catch (Throwable $exception) {
+                        $rejection = $exception;
+                    }
+                    $harness->assertTrue($rejection instanceof Throwable);
+                    $message = $rejection?->getPrevious()?->getMessage() ?? $rejection?->getMessage() ?? '';
+                    foreach ([
+                        'PeriodOfAccountStartDate',
+                        'PeriodOfAccountEndDate',
+                        'CompanyIsAPartnerInAFirm',
+                    ] as $missingFact) {
+                        $harness->assertTrue(str_contains($message, $missingFact));
+                    }
+                } finally {
+                    InterfaceDB::rollBack();
+                    @unlink($path);
+                }
             }
         );
 

@@ -62,6 +62,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         );
         $harness->check(
             \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
+            'shows successful HMRC filing separately from its conversation cleanup state',
+            static function () use ($harness, $service): void {
+                $status = new ReflectionMethod($service, 'hmrcStatus');
+                $status->setAccessible(true);
+                $tone = new ReflectionMethod($service, 'hmrcStatusTone');
+                $tone->setAccessible(true);
+                $harness->assertSame('Submitted — cleanup required', $status->invoke(
+                    $service,
+                    ['business_outcome' => 'sandbox_passed', 'protocol_state' => 'delete_pending']
+                ));
+                $harness->assertSame('Submitted', $status->invoke(
+                    $service,
+                    ['business_outcome' => 'sandbox_passed', 'protocol_state' => 'closed']
+                ));
+                $harness->assertSame('success', $tone->invoke(
+                    $service,
+                    ['business_outcome' => 'sandbox_passed', 'protocol_state' => 'delete_pending']
+                ));
+            }
+        );
+        $harness->check(
+            \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
+            'keeps the internal HMRC submission counter independent from the remote reference',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'exchangeSubmissionReference');
+                $method->setAccessible(true);
+                $harness->assertSame('000006', $method->invoke($service, [
+                    'authority' => 'hmrc',
+                    'hmrc_submission_id' => 6,
+                    'hmrc_submission_reference' => '8596148860',
+                ]));
+            }
+        );
+        $harness->check(
+            \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
             'selects only the current strictly bound HMRC response for reprocessing',
             static function () use ($harness, $service): void {
                 $contractMethod = new ReflectionMethod($service, 'hmrcResponseReprocessContract');
@@ -127,6 +162,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'delete',
                         (string)$contractMethod->invoke($service, $cleanup)['operation']
                     );
+                    $acceptedRepair = $submission;
+                    $acceptedRepair['protocol_state'] = 'delete_pending';
+                    $acceptedRepair['business_outcome'] = 'sandbox_passed';
+                    $acceptedRepair['hmrc_submission_reference'] = '(count(ancestor-or-self::node()))';
+                    $acceptedContract = $contractMethod->invoke($service, $acceptedRepair);
+                    $harness->assertSame('poll', (string)$acceptedContract['operation']);
+                    $harness->assertSame(true, (bool)$acceptedContract['metadata_only']);
                     $closed = $submission;
                     $closed['protocol_state'] = 'closed';
                     $harness->assertSame(null, $contractMethod->invoke($service, $closed));

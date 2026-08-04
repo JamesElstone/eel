@@ -159,8 +159,11 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['authority_label'] ?? '')
                 )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($submission['submission_reference'] ?? '')
+                . '</td><td>' . $this->submissionReference(
+                    (string)($submission['submission_reference'] ?? ''),
+                    $authority === 'hmrc'
+                        ? (string)($submission['hmrc_document_reference'] ?? '')
+                        : ''
                 )
                 . '</td><td>' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['filing_context'] ?? '')
@@ -177,7 +180,9 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 )
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['prepared_at'] ?? '')))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['submitted_at'] ?? '')))
-                . '</td><td><span class="badge ' . $this->badge((string)($submission['status_key'] ?? '')) . '">'
+                . '</td><td><span class="badge ' . $this->badge((string)(
+                    $submission['status_tone'] ?? $submission['status_key'] ?? ''
+                )) . '">'
                 . \eel_accounts\Support\Utf8::html(
                     (string)($submission['latest_status'] ?? 'Unknown')
                 )
@@ -329,7 +334,22 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             ->classes(wrapperClass: 'table-scroll')
             ->toolbarActions($this->exchangeFilters($history))
             ->textColumn('authority_label', 'Authority')
-            ->textColumn('submission_reference', 'Submission')
+            ->column(
+                'submission_reference',
+                'Submission',
+                html: fn(array $exchange): string => $this->submissionReference(
+                    (string)($exchange['submission_reference'] ?? ''),
+                    (string)($exchange['hmrc_document_reference'] ?? '')
+                ),
+                export: static function (array $exchange): string {
+                    $internal = trim((string)($exchange['submission_reference'] ?? ''));
+                    $remote = trim((string)($exchange['hmrc_document_reference'] ?? ''));
+                    return implode("\n", array_filter([
+                        $internal,
+                        $remote !== '' ? 'HMRC ref ' . $remote : '',
+                    ], static fn(string $value): bool => $value !== ''));
+                }
+            )
             ->column(
                 'operation',
                 'Operation',
@@ -569,6 +589,18 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 : '');
     }
 
+    private function submissionReference(string $internal, string $hmrcReference = ''): string
+    {
+        $internal = trim($internal);
+        $hmrcReference = trim($hmrcReference);
+
+        return \eel_accounts\Support\Utf8::html($internal !== '' ? $internal : '—')
+            . ($hmrcReference !== ''
+                ? '<div class="helper">HMRC ref '
+                    . \eel_accounts\Support\Utf8::html($hmrcReference) . '</div>'
+                : '');
+    }
+
     protected function timestamp(string $value): string
     {
         $value = trim($value);
@@ -587,10 +619,10 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
     protected function badge(string $state): string
     {
         return match (strtolower(trim($state))) {
-            'accepted', 'succeeded', 'verified', 'acknowledged' => 'success',
-            'rejected', 'failed', 'internal_failure', 'evidence_incomplete' => 'danger',
-            'transport_unknown', 'parked' => 'warning',
-            'prepared', 'sent', 'received', 'pending', 'submitting' => 'info',
+            'success', 'accepted', 'succeeded', 'verified', 'acknowledged' => 'success',
+            'danger', 'rejected', 'failed', 'internal_failure', 'evidence_incomplete' => 'danger',
+            'warning', 'transport_unknown', 'parked' => 'warning',
+            'info', 'prepared', 'sent', 'received', 'pending', 'submitting' => 'info',
             default => 'muted',
         };
     }

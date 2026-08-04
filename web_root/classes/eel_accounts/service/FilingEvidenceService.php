@@ -448,6 +448,17 @@ final class FilingEvidenceService
                     hmrc_submission_reference, hmrc_correlation_id, transaction_id, submitted_at, final_response_at
              FROM hmrc_ct600_submissions WHERE evidence_bundle_id = :bundle_id ORDER BY id', ['bundle_id' => $bundleId]
         ) ?: [];
+        $receiptReferences = new HmrcReceiptReferenceService();
+        foreach ($hmrc as &$hmrcSubmission) {
+            $hmrcSubmission['hmrc_submission_reference'] = $receiptReferences->normalise(
+                $hmrcSubmission['hmrc_submission_reference'] ?? null
+            );
+            $hmrcSubmission['internal_submission_reference'] = sprintf(
+                '%06d',
+                max(0, (int)($hmrcSubmission['id'] ?? 0))
+            );
+        }
+        unset($hmrcSubmission);
         $companiesHouse = \InterfaceDB::fetchAll(
             'SELECT id, environment, lifecycle, submission_number, gateway_submission_reference, submitted_at, accepted_at
              FROM companies_house_accounts_submissions WHERE evidence_bundle_id = :bundle_id ORDER BY id', ['bundle_id' => $bundleId]

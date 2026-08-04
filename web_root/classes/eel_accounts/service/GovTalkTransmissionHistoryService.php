@@ -15,7 +15,8 @@ final class GovTalkTransmissionHistoryService
 {
     public function __construct(
         private readonly ?GovTalkProtocolConversationService $conversation = null,
-        private readonly ?CompaniesHouseAccountsSubmissionService $companiesHouse = null
+        private readonly ?CompaniesHouseAccountsSubmissionService $companiesHouse = null,
+        private readonly ?HmrcReceiptReferenceService $receiptReferences = null
     ) {
     }
 
@@ -108,9 +109,9 @@ final class GovTalkTransmissionHistoryService
                 ]
             ) as $submission) {
                 $submissionId = (int)$submission['id'];
-                $remoteReference = trim((string)(
-                    $submission['hmrc_submission_reference'] ?? ''
-                ));
+                $remoteReference = $this->receiptReferences()->normalise(
+                    $submission['hmrc_submission_reference'] ?? null
+                );
                 $period = implode(' to ', array_filter([
                     trim((string)($submission['ct_period_start'] ?? '')),
                     trim((string)($submission['ct_period_end'] ?? '')),
@@ -121,9 +122,8 @@ final class GovTalkTransmissionHistoryService
                     'authority_label' => 'HMRC',
                     'conversation_id' => $submissionId,
                     'ct_period_id' => (int)($submission['ct_period_id'] ?? 0),
-                    'submission_reference' => $remoteReference !== ''
-                        ? $remoteReference
-                        : $this->submissionCounter($submissionId),
+                    'submission_reference' => $this->submissionCounter($submissionId),
+                    'hmrc_document_reference' => $remoteReference ?? '',
                     'filing_context' => 'CT600' . ($period !== '' ? ' — ' . $period : ''),
                     'filing_type' => ucfirst((string)(
                         $submission['submission_type'] ?? 'original'
@@ -134,6 +134,7 @@ final class GovTalkTransmissionHistoryService
                     'prepared_at' => $submission['created_at'] ?? null,
                     'submitted_at' => $submission['submitted_at'] ?? null,
                     'latest_status' => $this->hmrcStatus($submission),
+                    'status_tone' => $this->hmrcStatusTone($submission),
                     'status_key' => (string)($submission['protocol_state'] ?? ''),
                     'response_reprocess_available' => $reprocessExchangeId > 0,
                     'response_reprocess_exchange_id' => $reprocessExchangeId,
@@ -234,6 +235,11 @@ final class GovTalkTransmissionHistoryService
                 ? 'HMRC'
                 : 'Companies House';
             $row['submission_reference'] = $this->exchangeSubmissionReference($row);
+            $row['hmrc_document_reference'] = (string)$row['authority'] === 'hmrc'
+                ? ($this->receiptReferences()->normalise(
+                    $row['hmrc_submission_reference'] ?? null
+                ) ?? '')
+                : '';
             $messageClass = trim((string)($row['request_message_class'] ?? ''));
             $row['request_message_class'] = $messageClass !== ''
                 ? $messageClass
@@ -379,6 +385,9 @@ final class GovTalkTransmissionHistoryService
     {
         $business = strtolower(trim((string)($submission['business_outcome'] ?? '')));
         $protocol = strtolower(trim((string)($submission['protocol_state'] ?? '')));
+        if ($this->successfulHmrcOutcome($business)) {
+            return $protocol === 'delete_pending' ? 'Submitted — cleanup required' : 'Submitted';
+        }
         if ($business === 'rejected' && $protocol === 'delete_pending') {
             return 'Rejected — cleanup required';
         }
@@ -389,6 +398,26 @@ final class GovTalkTransmissionHistoryService
         return $this->label($protocol !== '' ? $protocol : 'unknown');
     }
 
+    private function hmrcStatusTone(array $submission): string
+    {
+        $business = strtolower(trim((string)($submission['business_outcome'] ?? '')));
+        if ($this->successfulHmrcOutcome($business)) {
+            return 'success';
+        }
+        if (in_array($business, ['rejected', 'error'], true)) {
+            return 'danger';
+        }
+
+        return (string)($submission['protocol_state'] ?? '');
+    }
+
+    private function successfulHmrcOutcome(string $outcome): bool
+    {
+        return in_array($outcome, [
+            'sandbox_passed', 'til_validated', 'live_accepted', 'accepted',
+        ], true);
+    }
+
     private function hmrcResponseReprocessExchangeId(array $submission): int
     {
         $contract = $this->hmrcResponseReprocessContract($submission);
@@ -396,12 +425,11 @@ final class GovTalkTransmissionHistoryService
             return 0;
         }
         $submissionId = (int)($submission['id'] ?? 0);
-        $transactionId = trim((string)($submission['transaction_id'] ?? ''));
         $environment = strtoupper(trim((string)($submission['environment'] ?? '')));
-        if ($submissionId <= 0 || $transactionId === '' || $environment === '') {
+        if ($submissionId <= 0 || $environment === '') {
             return 0;
         }
-        $exchange = \InterfaceDB::fetchOne(
+        $exchanges = \InterfaceDB::fetchAll(
             'SELECT e.*,
                     a.authority AS archive_authority,
                     a.environment AS archive_environment,
@@ -414,27 +442,43 @@ final class GovTalkTransmissionHistoryService
                AND e.hmrc_submission_id = :submission_id
                AND e.operation = :operation
                AND e.environment = :environment
-               AND e.transaction_id = :transaction_id
              ORDER BY e.id DESC
-             LIMIT 1',
+             LIMIT 20',
             [
                 'authority' => 'hmrc',
                 'submission_id' => $submissionId,
                 'operation' => $contract['operation'],
                 'environment' => $environment,
-                'transaction_id' => $transactionId,
             ]
         );
+        foreach ($exchanges as $exchange) {
+            if ($this->hmrcResponseReprocessEligible($submission, $exchange, $contract)) {
+                return (int)($exchange['id'] ?? 0);
+            }
+        }
 
-        return is_array($exchange)
-            && $this->hmrcResponseReprocessEligible($submission, $exchange, $contract)
-                ? (int)($exchange['id'] ?? 0)
-                : 0;
+        return 0;
     }
 
-    /** @return array{operation:string,path_column:string,hash_column:string}|null */
+    /** @return array{operation:string,path_column:string,hash_column:string,metadata_only?:bool}|null */
     private function hmrcResponseReprocessContract(array $submission): ?array
     {
+        $business = strtolower(trim((string)($submission['business_outcome'] ?? '')));
+        $protocol = strtolower(trim((string)($submission['protocol_state'] ?? '')));
+        $storedReference = $this->receiptReferences()->normalise(
+            $submission['hmrc_submission_reference'] ?? null
+        );
+        if ($this->successfulHmrcOutcome($business)
+            && in_array($protocol, ['delete_pending', 'closed'], true)
+            && $storedReference === null) {
+            return [
+                'operation' => 'poll',
+                'path_column' => 'response_body_path',
+                'hash_column' => 'response_sha256',
+                'metadata_only' => true,
+            ];
+        }
+
         return match (strtolower(trim((string)($submission['protocol_state'] ?? '')))) {
             'transport_uncertain' => [
                 'operation' => 'submit',
@@ -455,7 +499,7 @@ final class GovTalkTransmissionHistoryService
         };
     }
 
-    /** @param array{operation:string,path_column:string,hash_column:string} $contract */
+    /** @param array{operation:string,path_column:string,hash_column:string,metadata_only?:bool} $contract */
     private function hmrcResponseReprocessEligible(
         array $submission,
         array $exchange,
@@ -464,6 +508,7 @@ final class GovTalkTransmissionHistoryService
         $submissionId = (int)($submission['id'] ?? 0);
         $environment = strtoupper(trim((string)($submission['environment'] ?? '')));
         $transactionId = trim((string)($submission['transaction_id'] ?? ''));
+        $metadataOnly = !empty($contract['metadata_only']);
         $submissionPath = trim((string)($submission[$contract['path_column']] ?? ''));
         $submissionHash = strtolower(trim((string)(
             $submission[$contract['hash_column']] ?? ''
@@ -477,10 +522,15 @@ final class GovTalkTransmissionHistoryService
             || (int)($exchange['hmrc_submission_id'] ?? 0) !== $submissionId
             || (string)($exchange['operation'] ?? '') !== $contract['operation']
             || strtoupper(trim((string)($exchange['environment'] ?? ''))) !== $environment
-            || trim((string)($exchange['transaction_id'] ?? '')) !== $transactionId
-            || !in_array((string)($exchange['exchange_state'] ?? ''), [
-                'failed', 'transport_unknown', 'received',
-            ], true)
+            || (!$metadataOnly
+                && ($transactionId === ''
+                    || trim((string)($exchange['transaction_id'] ?? '')) !== $transactionId))
+            || ($metadataOnly
+                ? ((string)($exchange['exchange_state'] ?? '') !== 'succeeded'
+                    || (string)($exchange['outcome_code'] ?? '') !== 'accepted')
+                : !in_array((string)($exchange['exchange_state'] ?? ''), [
+                    'failed', 'transport_unknown', 'received',
+                ], true))
             || $statusCode < 200
             || $statusCode >= 300
             || $submissionPath === ''
@@ -491,6 +541,13 @@ final class GovTalkTransmissionHistoryService
             || !$this->sameEvidencePath($submissionPath, $exchangePath)
             || !$this->available($exchangePath, $exchangeHash)) {
             return false;
+        }
+
+        if ($metadataOnly) {
+            $xml = file_get_contents($exchangePath);
+            if (!is_string($xml) || $this->receiptReferences()->extract($xml) === null) {
+                return false;
+            }
         }
 
         return (string)($exchange['archive_authority'] ?? '') === 'hmrc'
@@ -518,10 +575,7 @@ final class GovTalkTransmissionHistoryService
     private function exchangeSubmissionReference(array $row): string
     {
         if ((string)$row['authority'] === 'hmrc') {
-            $remote = trim((string)($row['hmrc_submission_reference'] ?? ''));
-            return $remote !== ''
-                ? $remote
-                : $this->submissionCounter((int)($row['hmrc_submission_id'] ?? 0));
+            return $this->submissionCounter((int)($row['hmrc_submission_id'] ?? 0));
         }
         $number = trim((string)($row['companies_house_submission_number'] ?? ''));
 
@@ -531,6 +585,11 @@ final class GovTalkTransmissionHistoryService
     private function submissionCounter(int $submissionId): string
     {
         return sprintf('%06d', max(0, $submissionId));
+    }
+
+    private function receiptReferences(): HmrcReceiptReferenceService
+    {
+        return $this->receiptReferences ?? new HmrcReceiptReferenceService();
     }
 
     private function periodRange(array $period): string

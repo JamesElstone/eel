@@ -51,6 +51,7 @@ final class HmrcCorporationTaxSubmissionService
     private string $artifactRoot;
     private TransmissionArchiveService $archives;
     private GovTalkProtocolConversationService $govTalk;
+    private HmrcReceiptReferenceService $receiptReferences;
 
     public function __construct(
         ?HmrcCtTransactionEngineTransportInterface $transport = null,
@@ -62,7 +63,8 @@ final class HmrcCorporationTaxSubmissionService
         ?TransmissionArchiveService $archiveService = null,
         ?callable $xmlEnvironmentResolver = null,
         ?callable $filingReadinessResolver = null,
-        ?GovTalkProtocolConversationService $govTalkConversation = null
+        ?GovTalkProtocolConversationService $govTalkConversation = null,
+        ?HmrcReceiptReferenceService $receiptReferences = null
     ) {
         $this->transport = $transport ?? new HmrcCtTransactionEngineClient();
         $this->packages = $packages ?? new HmrcSubmissionPackageService();
@@ -83,6 +85,7 @@ final class HmrcCorporationTaxSubmissionService
         $this->archives = $archiveService ?? new TransmissionArchiveService($this->artifactRoot);
         $this->govTalk = $govTalkConversation
             ?? new GovTalkProtocolConversationService($this->archives);
+        $this->receiptReferences = $receiptReferences ?? new HmrcReceiptReferenceService();
     }
 
     /** @return array<string, mixed> */
@@ -613,6 +616,9 @@ final class HmrcCorporationTaxSubmissionService
     }
 
     public function reprocessArchivedResponse(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
         int $submissionId,
         int $exchangeId,
         int|string|null $actor = null,
@@ -631,8 +637,28 @@ final class HmrcCorporationTaxSubmissionService
         if (!is_array($submission)) {
             return $this->failure('The HMRC submission does not exist.');
         }
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $ctPeriodId <= 0
+            || (int)$submission['company_id'] !== $companyId
+            || (int)$submission['accounting_period_id'] !== $accountingPeriodId
+            || (int)$submission['ct_period_id'] !== $ctPeriodId) {
+            return $this->failure(
+                'The selected HMRC submission does not belong to the authorised accounting context.',
+                $submissionId,
+                $submission
+            );
+        }
         $expectedState = (string)$submission['protocol_state'];
-        $operation = match ($expectedState) {
+        $successfulOutcome = in_array((string)$submission['business_outcome'], [
+            'sandbox_passed', 'til_validated', 'live_accepted', 'accepted',
+        ], true);
+        $metadataRepair = $successfulOutcome
+            && in_array($expectedState, ['delete_pending', 'closed'], true)
+            && $this->receiptReferences->normalise(
+                $submission['hmrc_submission_reference_raw'] ?? null
+            ) === null;
+        $operation = $metadataRepair ? 'poll' : match ($expectedState) {
             'transport_uncertain' => 'submit',
             'awaiting_poll' => 'poll',
             'delete_pending' => 'delete',
@@ -645,7 +671,6 @@ final class HmrcCorporationTaxSubmissionService
                 $submission
             );
         }
-        $transactionId = strtoupper(trim((string)($submission['transaction_id'] ?? '')));
         $exchange = \InterfaceDB::fetchOne(
             'SELECT e.*, a.authority AS archive_authority,
                     a.company_id AS archive_company_id,
@@ -658,17 +683,25 @@ final class HmrcCorporationTaxSubmissionService
                AND e.authority = :authority
                AND e.hmrc_submission_id = :submission_id
                AND e.operation = :operation
-               AND e.transaction_id = :transaction_id
              LIMIT 1',
             [
                 'exchange_id' => $exchangeId,
                 'authority' => 'hmrc',
                 'submission_id' => $submissionId,
                 'operation' => $operation,
-                'transaction_id' => $transactionId,
             ]
         );
-        if (!is_array($exchange)
+        if (!is_array($exchange)) {
+            return $this->failure(
+                'The selected HMRC exchange does not belong to this submission.',
+                $submissionId,
+                $submission
+            );
+        }
+        $transactionId = strtoupper(trim((string)($exchange['transaction_id'] ?? '')));
+        if ($transactionId === ''
+            || (!$metadataRepair
+                && $transactionId !== strtoupper(trim((string)($submission['transaction_id'] ?? ''))))
             || strtoupper(trim((string)($exchange['environment'] ?? '')))
                 !== strtoupper(trim((string)$submission['environment'])
             )
@@ -685,9 +718,11 @@ final class HmrcCorporationTaxSubmissionService
                 $submission
             );
         }
-        if (!in_array((string)($exchange['exchange_state'] ?? ''), [
-            'failed', 'transport_unknown', 'received',
-        ], true)) {
+        $exchangeState = (string)($exchange['exchange_state'] ?? '');
+        $exchangeOutcome = (string)($exchange['outcome_code'] ?? '');
+        if ($metadataRepair
+            ? ($exchangeState !== 'succeeded' || $exchangeOutcome !== 'accepted')
+            : !in_array($exchangeState, ['failed', 'transport_unknown', 'received'], true)) {
             return $this->failure(
                 'This HMRC exchange has already been processed or is not eligible for reprocessing.',
                 $submissionId,
@@ -740,8 +775,12 @@ final class HmrcCorporationTaxSubmissionService
                 $submission
             );
         }
-        $pathColumn = $operation === 'delete' ? 'cleanup_response_path' : 'response_body_path';
-        $hashColumn = $operation === 'delete' ? 'cleanup_response_sha256' : 'response_sha256';
+        $pathColumn = $operation === 'delete' && !$metadataRepair
+            ? 'cleanup_response_path'
+            : 'response_body_path';
+        $hashColumn = $operation === 'delete' && !$metadataRepair
+            ? 'cleanup_response_sha256'
+            : 'response_sha256';
         $submissionResponseHash = strtolower(trim((string)($submission[$hashColumn] ?? '')));
         $submissionResponsePath = realpath((string)($submission[$pathColumn] ?? ''));
         $evidenceResponsePath = realpath((string)$evidence['path']);
@@ -829,7 +868,7 @@ final class HmrcCorporationTaxSubmissionService
         }
         $parsedProtocol = (string)($parsed['protocol_state'] ?? 'failed');
         $parsedBusiness = (string)($parsed['business_outcome'] ?? '');
-        $allowedProtocols = match ($expectedState) {
+        $allowedProtocols = $metadataRepair ? ['final_response'] : match ($expectedState) {
             'transport_uncertain' => ['acknowledged', 'gateway_rejected', 'final_response'],
             'awaiting_poll' => ['acknowledged', 'final_response', 'submission_error'],
             'delete_pending' => ['deleted', 'submission_error'],
@@ -838,6 +877,8 @@ final class HmrcCorporationTaxSubmissionService
         if (!in_array($parsedProtocol, $allowedProtocols, true)
             || ($parsedProtocol === 'final_response'
                 && !in_array($parsedBusiness, ['accepted', 'rejected'], true))
+            || ($metadataRepair
+                && ($parsedProtocol !== 'final_response' || $parsedBusiness !== 'accepted'))
             || ($parsedProtocol === 'submission_error' && $expectedCorrelationId === '')) {
             return $this->failure(
                 'The archived HMRC response did not resolve to a valid current protocol result: '
@@ -861,6 +902,28 @@ final class HmrcCorporationTaxSubmissionService
                 'The archived HMRC response has no verifiable receipt timestamp.',
                 $submissionId,
                 $submission
+            );
+        }
+
+        if ($metadataRepair) {
+            $reference = $this->receiptReferences->extract(
+                (string)($parsed['body_xml'] ?? $responseXml)
+            );
+            if ($reference === null) {
+                return $this->failure(
+                    'The verified HMRC success response does not contain one unambiguous document reference.',
+                    $submissionId,
+                    $submission
+                );
+            }
+
+            return $this->repairReceiptMetadata(
+                $submission,
+                $exchange,
+                $reference,
+                $submissionResponseHash,
+                $actor,
+                $report
             );
         }
 
@@ -1052,6 +1115,123 @@ final class HmrcCorporationTaxSubmissionService
         return $result;
     }
 
+    private function repairReceiptMetadata(
+        array $submission,
+        array $exchange,
+        string $reference,
+        string $responseHash,
+        int|string|null $actor,
+        callable $report
+    ): array {
+        $submissionId = (int)$submission['id'];
+        $exchangeId = (int)$exchange['id'];
+        $rawReference = trim((string)($submission['hmrc_submission_reference_raw'] ?? ''));
+        $report('Repairing the HMRC receipt metadata and audit trail…', 80);
+        try {
+            \InterfaceDB::transaction(function () use (
+                $submission,
+                $exchange,
+                $submissionId,
+                $exchangeId,
+                $reference,
+                $responseHash,
+                $rawReference,
+                $actor
+            ): void {
+                $statement = \InterfaceDB::prepareExecute(
+                    'UPDATE ' . self::SUBMISSIONS . '
+                     SET hmrc_submission_reference = :reference
+                     WHERE id = :id
+                       AND company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                       AND ct_period_id = :ct_period_id
+                       AND protocol_state = :protocol_state
+                       AND business_outcome = :business_outcome
+                       AND response_sha256 = :response_sha256
+                       AND COALESCE(hmrc_submission_reference, :empty_reference) = :expected_reference',
+                    [
+                        'reference' => $reference,
+                        'id' => $submissionId,
+                        'company_id' => (int)$submission['company_id'],
+                        'accounting_period_id' => (int)$submission['accounting_period_id'],
+                        'ct_period_id' => (int)$submission['ct_period_id'],
+                        'protocol_state' => (string)$submission['protocol_state'],
+                        'business_outcome' => (string)$submission['business_outcome'],
+                        'response_sha256' => $responseHash,
+                        'empty_reference' => '',
+                        'expected_reference' => $rawReference,
+                    ]
+                );
+                if ($statement->rowCount() !== 1) {
+                    throw new \RuntimeException(
+                        'The HMRC submission metadata changed before the receipt could be repaired.'
+                    );
+                }
+
+                $context = [
+                    'exchange_id' => $exchangeId,
+                    'operation' => 'poll',
+                    'transaction_id' => (string)$exchange['transaction_id'],
+                    'response_sha256' => $responseHash,
+                    'previous_reference_valid' => false,
+                    'document_reference' => $reference,
+                    'network_request' => false,
+                ];
+                $this->event(
+                    $submissionId,
+                    'success',
+                    'The HMRC receipt document reference was repaired from verified archived evidence.',
+                    $context
+                );
+                $this->recordEvidenceOutcome(
+                    $submissionId,
+                    'hmrc_receipt_metadata_repaired',
+                    'success',
+                    $actor,
+                    $context
+                );
+                $this->recordReceiptMetadataAudit($submission, $actor, $context);
+            });
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'The HMRC receipt metadata could not be repaired: ' . $exception->getMessage(),
+                $submissionId,
+                $this->fetchById($submissionId)
+            );
+        }
+
+        $report('The HMRC receipt metadata was repaired without contacting HMRC.', 100);
+        return $this->commandResult($submissionId, true);
+    }
+
+    private function recordReceiptMetadataAudit(
+        array $submission,
+        int|string|null $actor,
+        array $context
+    ): void {
+        if (!\InterfaceDB::tableExists('year_end_audit_log')) {
+            return;
+        }
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO year_end_audit_log (
+                company_id, accounting_period_id, action, action_by,
+                action_at, new_value_json, notes
+             ) VALUES (
+                :company_id, :accounting_period_id, :action, :actor,
+                :action_at, :details, :notes
+             )',
+            [
+                'company_id' => (int)$submission['company_id'],
+                'accounting_period_id' => (int)$submission['accounting_period_id'],
+                'action' => 'hmrc_receipt_metadata_repaired',
+                'actor' => $this->actor($actor),
+                'action_at' => $this->sqlNow(),
+                'details' => $this->json($context),
+                'notes' => 'A verified archived HMRC success response repaired local receipt metadata; no network request was made.',
+            ]
+        );
+    }
+
     /** @return array<string,mixed> */
     private function reprocessedSubmissionChanges(
         array $submission,
@@ -1150,7 +1330,7 @@ final class HmrcCorporationTaxSubmissionService
             $summary = $accepted
                 ? 'HMRC accepted the CT600 filing body.'
                 : $this->rejectionSummary($summary);
-            $reference = $this->submissionReference((string)($parsed['body_xml'] ?? ''));
+            $reference = $this->receiptReferences->extract((string)($parsed['body_xml'] ?? ''));
             $changes = array_replace($changes, [
                 'status' => $accepted ? 'accepted' : 'rejected',
                 'protocol_state' => $cleanupRequired ? 'delete_pending' : 'closed',
@@ -1951,7 +2131,9 @@ final class HmrcCorporationTaxSubmissionService
                 'hmrc_correlation_id' => (string)($result['correlation_id'] ?? ''),
                 'response_endpoint' => (string)($result['response_endpoint'] ?? ''),
                 'poll_interval_seconds' => $interval,
-                'hmrc_submission_reference' => $this->submissionReference((string)($result['body_xml'] ?? '')),
+                'hmrc_submission_reference' => $this->receiptReferences->extract(
+                    (string)($result['body_xml'] ?? '')
+                ),
                 'hmrc_response_code' => (int)($result['status_code'] ?? 0) ?: null,
                 'hmrc_response_summary' => $accepted
                     ? 'HMRC accepted the CT600 filing body.'
@@ -2872,6 +3054,10 @@ final class HmrcCorporationTaxSubmissionService
 
     private function normaliseSubmission(array $row): array
     {
+        $row['hmrc_submission_reference_raw'] = $row['hmrc_submission_reference'] ?? null;
+        $row['hmrc_submission_reference'] = $this->receiptReferences->normalise(
+            $row['hmrc_submission_reference'] ?? null
+        );
         foreach ([
             'validation_json' => 'validation',
             'source_manifest_json' => 'source_manifest',
@@ -3177,31 +3363,6 @@ final class HmrcCorporationTaxSubmissionService
         }
 
         return array_values(array_unique($messages));
-    }
-
-    private function submissionReference(string $bodyXml): ?string
-    {
-        if ($bodyXml === '') {
-            return null;
-        }
-        try {
-            $document = new \DOMDocument();
-            if (!$document->loadXML($bodyXml, LIBXML_NONET)) {
-                return null;
-            }
-            $xpath = new \DOMXPath($document);
-            foreach (['SubmissionReference', 'HMRCReference', 'ReceiptReference', 'IRmarkReceipt'] as $name) {
-                $nodes = $xpath->query('//*[local-name()="' . $name . '"]');
-                $value = trim((string)($nodes === false ? '' : $nodes->item(0)?->textContent));
-                if ($value !== '') {
-                    return mb_substr($value, 0, 255);
-                }
-            }
-        } catch (\Throwable) {
-            return null;
-        }
-
-        return null;
     }
 
     private function storeArtifact(int $submissionId, string $filename, string $contents): array
@@ -3529,6 +3690,7 @@ final class HmrcCorporationTaxSubmissionService
                 'hmrc_gateway_rejected' => 'HMRC Gateway rejected the request before opening a filing conversation.',
                 'hmrc_acknowledged' => 'HMRC acknowledged the frozen filing package.',
                 'hmrc_acknowledgement_recovered' => 'A verified archived HMRC acknowledgement restored the polling conversation.',
+                'hmrc_receipt_metadata_repaired' => 'Verified archived HMRC evidence repaired the receipt document reference.',
                 default => 'The HMRC transmission outcome is uncertain.',
             },
             ['submission_id' => $submissionId] + $context

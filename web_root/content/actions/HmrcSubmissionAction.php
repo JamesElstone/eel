@@ -112,16 +112,6 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 if ($submissionId <= 0) {
                     return $this->result(false, ['Select a pending HMRC submission to check.'], [], $changedFacts);
                 }
-                $pending = (array)(($periodStatus['period'] ?? [])['pending_submission'] ?? []);
-                $authorisedSubmissionId = (int)($pending['submission_id'] ?? $pending['id'] ?? 0);
-                if ($authorisedSubmissionId <= 0 || $submissionId !== $authorisedSubmissionId) {
-                    return $this->result(
-                        false,
-                        ['The selected HMRC conversation is not pending for this CT period.'],
-                        [],
-                        $changedFacts
-                    );
-                }
                 if ($intent === 'hmrc_reprocess_response') {
                     if ($exchangeId <= 0) {
                         return $this->result(
@@ -136,12 +126,25 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         10
                     );
                     $command = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         $submissionId,
                         $exchangeId,
                         $actor,
                         $report
                     );
                 } else {
+                    $pending = (array)(($periodStatus['period'] ?? [])['pending_submission'] ?? []);
+                    $authorisedSubmissionId = (int)($pending['submission_id'] ?? $pending['id'] ?? 0);
+                    if ($authorisedSubmissionId <= 0 || $submissionId !== $authorisedSubmissionId) {
+                        return $this->result(
+                            false,
+                            ['The selected HMRC conversation is not pending for this CT period.'],
+                            [],
+                            $changedFacts
+                        );
+                    }
                     $progress->report('Preparing to check the pending HMRC conversation…', 10);
                     $command = $service->poll($submissionId, $actor, $report);
                 }

@@ -3,6 +3,22 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
+function hmrcCtTestSuccessReceipt(string $reference): string
+{
+    return '<SuccessResponse xmlns="http://www.inlandrevenue.gov.uk/SuccessResponse">'
+        . '<IRmarkReceipt><Message code="0000">HMRC has received the HMRC-CT-CT600 document ref: '
+        . $reference . ' at 07.35 on 04/08/2026. The associated IRmark was: TEST.'
+        . '</Message></IRmarkReceipt><Message code="077001">Thank you for your submission</Message>'
+        . '</SuccessResponse>';
+}
+
+function hmrcCtTestSuccessEnvelope(string $reference): string
+{
+    return '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope"><Body>'
+        . hmrcCtTestSuccessReceipt($reference)
+        . '</Body></GovTalkMessage>';
+}
+
 final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactionEngineTransportInterface
 {
     /** @var list<array<string,mixed>> */
@@ -609,8 +625,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'cleanup_required' => true,
                         'status_code' => 200,
                         'headers' => [],
-                        'response_xml' => '<GovTalkMessage>Accepted</GovTalkMessage>',
-                        'body_xml' => '<Result><SubmissionReference>HMRC-TIL-REF</SubmissionReference></Result>',
+                        'response_xml' => hmrcCtTestSuccessEnvelope('8596148860'),
+                        'body_xml' => hmrcCtTestSuccessReceipt('8596148860'),
                         'errors' => [],
                         'error' => '',
                     ];
@@ -697,6 +713,184 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame('til_validated', $polled['business_outcome']);
                     $h->assertSame(2, $transport->pollCalls);
                     $h->assertSame(0, $transport->deleteCalls);
+                    $h->assertSame('8596148860', (string)InterfaceDB::fetchColumn(
+                        'SELECT hmrc_submission_reference FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    ));
+
+                    $acceptedPollExchange = InterfaceDB::fetchOne(
+                        'SELECT * FROM govtalk_protocol_exchanges
+                         WHERE hmrc_submission_id = :submission_id
+                           AND operation = :operation
+                           AND exchange_state = :exchange_state
+                         ORDER BY id DESC LIMIT 1',
+                        [
+                            'submission_id' => $submissionId,
+                            'operation' => 'poll',
+                            'exchange_state' => 'succeeded',
+                        ]
+                    );
+                    $h->assertTrue(is_array($acceptedPollExchange));
+                    $invalidReceipt = '(count(ancestor-or-self::node()|/gti:GovTalkMessage/gti:Body)=1)';
+                    InterfaceDB::prepareExecute(
+                        'UPDATE hmrc_ct600_submissions
+                         SET hmrc_submission_reference = :reference WHERE id = :id',
+                        ['reference' => $invalidReceipt, 'id' => $submissionId]
+                    );
+                    $historyRows = (new \eel_accounts\Service\GovTalkTransmissionHistoryService())
+                        ->submissionHistory($companyId, $accountingPeriodId, 'hmrc', 'TIL');
+                    $historyRow = array_values(array_filter(
+                        $historyRows,
+                        static fn(array $row): bool => (int)$row['conversation_id'] === $submissionId
+                    ))[0] ?? [];
+                    $h->assertSame(
+                        sprintf('%06d', $submissionId),
+                        (string)($historyRow['submission_reference'] ?? '')
+                    );
+                    $h->assertSame('', (string)($historyRow['hmrc_document_reference'] ?? ''));
+                    $h->assertSame('Submitted — cleanup required', (string)($historyRow['latest_status'] ?? ''));
+                    $h->assertSame('success', (string)($historyRow['status_tone'] ?? ''));
+                    $h->assertSame(
+                        (int)$acceptedPollExchange['id'],
+                        (int)($historyRow['response_reprocess_exchange_id'] ?? 0)
+                    );
+                    $evidenceBundleId = (int)InterfaceDB::fetchColumn(
+                        'SELECT evidence_bundle_id FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $evidenceOverview = (new \eel_accounts\Service\FilingEvidenceService())
+                        ->overview($companyId, $evidenceBundleId);
+                    $evidenceSubmission = (array)(($evidenceOverview['hmrc_submissions'] ?? [])[0] ?? []);
+                    $h->assertSame(null, $evidenceSubmission['hmrc_submission_reference'] ?? null);
+                    $h->assertSame(
+                        sprintf('%06d', $submissionId),
+                        (string)($evidenceSubmission['internal_submission_reference'] ?? '')
+                    );
+                    $submissionSnapshot = InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, business_outcome, idempotency_key,
+                                hmrc_correlation_id, response_endpoint, poll_interval_seconds,
+                                next_poll_at, final_response_at, cleanup_completed_at,
+                                cleanup_error, created_at, updated_at
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $exchangeSnapshot = InterfaceDB::fetchOne(
+                        'SELECT exchange_state, outcome_code, correlation_id, transaction_id,
+                                sent_at, received_at, created_at, updated_at
+                         FROM govtalk_protocol_exchanges WHERE id = :id',
+                        ['id' => (int)$acceptedPollExchange['id']]
+                    );
+                    $artifactCount = iterator_count(new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($artifactRoot, FilesystemIterator::SKIP_DOTS)
+                    ));
+                    $eventCount = (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM hmrc_submission_events WHERE submission_id = :id',
+                        ['id' => $submissionId]
+                    );
+                    $evidenceEventCount = (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM filing_evidence_events WHERE bundle_id = (
+                            SELECT evidence_bundle_id FROM hmrc_ct600_submissions WHERE id = :id
+                         )',
+                        ['id' => $submissionId]
+                    );
+                    $auditCount = (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM year_end_audit_log
+                         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                    );
+                    $transport->archivedResponses[] = [
+                        'success' => true,
+                        'protocol_state' => 'final_response',
+                        'business_outcome' => 'accepted',
+                        'correlation_id' => 'CAFE1234',
+                        'response_endpoint' => 'https://transaction-engine.tax.service.gov.uk/submission',
+                        'poll_interval' => 10,
+                        'cleanup_required' => true,
+                        'body_xml' => hmrcCtTestSuccessReceipt('8596148860'),
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $networkCounts = [
+                        $transport->submitCalls,
+                        $transport->pollCalls,
+                        $transport->deleteCalls,
+                    ];
+                    $wrongContextRepair = $service->reprocessArchivedResponse(
+                        $companyId + 1,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        $submissionId,
+                        (int)$acceptedPollExchange['id'],
+                        42
+                    );
+                    $h->assertFalse((bool)$wrongContextRepair['success']);
+                    $repaired = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        $submissionId,
+                        (int)$acceptedPollExchange['id'],
+                        42
+                    );
+                    $h->assertTrue((bool)$repaired['success']);
+                    $h->assertSame('8596148860', (string)InterfaceDB::fetchColumn(
+                        'SELECT hmrc_submission_reference FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    ));
+                    $repairedHistoryRows = (new \eel_accounts\Service\GovTalkTransmissionHistoryService())
+                        ->submissionHistory($companyId, $accountingPeriodId, 'hmrc', 'TIL');
+                    $repairedHistory = array_values(array_filter(
+                        $repairedHistoryRows,
+                        static fn(array $row): bool => (int)$row['conversation_id'] === $submissionId
+                    ))[0] ?? [];
+                    $h->assertSame('8596148860', (string)($repairedHistory['hmrc_document_reference'] ?? ''));
+                    $h->assertSame(0, (int)($repairedHistory['response_reprocess_exchange_id'] ?? 0));
+                    $h->assertSame($submissionSnapshot, InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, business_outcome, idempotency_key,
+                                hmrc_correlation_id, response_endpoint, poll_interval_seconds,
+                                next_poll_at, final_response_at, cleanup_completed_at,
+                                cleanup_error, created_at, updated_at
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $submissionId]
+                    ));
+                    $h->assertSame($exchangeSnapshot, InterfaceDB::fetchOne(
+                        'SELECT exchange_state, outcome_code, correlation_id, transaction_id,
+                                sent_at, received_at, created_at, updated_at
+                         FROM govtalk_protocol_exchanges WHERE id = :id',
+                        ['id' => (int)$acceptedPollExchange['id']]
+                    ));
+                    $h->assertSame($artifactCount, iterator_count(new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($artifactRoot, FilesystemIterator::SKIP_DOTS)
+                    )));
+                    $h->assertSame($networkCounts, [
+                        $transport->submitCalls,
+                        $transport->pollCalls,
+                        $transport->deleteCalls,
+                    ]);
+                    $h->assertSame($eventCount + 1, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM hmrc_submission_events WHERE submission_id = :id',
+                        ['id' => $submissionId]
+                    ));
+                    $h->assertSame($evidenceEventCount + 1, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM filing_evidence_events WHERE bundle_id = (
+                            SELECT evidence_bundle_id FROM hmrc_ct600_submissions WHERE id = :id
+                         )',
+                        ['id' => $submissionId]
+                    ));
+                    $h->assertSame($auditCount + 1, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM year_end_audit_log
+                         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                    ));
+                    $repeatedRepair = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        $submissionId,
+                        (int)$acceptedPollExchange['id'],
+                        42
+                    );
+                    $h->assertFalse((bool)$repeatedRepair['success']);
 
                     $nextCleanupAt = (string)InterfaceDB::fetchColumn(
                         'SELECT next_poll_at FROM hmrc_ct600_submissions WHERE id = :id',
@@ -797,7 +991,7 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'status_code' => 200,
                         'headers' => [],
                         'response_xml' => '<GovTalkMessage>Accepted Live</GovTalkMessage>',
-                        'body_xml' => '<Result><SubmissionReference>HMRC-LIVE-REF</SubmissionReference></Result>',
+                        'body_xml' => hmrcCtTestSuccessReceipt('HMRC-LIVE-REF'),
                         'errors' => [],
                         'error' => '',
                     ];
@@ -1396,6 +1590,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $beforeNegativeChecks = $stateSnapshot();
 
                     $wrongExchange = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         $submissionId,
                         $exchangeId + 999999,
                         42
@@ -1408,6 +1605,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     try {
                         file_put_contents($responsePath, $originalResponseBytes . '<tampered/>');
                         $tamperedResponse = $service->reprocessArchivedResponse(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
                             $submissionId,
                             $exchangeId,
                             42
@@ -1423,6 +1623,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     try {
                         file_put_contents($requestPath, $originalRequestBytes . '<tampered/>');
                         $tamperedRequest = $service->reprocessArchivedResponse(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
                             $submissionId,
                             $exchangeId,
                             42
@@ -1443,6 +1646,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     );
                     try {
                         $wrongArchive = $service->reprocessArchivedResponse(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
                             $submissionId,
                             $exchangeId,
                             42
@@ -1467,6 +1673,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     );
                     $staleSnapshot = $stateSnapshot();
                     $stale = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         $submissionId,
                         $exchangeId,
                         42
@@ -1501,6 +1710,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         );
                     };
                     $exchangeChangedDuringParse = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         $submissionId,
                         $exchangeId,
                         42
@@ -1528,6 +1740,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'error' => '',
                     ];
                     $recovered = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         (int)$first['submission_id'],
                         $exchangeId,
                         42
@@ -1578,6 +1793,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     );
 
                     $repeated = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         (int)$first['submission_id'],
                         $exchangeId,
                         42
@@ -1671,6 +1889,9 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'error' => 'HMRC error 3001: the filing was rejected with 69 detailed business-rule errors.',
                     ];
                     $reprocessed = $service->reprocessArchivedResponse(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
                         (int)$first['submission_id'],
                         (int)$pollExchange['id'],
                         42

@@ -701,7 +701,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
         ));
         $harness->assertTrue(str_contains($source, '$exchangeId = (int)$request->input(\'exchange_id\', 0)'));
         $harness->assertTrue((bool)preg_match(
-            '/reprocessArchivedResponse\s*\(\s*\$submissionId\s*,\s*\$exchangeId\s*,/',
+            '/reprocessArchivedResponse\s*\(\s*\$companyId\s*,\s*\$accountingPeriodId\s*,\s*\$ctPeriodId\s*,\s*\$submissionId\s*,\s*\$exchangeId\s*,/',
             $source
         ));
         $harness->assertFalse(str_contains($source, "return 'web_app';"));

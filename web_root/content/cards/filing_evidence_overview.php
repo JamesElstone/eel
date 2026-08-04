@@ -39,7 +39,12 @@ final class _filing_evidence_overviewCard extends CardBaseFramework
             $submissions .= '<tr><td>HMRC Corporation Tax</td><td>'
                 . \eel_accounts\Support\Utf8::html((string)$submission['environment']) . '</td><td>'
                 . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($outcome)) . '</td><td>'
-                . \eel_accounts\Support\Utf8::html((string)($submission['hmrc_submission_reference'] ?: $submission['hmrc_correlation_id'] ?: $submission['transaction_id']))
+                . \eel_accounts\Support\Utf8::html((string)(
+                    $submission['hmrc_submission_reference']
+                        ?: $submission['internal_submission_reference']
+                        ?: $submission['hmrc_correlation_id']
+                        ?: $submission['transaction_id']
+                ))
                 . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($submission['final_response_at'] ?: $submission['submitted_at'])) . '</td></tr>';
         }
         foreach ((array)$model['companies_house_submissions'] as $submission) {

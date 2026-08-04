@@ -329,6 +329,61 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             _govtalk_transmission_historyCard::class,
+            'shows an accepted TEST filing as submitted with internal and HMRC references',
+            static function () use ($harness, $card): void {
+                $html = $card->render([
+                    'company' => ['id' => 49, 'accounting_period_id' => 79],
+                    'services' => [
+                        'govtalk_submission_history' => [[
+                            'authority' => 'hmrc',
+                            'authority_label' => 'HMRC',
+                            'conversation_id' => 6,
+                            'ct_period_id' => 7,
+                            'submission_reference' => '000006',
+                            'hmrc_document_reference' => '8596148860',
+                            'filing_context' => 'CT600 — 2023-09-05 to 2023-09-30',
+                            'filing_type' => 'Original',
+                            'environment' => 'TEST',
+                            'transaction_id' => 'POLL-TXN',
+                            'correlation_id' => 'HMRC-CORR',
+                            'status_key' => 'delete_pending',
+                            'status_tone' => 'success',
+                            'latest_status' => 'Submitted — cleanup required',
+                            'prepared_at' => '2026-08-04 06:35:01',
+                            'submitted_at' => '2026-08-04 06:35:11',
+                        ]],
+                    ],
+                ]);
+
+                $harness->assertTrue(str_contains($html, '000006'));
+                $harness->assertTrue(str_contains($html, 'HMRC ref 8596148860'));
+                $harness->assertTrue(str_contains(
+                    $html,
+                    '<span class="badge success">Submitted — cleanup required</span>'
+                ));
+                $harness->assertTrue(str_contains($html, '>Check Submission Status</button>'));
+
+                $tableMethod = new ReflectionMethod($card, 'exchangeHistoryTable');
+                $tableMethod->setAccessible(true);
+                /** @var TableFramework $table */
+                $table = $tableMethod->invoke($card, 49, [[
+                    'authority_label' => 'HMRC',
+                    'submission_reference' => '000006',
+                    'hmrc_document_reference' => '8596148860',
+                    'request_message_class' => 'HMRC-CT-CT600',
+                    'transaction_id' => 'POLL-TXN',
+                    'govtalk_errors' => [],
+                    'display_outcome' => 'Accepted',
+                ]], []);
+                $harness->assertTrue(str_contains(
+                    $table->exportCsv(),
+                    '000006 HMRC ref 8596148860'
+                ));
+            }
+        );
+
+        $harness->check(
+            _govtalk_transmission_historyCard::class,
             'renders an eligible archived HMRC response as a developer-only danger action',
             static function () use ($harness, $card): void {
                 $context = [

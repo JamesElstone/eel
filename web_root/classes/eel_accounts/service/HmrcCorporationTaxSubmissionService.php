@@ -18,6 +18,8 @@ final class HmrcCorporationTaxSubmissionService
 {
     private const SUBMISSIONS = 'hmrc_ct600_submissions';
     private const EVENTS = 'hmrc_submission_events';
+    private const REJECTED_CLEANUP_BLOCKER = 'HMRC rejected this submission, but GovTalk cleanup is still pending. '
+        . 'In the History tab, select Check Submission Status before transmitting the revised return.';
     private const REQUIRED_COLUMNS = [
         'source_manifest_json',
         'source_manifest_sha256',
@@ -191,9 +193,10 @@ final class HmrcCorporationTaxSubmissionService
             $testBlockers = array_merge($testBlockers, $readinessBlockers);
             $liveBlockers = array_merge($liveBlockers, $readinessBlockers);
             if (is_array($pending)) {
-                $message = (string)$pending['protocol_state'] === 'transport_uncertain'
+                $fallback = (string)$pending['protocol_state'] === 'transport_uncertain'
                     ? 'The last transmission has an uncertain outcome and must not be resubmitted.'
                     : 'An HMRC conversation is already in progress for this CT period.';
+                $message = $this->pendingConversationBlocker($pending, $fallback);
                 $testBlockers[] = $message;
                 $liveBlockers[] = $message;
             }
@@ -1259,9 +1262,10 @@ final class HmrcCorporationTaxSubmissionService
         $report('Checking the CT Period transport lock and submission history…', 20);
         $pending = $this->firstPendingSubmissionForPeriod($companyId, $ctPeriodId);
         if (is_array($pending)) {
-            $message = (string)$pending['protocol_state'] === 'transport_uncertain'
+            $fallback = (string)$pending['protocol_state'] === 'transport_uncertain'
                 ? 'A prior transmission has an uncertain outcome. Do not submit another return for this CT period.'
                 : 'An HMRC conversation is already in progress for this CT period.';
+            $message = $this->pendingConversationBlocker($pending, $fallback);
             return $this->failure($message, (int)$pending['id'], $pending);
         }
         if ($mode === 'LIVE') {
@@ -1431,9 +1435,10 @@ final class HmrcCorporationTaxSubmissionService
 
             $pending = $this->firstPendingSubmissionForPeriod($companyId, $ctPeriodId);
             if (is_array($pending)) {
-                $message = (string)$pending['protocol_state'] === 'transport_uncertain'
+                $fallback = (string)$pending['protocol_state'] === 'transport_uncertain'
                     ? 'A prior transmission has an uncertain outcome. Do not submit another return for this CT period.'
                     : 'An HMRC conversation is already in progress for this CT period.';
+                $message = $this->pendingConversationBlocker($pending, $fallback);
                 return $this->failure($message, (int)$pending['id'], $pending);
             }
             if ($mode === 'LIVE') {
@@ -1618,7 +1623,10 @@ final class HmrcCorporationTaxSubmissionService
                 (int)$package['ct_period_id']
             );
             if (is_array($pending)) {
-                throw new \RuntimeException('An HMRC conversation is already in progress for this CT period.');
+                throw new \RuntimeException($this->pendingConversationBlocker(
+                    $pending,
+                    'An HMRC conversation is already in progress for this CT period.'
+                ));
             }
             if ($mode === 'LIVE' && is_array($this->acceptedLiveSubmissionForPeriod(
                 (int)$package['company_id'],
@@ -3001,7 +3009,10 @@ final class HmrcCorporationTaxSubmissionService
         }
         if (in_array($state, ['submitting', 'awaiting_poll', 'delete_pending'], true)) {
             return $this->failure(
-                'An identical HMRC conversation is already in progress.',
+                $this->pendingConversationBlocker(
+                    $existing,
+                    'An identical HMRC conversation is already in progress.'
+                ),
                 (int)$existing['id'],
                 $existing
             );
@@ -3451,6 +3462,19 @@ final class HmrcCorporationTaxSubmissionService
     private function firstPendingSubmissionForPeriod(int $companyId, int $ctPeriodId): ?array
     {
         return $this->firstPending($this->fetchForCtPeriod($companyId, $ctPeriodId));
+    }
+
+    /** @param array<string,mixed> $submission */
+    private function pendingConversationBlocker(array $submission, string $fallback): string
+    {
+        if (
+            strtolower(trim((string)($submission['protocol_state'] ?? ''))) === 'delete_pending'
+            && strtolower(trim((string)($submission['business_outcome'] ?? ''))) === 'rejected'
+        ) {
+            return self::REJECTED_CLEANUP_BLOCKER;
+        }
+
+        return $fallback;
     }
 
     private function acceptedLiveSubmissionForPeriod(int $companyId, int $ctPeriodId): ?array

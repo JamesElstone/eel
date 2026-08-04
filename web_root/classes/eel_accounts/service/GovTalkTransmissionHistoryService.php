@@ -378,11 +378,15 @@ final class GovTalkTransmissionHistoryService
     private function hmrcStatus(array $submission): string
     {
         $business = strtolower(trim((string)($submission['business_outcome'] ?? '')));
+        $protocol = strtolower(trim((string)($submission['protocol_state'] ?? '')));
+        if ($business === 'rejected' && $protocol === 'delete_pending') {
+            return 'Rejected — cleanup required';
+        }
         if (!in_array($business, ['', 'none'], true)) {
             return $this->label($business);
         }
 
-        return $this->label((string)($submission['protocol_state'] ?? 'unknown'));
+        return $this->label($protocol !== '' ? $protocol : 'unknown');
     }
 
     private function hmrcResponseReprocessExchangeId(array $submission): int

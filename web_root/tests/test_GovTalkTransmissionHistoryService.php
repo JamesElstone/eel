@@ -41,6 +41,27 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         );
         $harness->check(
             \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
+            'distinguishes a rejected filing awaiting GovTalk cleanup',
+            static function () use ($harness, $service): void {
+                $method = new ReflectionMethod($service, 'hmrcStatus');
+                $method->setAccessible(true);
+
+                $harness->assertSame('Rejected — cleanup required', $method->invoke(
+                    $service,
+                    ['business_outcome' => 'rejected', 'protocol_state' => 'delete_pending']
+                ));
+                $harness->assertSame('Rejected', $method->invoke(
+                    $service,
+                    ['business_outcome' => 'rejected', 'protocol_state' => 'closed']
+                ));
+                $harness->assertSame('Delete pending', $method->invoke(
+                    $service,
+                    ['business_outcome' => 'none', 'protocol_state' => 'delete_pending']
+                ));
+            }
+        );
+        $harness->check(
+            \eel_accounts\Service\GovTalkTransmissionHistoryService::class,
             'selects only the current strictly bound HMRC response for reprocessing',
             static function () use ($harness, $service): void {
                 $contractMethod = new ReflectionMethod($service, 'hmrcResponseReprocessContract');

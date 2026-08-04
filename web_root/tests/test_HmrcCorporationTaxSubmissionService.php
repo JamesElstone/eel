@@ -839,6 +839,373 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
 
         $h->check(
             \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
+            'closes a rejected TEST conversation before allowing only a revised filing body',
+            static function () use ($h): void {
+                $companyId = 98641;
+                $accountingPeriodId = 98642;
+                $ctPeriodId = 98643;
+                $initialTime = '2026-08-04 09:30:00';
+                foreach ([
+                    [
+                        'INSERT INTO companies (id, company_name, company_number, is_active, created_at)
+                         VALUES (:id, :name, :number, 1, :created_at)',
+                        [
+                            'id' => $companyId,
+                            'name' => 'HMRC Rejected Lifecycle Test Limited',
+                            'number' => '09864100',
+                            'created_at' => $initialTime,
+                        ],
+                    ],
+                    [
+                        'INSERT INTO accounting_periods
+                            (id, company_id, label, period_start, period_end, created_at)
+                         VALUES (:id, :company_id, :label, :start, :end, :created_at)',
+                        [
+                            'id' => $accountingPeriodId,
+                            'company_id' => $companyId,
+                            'label' => 'HMRC-REJECTED-98642',
+                            'start' => '2025-10-01',
+                            'end' => '2026-09-30',
+                            'created_at' => $initialTime,
+                        ],
+                    ],
+                    [
+                        'INSERT INTO corporation_tax_periods (
+                            id, company_id, accounting_period_id, sequence_no,
+                            period_start, period_end, status, created_at, updated_at
+                         ) VALUES (
+                            :id, :company_id, :period_id, 1,
+                            :start, :end, :status, :created_at, :updated_at
+                         )',
+                        [
+                            'id' => $ctPeriodId,
+                            'company_id' => $companyId,
+                            'period_id' => $accountingPeriodId,
+                            'start' => '2025-10-01',
+                            'end' => '2026-09-30',
+                            'status' => 'ready',
+                            'created_at' => $initialTime,
+                            'updated_at' => $initialTime,
+                        ],
+                    ],
+                ] as [$sql, $params]) {
+                    InterfaceDB::prepareExecute($sql, $params);
+                }
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_reviews
+                        (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                     VALUES (:company_id, :period_id, 1, :locked_at, :locked_by)',
+                    [
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'locked_at' => $initialTime,
+                        'locked_by' => 'test',
+                    ]
+                );
+                $evidenceId = 'EEL-FE-00000000000000000000000000098641';
+                $evidenceHash = hash('sha256', 'hmrc-rejected-lifecycle-evidence-98641');
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO filing_evidence_bundles (
+                        evidence_id, company_id, accounting_period_id, evidence_version,
+                        application_name, application_version, calculation_build,
+                        locked_at, locked_by, bundle_hash
+                     ) VALUES (
+                        :evidence_id, :company_id, :period_id, :version,
+                        :name, :app_version, :build,
+                        :locked_at, :locked_by, :bundle_hash
+                     )',
+                    [
+                        'evidence_id' => $evidenceId,
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'version' => 'filing-evidence-v1',
+                        'name' => 'EEL Accounts tests',
+                        'app_version' => 'test',
+                        'build' => 'test',
+                        'locked_at' => $initialTime,
+                        'locked_by' => 'test',
+                        'bundle_hash' => $evidenceHash,
+                    ]
+                );
+
+                try {
+                    $originalBody = '<IRenvelope><CompanyTaxReturn>original</CompanyTaxReturn></IRenvelope>';
+                    $revisedBody = '<IRenvelope><CompanyTaxReturn>revised</CompanyTaxReturn></IRenvelope>';
+                    $originalManifest = [
+                        'basis' => 'original-rejected',
+                        'ct_period_id' => $ctPeriodId,
+                        'filing_evidence_id' => $evidenceId,
+                        'filing_evidence_bundle_hash' => $evidenceHash,
+                    ];
+                    $revisedManifest = array_replace($originalManifest, [
+                        'basis' => 'revised-after-rejection',
+                        'revision' => 2,
+                    ]);
+                    $currentBody = $originalBody;
+                    $currentManifest = $originalManifest;
+                    $package = static function (
+                        int $requestedCompanyId,
+                        int $requestedCtPeriodId,
+                        string $mode
+                    ) use (
+                        $accountingPeriodId,
+                        &$currentBody,
+                        &$currentManifest
+                    ): array {
+                        return [
+                            'ok' => true,
+                            'errors' => [],
+                            'warnings' => [],
+                            'company_id' => $requestedCompanyId,
+                            'accounting_period_id' => $accountingPeriodId,
+                            'ct_period_id' => $requestedCtPeriodId,
+                            'utr' => '0123456789',
+                            'filing_body_xml' => $currentBody,
+                            'source_manifest' => $currentManifest,
+                            'body_sha256' => hash('sha256', $currentBody),
+                            'accounts_ixbrl_path' => 'fixture/accounts.html',
+                            'accounts_artifact_id' => 41,
+                            'accounts_validation_run_id' => 42,
+                            'accounts_run_id' => 1,
+                            'accounts_sha256' => str_repeat('a', 64),
+                            'computations_ixbrl_path' => 'fixture/computations.html',
+                            'computation_run_id' => 2,
+                            'computation_validation_run_id' => 43,
+                            'computations_sha256' => str_repeat('b', 64),
+                            'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
+                            'year_end_locked_at' => '2026-08-04 09:30:00',
+                            'irmark' => 'REJECTED-LIFECYCLE',
+                            'schema_version' => 'V3/V1.994',
+                            'validation' => ['mode' => $mode],
+                            'approval_declaration' => [
+                                'declarant_name' => 'Jane Director',
+                                'declarant_status' => 'Director',
+                                'declaration_at' => '2026-08-04 09:30:00',
+                                'approved_at' => '2026-08-04 09:30:00',
+                                'approved_by' => 'user:42',
+                                'declaration_confirmed' => true,
+                                'authority_confirmed' => true,
+                                'original_unfiled_confirmed' => true,
+                            ],
+                        ];
+                    };
+                    $manifestResolver = static function (
+                        int $requestedCompanyId,
+                        int $requestedCtPeriodId
+                    ) use (
+                        $companyId,
+                        $ctPeriodId,
+                        &$currentBody,
+                        &$currentManifest
+                    ): array {
+                        return [
+                            'ok' => $requestedCompanyId === $companyId
+                                && $requestedCtPeriodId === $ctPeriodId,
+                            'errors' => [],
+                            'warnings' => [],
+                            'source_manifest' => $currentManifest,
+                            'body_sha256' => hash('sha256', $currentBody),
+                        ];
+                    };
+                    $transport = new HmrcCtTestTransport();
+                    $transport->submitResponses[] = [
+                        'success' => false,
+                        'pre_send_failure' => false,
+                        'transport_unknown' => false,
+                        'protocol_state' => 'final_response',
+                        'business_outcome' => 'rejected',
+                        'correlation_id' => 'D3C2B9E5F98449A19863D934273FA052',
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/submission',
+                        'poll_interval' => 10,
+                        'cleanup_required' => true,
+                        'status_code' => 200,
+                        'headers' => ['content-type' => 'text/xml'],
+                        'response_xml' => '<GovTalkMessage>Rejected by HMRC business validation</GovTalkMessage>',
+                        'body_xml' => '<ErrorResponse><Error><Number>3001</Number></Error></ErrorResponse>',
+                        'errors' => [[
+                            'raised_by' => 'Department',
+                            'number' => '3001',
+                            'type' => 'business',
+                            'texts' => ['The submission failed departmental business logic.'],
+                            'locations' => [],
+                        ]],
+                        'error' => 'HMRC error 3001: the filing was rejected by departmental business logic.',
+                    ];
+                    $clock = $initialTime;
+                    $artifactRoot = test_register_cleanup_path(
+                        test_tmp_directory() . DIRECTORY_SEPARATOR
+                            . 'hmrc-rejected-lifecycle-' . bin2hex(random_bytes(4))
+                    );
+                    $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        $transport,
+                        null,
+                        static function () use (&$clock): string {
+                            return $clock;
+                        },
+                        $artifactRoot,
+                        $package,
+                        $manifestResolver,
+                        xmlEnvironmentResolver: static fn(): string => 'TEST'
+                    );
+
+                    $rejected = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $rejectedId = (int)$rejected['submission_id'];
+                    $h->assertFalse((bool)$rejected['success']);
+                    $h->assertTrue($rejectedId > 0);
+                    $h->assertSame('rejected', $rejected['status']);
+                    $h->assertSame('delete_pending', $rejected['protocol_state']);
+                    $h->assertSame('rejected', $rejected['business_outcome']);
+                    $h->assertSame(['TEST'], $transport->submittedEnvironments);
+                    $rejectedRow = InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, business_outcome, idempotency_key,
+                                transaction_id, response_body_path, response_sha256,
+                                response_endpoint, next_poll_at
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $rejectedId]
+                    );
+                    $h->assertTrue(is_array($rejectedRow));
+                    $originalIdempotencyKey = (string)$rejectedRow['idempotency_key'];
+                    $originalResponsePath = (string)$rejectedRow['response_body_path'];
+                    $originalResponseHash = (string)$rejectedRow['response_sha256'];
+                    $originalTransactionId = (string)$rejectedRow['transaction_id'];
+                    $h->assertTrue($originalIdempotencyKey !== '');
+                    $h->assertTrue(is_file($originalResponsePath));
+                    $h->assertSame($originalResponseHash, hash_file('sha256', $originalResponsePath));
+
+                    $currentBody = $revisedBody;
+                    $currentManifest = $revisedManifest;
+                    $blockedRevision = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$blockedRevision['success']);
+                    $h->assertSame([
+                        'HMRC rejected this submission, but GovTalk cleanup is still pending. '
+                            . 'In the History tab, select Check Submission Status before transmitting the revised return.',
+                    ], (array)$blockedRevision['errors']);
+                    $h->assertSame(1, $transport->submitCalls);
+
+                    $clock = (new DateTimeImmutable(
+                        (string)$rejectedRow['next_poll_at'],
+                        new DateTimeZone('UTC')
+                    ))->modify('-1 second')->format('Y-m-d H:i:s');
+                    $tooEarly = $service->poll($rejectedId, 42);
+                    $h->assertFalse((bool)$tooEarly['success']);
+                    $h->assertSame('delete_pending', $tooEarly['protocol_state']);
+                    $h->assertSame(0, $transport->deleteCalls);
+
+                    $transport->deleteResponses[] = [
+                        'success' => true,
+                        'pre_send_failure' => false,
+                        'transport_unknown' => false,
+                        'protocol_state' => 'deleted',
+                        'business_outcome' => null,
+                        'status_code' => 200,
+                        'headers' => ['content-type' => 'text/xml'],
+                        'response_xml' => '<GovTalkMessage>Deleted rejected conversation</GovTalkMessage>',
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $clock = (string)$rejectedRow['next_poll_at'];
+                    $cleaned = $service->poll($rejectedId, 42);
+                    $h->assertTrue((bool)$cleaned['success']);
+                    $h->assertSame('rejected', $cleaned['status']);
+                    $h->assertSame('closed', $cleaned['protocol_state']);
+                    $h->assertSame('rejected', $cleaned['business_outcome']);
+                    $h->assertSame(1, $transport->deleteCalls);
+                    $h->assertSame(
+                        ['https://test-transaction-engine.tax.service.gov.uk/submission'],
+                        $transport->deletedEndpoints
+                    );
+                    $h->assertSame([$originalTransactionId], $transport->deletedOriginalTransactions);
+                    $closedRow = InterfaceDB::fetchOne(
+                        'SELECT status, protocol_state, business_outcome, idempotency_key,
+                                response_body_path, response_sha256, cleanup_completed_at,
+                                cleanup_response_path, cleanup_response_sha256
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $rejectedId]
+                    );
+                    $h->assertSame('rejected', $closedRow['status']);
+                    $h->assertSame('closed', $closedRow['protocol_state']);
+                    $h->assertSame('rejected', $closedRow['business_outcome']);
+                    $h->assertSame($originalIdempotencyKey, $closedRow['idempotency_key']);
+                    $h->assertSame($originalResponsePath, $closedRow['response_body_path']);
+                    $h->assertSame($originalResponseHash, $closedRow['response_sha256']);
+                    $h->assertSame($originalResponseHash, hash_file(
+                        'sha256',
+                        (string)$closedRow['response_body_path']
+                    ));
+                    $h->assertTrue(trim((string)$closedRow['cleanup_completed_at']) !== '');
+                    $h->assertTrue(is_file((string)$closedRow['cleanup_response_path']));
+                    $h->assertSame(
+                        (string)$closedRow['cleanup_response_sha256'],
+                        hash_file('sha256', (string)$closedRow['cleanup_response_path'])
+                    );
+
+                    $currentBody = $originalBody;
+                    $currentManifest = $originalManifest;
+                    $unchanged = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$unchanged['success']);
+                    $h->assertSame($rejectedId, (int)$unchanged['submission_id']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$unchanged['errors']),
+                        'already processed this exact filing basis'
+                    ));
+                    $h->assertSame(1, $transport->submitCalls);
+
+                    $currentBody = $revisedBody;
+                    $currentManifest = $revisedManifest;
+                    $transport->submitResponses[] = [
+                        'success' => true,
+                        'pre_send_failure' => false,
+                        'transport_unknown' => false,
+                        'protocol_state' => 'acknowledged',
+                        'business_outcome' => null,
+                        'correlation_id' => 'A4C2B9E5F98449A19863D934273FA052',
+                        'response_endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/poll',
+                        'poll_interval' => 10,
+                        'cleanup_required' => false,
+                        'status_code' => 200,
+                        'headers' => ['content-type' => 'text/xml'],
+                        'response_xml' => '<GovTalkMessage>Acknowledged revised body</GovTalkMessage>',
+                        'body_xml' => '',
+                        'errors' => [],
+                        'error' => '',
+                    ];
+                    $revised = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $revisedId = (int)$revised['submission_id'];
+                    $h->assertTrue((bool)$revised['success']);
+                    $h->assertTrue($revisedId > $rejectedId);
+                    $h->assertSame('TEST', $revised['mode']);
+                    $h->assertSame('awaiting_poll', $revised['protocol_state']);
+                    $h->assertSame(2, $transport->submitCalls);
+                    $h->assertSame(['TEST', 'TEST'], $transport->submittedEnvironments);
+                    $h->assertSame([$originalBody, $revisedBody], $transport->submittedBodies);
+                    $revisedRow = InterfaceDB::fetchOne(
+                        'SELECT environment, protocol_state, idempotency_key, body_sha256
+                         FROM hmrc_ct600_submissions WHERE id = :id',
+                        ['id' => $revisedId]
+                    );
+                    $h->assertSame('TEST', $revisedRow['environment']);
+                    $h->assertSame('awaiting_poll', $revisedRow['protocol_state']);
+                    $h->assertFalse(hash_equals(
+                        $originalIdempotencyKey,
+                        (string)$revisedRow['idempotency_key']
+                    ));
+                    $h->assertSame(hash('sha256', $revisedBody), $revisedRow['body_sha256']);
+                    $h->assertSame(2, (int)InterfaceDB::fetchColumn(
+                        'SELECT COUNT(*) FROM hmrc_ct600_submissions
+                         WHERE company_id = :company_id AND ct_period_id = :ct_period_id',
+                        ['company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
+                    ));
+                } finally {
+                    InterfaceDB::prepareExecute(
+                        'DELETE FROM companies WHERE id = :id',
+                        ['id' => $companyId]
+                    );
+                }
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\HmrcCorporationTaxSubmissionService::class,
             'blocks blind retry and reprocesses a verified archived acknowledgement without retransmission',
             static function () use ($h): void {
                 $companyId = 98611;
@@ -1312,6 +1679,18 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame('rejected', $reprocessed['status']);
                     $h->assertSame('delete_pending', $reprocessed['protocol_state']);
                     $h->assertSame('rejected', $reprocessed['business_outcome']);
+                    $cleanupBlocker = 'HMRC rejected this submission, but GovTalk cleanup is still pending. '
+                        . 'In the History tab, select Check Submission Status before transmitting the revised return.';
+                    $status = $service->status($companyId, $accountingPeriodId);
+                    $h->assertSame(1, count((array)$status['periods']));
+                    $h->assertTrue(in_array(
+                        $cleanupBlocker,
+                        (array)$status['periods'][0]['blockers'],
+                        true
+                    ));
+                    $blockedRetry = $service->submitTest($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$blockedRetry['success']);
+                    $h->assertSame([$cleanupBlocker], array_values((array)$blockedRetry['errors']));
                     $h->assertTrue(str_contains(
                         implode(' ', (array)$reprocessed['warnings']),
                         'View the GovTalk conversation'

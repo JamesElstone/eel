@@ -297,6 +297,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             _govtalk_transmission_historyCard::class,
+            'shows rejected cleanup state with the existing status action',
+            static function () use ($harness, $card): void {
+                $html = $card->render([
+                    'company' => ['id' => 49, 'accounting_period_id' => 79],
+                    'services' => [
+                        'govtalk_submission_history' => [[
+                            'authority' => 'hmrc',
+                            'authority_label' => 'HMRC',
+                            'conversation_id' => 4,
+                            'ct_period_id' => 7,
+                            'submission_reference' => '000004',
+                            'filing_context' => 'CT600 — 2023-09-05 to 2023-09-30',
+                            'filing_type' => 'Original',
+                            'environment' => 'TEST',
+                            'transaction_id' => 'POLL-TXN',
+                            'correlation_id' => 'HMRC-CORR',
+                            'status_key' => 'delete_pending',
+                            'latest_status' => 'Rejected — cleanup required',
+                            'prepared_at' => '2026-08-01 00:55:39',
+                            'submitted_at' => '2026-08-01 00:55:40',
+                        ]],
+                    ],
+                ]);
+
+                $harness->assertTrue(str_contains($html, 'Rejected — cleanup required'));
+                $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_poll"'));
+                $harness->assertTrue(str_contains($html, '>Check Submission Status</button>'));
+            }
+        );
+
+        $harness->check(
+            _govtalk_transmission_historyCard::class,
             'renders an eligible archived HMRC response as a developer-only danger action',
             static function () use ($harness, $card): void {
                 $context = [

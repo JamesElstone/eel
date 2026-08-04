@@ -440,6 +440,23 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertFalse(str_contains($pending, 'Check HMRC status'));
         $harness->assertFalse(str_contains($pending, 'Check Submission Status'));
 
+        $cleanupBlocker = 'HMRC rejected this submission, but GovTalk cleanup is still pending. '
+            . 'In the History tab, select Check Submission Status before transmitting the revised return.';
+        $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission'] = [
+            'submission_id' => 4,
+            'protocol_state' => 'delete_pending',
+            'business_outcome' => 'rejected',
+        ];
+        $base['services']['hmrc_ct600_status']['periods'][0]['blockers'] = [$cleanupBlocker];
+        $cleanupPending = $card->render($base);
+        $harness->assertTrue(str_contains($cleanupPending, $cleanupBlocker));
+        $harness->assertTrue(str_contains(
+            $cleanupPending,
+            'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'
+        ));
+        $harness->assertFalse(str_contains($cleanupPending, 'name="intent" value="hmrc_poll"'));
+        $harness->assertFalse(str_contains($cleanupPending, '>Check Submission Status<'));
+
         $base['services']['hmrc_ct600_status']['periods'][0]['pending_submission']['protocol_state'] = 'transport_uncertain';
         $uncertain = $card->render($base);
         $harness->assertFalse(str_contains($uncertain, 'name="intent" value="hmrc_poll"'));

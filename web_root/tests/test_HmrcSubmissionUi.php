@@ -484,6 +484,32 @@ $harness->run(HmrcSubmissionAction::class, static function (
     GeneratedServiceClassTestHarness $harness,
     HmrcSubmissionAction $action
 ): void {
+    $harness->check(HmrcSubmissionAction::class, 'labels TEST TIL and LIVE acceptance independently', static function () use ($harness, $action): void {
+        $message = new ReflectionMethod($action, 'successMessage');
+        $message->setAccessible(true);
+        $harness->assertSame(
+            'HMRC Test accepted this filing body.',
+            $message->invoke($action, 'hmrc_poll', [
+                'business_outcome' => 'sandbox_passed',
+                'submission' => ['environment' => 'TEST'],
+            ])
+        );
+        $harness->assertSame(
+            'HMRC Test in Live accepted this filing body.',
+            $message->invoke($action, 'hmrc_poll', [
+                'business_outcome' => 'til_validated',
+                'submission' => ['environment' => 'TIL'],
+            ])
+        );
+        $harness->assertSame(
+            'HMRC accepted the Corporation Tax return.',
+            $message->invoke($action, 'hmrc_poll', [
+                'business_outcome' => 'live_accepted',
+                'submission' => ['environment' => 'LIVE'],
+            ])
+        );
+    });
+
     $harness->check(HmrcSubmissionAction::class, 'rejects GET and tokenless POST requests before dispatch', static function () use ($harness, $action): void {
         $get = new RequestFramework(
             [

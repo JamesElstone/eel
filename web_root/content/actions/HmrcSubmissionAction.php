@@ -257,23 +257,32 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         $outcome = strtolower(trim((string)($command['business_outcome']
             ?? ($command['submission']['business_outcome'] ?? '')
             ?? '')));
-        if (in_array($outcome, ['til_validated', 'sandbox_passed'], true)) {
+        $mode = strtoupper(trim((string)($command['mode']
+            ?? ($command['submission']['environment'] ?? ''))));
+        if ($outcome === 'sandbox_passed') {
+            return 'HMRC Test accepted this filing body.';
+        }
+        if ($outcome === 'til_validated') {
             return 'HMRC Test in Live accepted this filing body.';
         }
         if ($outcome === 'live_accepted') {
             return 'HMRC accepted the Corporation Tax return.';
         }
         if ($outcome === 'accepted') {
-            $mode = strtoupper(trim((string)($command['mode']
-                ?? ($command['submission']['environment'] ?? ''))));
-            return in_array($intent, ['hmrc_submit_test', 'hmrc_retry_test'], true) || $mode === 'TIL'
-                ? 'HMRC Test in Live accepted this filing body.'
-                : 'HMRC accepted the Corporation Tax return.';
+            return match ($mode) {
+                'TEST' => 'HMRC Test accepted this filing body.',
+                'TIL' => 'HMRC Test in Live accepted this filing body.',
+                default => 'HMRC accepted the Corporation Tax return.',
+            };
         }
         return match ($intent) {
-            'hmrc_submit_test' => 'The Test in Live submission was processed.',
+            'hmrc_submit_test' => $mode === 'TEST'
+                ? 'The HMRC Test submission was processed.'
+                : 'The Test in Live submission was processed.',
             'hmrc_submit_live' => 'The LIVE Corporation Tax submission was processed.',
-            'hmrc_retry_test' => 'The Test in Live retry was processed.',
+            'hmrc_retry_test' => $mode === 'TEST'
+                ? 'The HMRC Test retry was processed.'
+                : 'The Test in Live retry was processed.',
             'hmrc_retry_live' => 'The LIVE Corporation Tax retry was processed.',
             default => 'The latest HMRC submission status was retrieved.',
         };

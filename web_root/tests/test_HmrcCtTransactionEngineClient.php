@@ -13,7 +13,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $credentials = static fn(string $environment): array => [
             'sender_id' => $environment . '-SENDER',
             'password' => $environment . '-PASSWORD',
-            'vendor_id' => '1234',
+            'software_reference' => $environment === 'TEST' ? '1234' : '5678',
             'product' => 'EEL Accounts Tests',
             'version' => '1.0',
             'email' => 'tests@example.test',
@@ -126,6 +126,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (string)$prepared['request_xml'],
                     '<Value>TEST-PASSWORD</Value>'
                 ));
+                $h->assertTrue(str_contains(
+                    (string)$prepared['request_xml'],
+                    '<URI>1234</URI>'
+                ));
                 $h->assertSame(
                     hash('sha256', (string)$prepared['request_xml']),
                     (string)$prepared['request_sha256']
@@ -134,6 +138,34 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     strlen((string)$prepared['request_xml']),
                     (int)$prepared['request_bytes']
                 );
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Client\HmrcCtTransactionEngineClient::class,
+            'requires a four-digit Software Reference for the selected credential environment',
+            static function () use ($h, $transactionId): void {
+                foreach (['', '12AB'] as $softwareReference) {
+                    $client = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                        static fn(array $request): array => [],
+                        static fn(string $environment): array => [
+                            'sender_id' => $environment . '-SENDER',
+                            'password' => $environment . '-PASSWORD',
+                            'software_reference' => $softwareReference,
+                            'product' => 'EEL Accounts Tests',
+                            'version' => '1.0',
+                            'email' => 'tests@example.test',
+                        ],
+                        $transactionId
+                    );
+                    $status = $client->configurationStatus('TEST');
+
+                    $h->assertFalse((bool)$status['ready']);
+                    $h->assertSame(
+                        ['HMRC XML Vendor ID must contain exactly four digits.'],
+                        (array)$status['blockers']
+                    );
+                }
             }
         );
 
@@ -236,6 +268,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $h->assertTrue(str_contains((string)$captured['body'], '<GatewayTest>0</GatewayTest>'));
                 $h->assertTrue(str_contains((string)$captured['body'], '<SenderID>LIVE-SENDER</SenderID>'));
                 $h->assertTrue(str_contains((string)$captured['body'], '<Value>LIVE-PASSWORD</Value>'));
+                $h->assertTrue(str_contains((string)$captured['body'], '<URI>5678</URI>'));
                 // The private evidence boundary receives the exact bytes. Only
                 // application-facing result payloads are redacted.
                 $h->assertTrue(str_contains((string)$preSend['request_xml'], 'LIVE-SENDER'));

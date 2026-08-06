@@ -13,7 +13,6 @@ final class CompaniesHouseAccountsCredentialService
 {
     private const PROVIDER = 'COMPANIESHOUSE';
     private const PRESENTER_TAG = 'XML_PRESENTER_CREDENTIALS';
-    private const PACKAGE_TAG = 'ACCOUNTS_FILING_PACKAGE_REFERENCE';
 
     public function __construct(private readonly ?string $keysPath = null)
     {
@@ -27,7 +26,7 @@ final class CompaniesHouseAccountsCredentialService
         $credentials = [
             'presenter_id' => trim((string)($presenter['api_identity'] ?? '')),
             'presenter_code' => trim((string)($presenter['api_key'] ?? '')),
-            'package_reference' => $this->value(self::PACKAGE_TAG, $environment),
+            'package_reference' => trim((string)($presenter['software_reference'] ?? '')),
         ];
 
         if ($credentials['presenter_id'] === '' || $credentials['presenter_code'] === '') {
@@ -59,19 +58,6 @@ final class CompaniesHouseAccountsCredentialService
     public function presenterFingerprint(string $environment): string
     {
         return hash('sha256', strtoupper($this->load($environment)['presenter_id']));
-    }
-
-    private function value(string $tag, string $environment): string
-    {
-        $credential = \SecurityStore::loadCredential(
-            self::PROVIDER,
-            'XML',
-            $tag,
-            $environment,
-            $this->keysPath
-        );
-
-        return trim((string)($credential['api_key'] ?? ''));
     }
 
     private function presenterCredential(string $environment): array

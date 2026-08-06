@@ -307,7 +307,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         return [
             'sender_id' => 'DEVELOPER-SENDER-ID',
             'password' => 'DEVELOPER-PASSWORD',
-            'vendor_id' => '0000',
+            'software_reference' => '0000',
             'product' => 'EEL Accounts',
             'version' => '1.0',
             'email' => '',
@@ -450,7 +450,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
             $credentials = [
                 'sender_id' => (string)($stored['api_identity'] ?? ''),
                 'password' => (string)($stored['api_key'] ?? ''),
-                'vendor_id' => $this->config['vendor_id'] ?? '',
+                'software_reference' => (string)($stored['software_reference'] ?? ''),
                 'product' => $this->config['product'] ?? 'EEL Accounts',
                 'version' => $this->config['version'] ?? '1.0',
                 'email' => $this->config['email'] ?? '',
@@ -463,7 +463,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         $credentials = [
             'sender_id' => trim((string)($credentials['sender_id'] ?? $credentials['username'] ?? '')),
             'password' => (string)($credentials['password'] ?? $credentials['sender_password'] ?? ''),
-            'vendor_id' => trim((string)($credentials['vendor_id'] ?? '')),
+            'software_reference' => trim((string)($credentials['software_reference'] ?? '')),
             'product' => trim((string)($credentials['product'] ?? '')),
             'version' => trim((string)($credentials['version'] ?? '')),
             'email' => trim((string)($credentials['email'] ?? '')),
@@ -471,7 +471,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
 
         $this->printable($credentials['sender_id'], 'Sender ID', 1, 64);
         $this->printable($credentials['password'], 'password', 1, 128);
-        if (!preg_match('/^[0-9]{4}$/D', $credentials['vendor_id'])) {
+        if (!preg_match('/^[0-9]{4}$/D', $credentials['software_reference'])) {
             throw new \RuntimeException('HMRC XML Vendor ID must contain exactly four digits.');
         }
         $this->printable($credentials['product'], 'product name', 1, 64);
@@ -622,7 +622,7 @@ final class HmrcCtTransactionEngineClient implements HmrcCtTransactionEngineTran
         $this->text($document, $target, 'Organisation', 'HMRC');
         $routing = $this->element($document, $govTalkDetails, 'ChannelRouting');
         $channel = $this->element($document, $routing, 'Channel');
-        $this->text($document, $channel, 'URI', (string)$credentials['vendor_id']);
+        $this->text($document, $channel, 'URI', (string)$credentials['software_reference']);
         $this->text($document, $channel, 'Product', (string)$credentials['product']);
         $this->text($document, $channel, 'Version', (string)$credentials['version']);
 

@@ -9,7 +9,7 @@ $harness->check(_api_keys_editorCard::class, 'renders gateway metadata and never
     $secret = 'API-KEY-MUST-NOT-APPEAR';
     $identity = 'API-IDENTITY-MUST-NOT-APPEAR';
     $reference = 'Réf & "α"';
-    $html = (new _api_keys_editorCard())->render(['page' => ['csrf_token' => 'token'], 'services' => ['api_keys_editor' => ['rows' => [['id' => 'row-1', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST', 'schema' => 'HTTPS', 'url' => 'https://example.test', 'software_reference' => $reference, 'api_identity' => $identity, 'api_key' => $secret]], 'catalog' => [['provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST'], ['provider' => 'COMPANIESHOUSE', 'gateway' => 'XML', 'tag' => 'XML_PRESENTER_CREDENTIALS', 'environment' => 'TEST'], ['provider' => 'COMPANIESHOUSE', 'gateway' => 'XML', 'tag' => 'ACCOUNTS_FILING_PACKAGE_REFERENCE', 'environment' => 'TEST']]]]]);
+    $html = (new _api_keys_editorCard())->render(['page' => ['csrf_token' => 'token'], 'services' => ['api_keys_editor' => ['rows' => [['id' => 'row-1', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST', 'schema' => 'HTTPS', 'url' => 'https://example.test', 'software_reference' => $reference, 'api_identity' => $identity, 'api_key' => $secret]], 'catalog' => [['provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'LOOKUP', 'environment' => 'TEST'], ['provider' => 'COMPANIESHOUSE', 'gateway' => 'XML', 'tag' => 'XML_PRESENTER_CREDENTIALS', 'environment' => 'TEST']]]]]);
     $harness->assertTrue(str_contains($html, '<th>Gateway</th>'));
     $harness->assertTrue(str_contains($html, '<th>Software Reference</th>'));
     $harness->assertTrue(str_contains($html, '<div class="api-credential-fields">'));
@@ -28,6 +28,7 @@ $harness->check(_api_keys_editorCard::class, 'renders gateway metadata and never
     $harness->assertTrue(str_contains($html, 'name="credential[api_identity]"'));
     $harness->assertTrue(str_contains($html, 'XML_PRESENTER_CREDENTIALS'));
     $harness->assertSame(false, str_contains($html, 'PREFLIGHT_BINDING_HMAC_KEY'));
+    $harness->assertSame(false, str_contains($html, 'ACCOUNTS_FILING_PACKAGE_REFERENCE'));
     $harness->assertSame(false, str_contains($html, $secret));
     $harness->assertSame(false, str_contains($html, $identity));
 });

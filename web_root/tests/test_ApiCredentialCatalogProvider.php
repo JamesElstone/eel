@@ -31,6 +31,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'tag' => 'PREFLIGHT_BINDING_HMAC_KEY',
             'environment' => 'TEST',
         ], $entries, true));
+        $harness->assertSame(false, in_array([
+            'provider' => 'COMPANIESHOUSE',
+            'gateway' => 'XML',
+            'tag' => 'ACCOUNTS_FILING_PACKAGE_REFERENCE',
+            'environment' => 'TEST',
+        ], $entries, true));
         $harness->assertSame(true, in_array([
             'provider' => 'HMRC',
             'gateway' => 'XML',
@@ -57,6 +63,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $rejected = false;
         try {
             $catalog->requireAllowed('companieshouse', 'xml', 'preflight_binding_hmac_key', 'test');
+        } catch (\RuntimeException) {
+            $rejected = true;
+        }
+        $harness->assertSame(true, $rejected);
+
+        $rejected = false;
+        try {
+            $catalog->requireAllowed('companieshouse', 'xml', 'accounts_filing_package_reference', 'test');
         } catch (\RuntimeException) {
             $rejected = true;
         }

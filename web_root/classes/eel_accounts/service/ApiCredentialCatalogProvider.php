@@ -16,12 +16,12 @@ final class ApiCredentialCatalogProvider implements \ApiCredentialCatalogProvide
 
         foreach (['TEST', 'LIVE'] as $environment) {
             $entries[] = $this->entry('COMPANIESHOUSE', 'REST', 'COMPANY_LOOKUP', $environment);
-            foreach ([
+            $entries[] = $this->entry(
+                'COMPANIESHOUSE',
+                'XML',
                 'XML_PRESENTER_CREDENTIALS',
-                'ACCOUNTS_FILING_PACKAGE_REFERENCE',
-            ] as $tag) {
-                $entries[] = $this->entry('COMPANIESHOUSE', 'XML', $tag, $environment);
-            }
+                $environment
+            );
 
             $entries[] = $this->entry('HMRC', 'REST', 'VAT_CHECK', $environment);
             $entries[] = $this->entry('HMRC', 'REST', 'FPH_VALIDATOR', $environment);

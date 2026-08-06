@@ -28,17 +28,18 @@ Its goal is simple:
 
 HMRC and Companies House transmission credentials are read from the private
 `secure/api.keys` CSV through the credential store. Companies House TEST
-accounts filing requires gateway-specific rows. The required header is shown
-below; replace placeholder values locally and do not commit the file:
+accounts filing and HMRC CT600 XML use environment-specific Software Reference
+values alongside their authentication credentials. The canonical header is
+shown below; replace placeholder values locally and do not commit the file:
 
 ```csv
-PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY
-COMPANIESHOUSE,XML,XML_PRESENTER_CREDENTIALS,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,{presenter-id},{authentication-value}
-COMPANIESHOUSE,XML,ACCOUNTS_FILING_PACKAGE_REFERENCE,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,,0012
+PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,SOFTWARE_REFERENCE,API_IDENTITY,API_KEY
+COMPANIESHOUSE,XML,XML_PRESENTER_CREDENTIALS,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,{package-reference},{presenter-id},{authentication-value}
+HMRC,XML,CT600_XML,TEST,HTTPS,,{four-digit-vendor-id},{sender-id},{sender-password}
 ```
 
-The Transmit page reports only whether the credentials are configured; it does
-not render their values.
+Software Reference is visible metadata in the API Keys Editor. API Identity and
+API Key remain write-only authentication values.
 
 ## Requirements
 

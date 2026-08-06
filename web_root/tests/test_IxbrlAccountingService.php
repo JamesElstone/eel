@@ -183,7 +183,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue($printStart !== false);
             $printCss = substr($style, (int)$printStart);
             $harness->assertTrue(str_contains($style, 'size: A4 portrait;'));
-            $harness->assertTrue(str_contains($style, 'margin: 12mm 14mm 14mm;'));
+            $harness->assertTrue(str_contains($style, 'margin: 12mm 2cm 14mm;'));
             $harness->assertTrue(str_contains($style, '.page-header {'));
             $harness->assertTrue(str_contains($style, 'table-layout: fixed;'));
             $harness->assertTrue(str_contains($style, '.page-header-number-column { width: 36%; }'));

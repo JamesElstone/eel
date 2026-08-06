@@ -1498,7 +1498,7 @@ final class IxbrlTaxComputationService
     private function stylesheet(): string
     {
         return <<<'CSS'
-@page { size: A4 portrait; margin: 18mm 16mm 18mm 16mm; }
+@page { size: A4 portrait; margin: 18mm 2cm; }
 html { font-family: Arial, Helvetica, sans-serif; color: #20252b; background: #fff; font-size: 10pt; line-height: 1.35; }
 body { margin: 0; padding: 0; }
 .ct-report { width: 100%; max-width: 178mm; margin: 0 auto; }

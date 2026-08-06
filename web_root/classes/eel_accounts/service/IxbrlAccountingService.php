@@ -886,7 +886,7 @@ final class IxbrlAccountingService
         return <<<'CSS'
 @page {
     size: A4 portrait;
-    margin: 12mm 14mm 14mm;
+    margin: 12mm 2cm 14mm;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }

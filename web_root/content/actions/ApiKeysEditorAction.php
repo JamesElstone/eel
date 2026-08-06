@@ -12,6 +12,19 @@ final class ApiKeysEditorAction implements ActionInterfaceFramework
             return new ActionResultFramework(false, ['api.keys.editor'], [['type' => 'error', 'message' => 'You do not have permission to update API credentials, or your security token expired.']]);
         }
         try {
+            if ((string)$request->input('api_keys_editor_operation', '') === 'repair_file') {
+                if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+                    throw new RuntimeException('Developer Options must be enabled to repair the API key file.');
+                }
+                $result = (new ApiKeysEditorService())->repairFile();
+                return ActionResultFramework::success(
+                    ['api.keys.editor'],
+                    [['type' => 'success', 'message' => !empty($result['created'])
+                        ? 'API key file created with the required header.'
+                        : 'API key file permissions repaired.']]
+                );
+            }
+
             $credential = $request->input('credential', []);
             if (!is_array($credential)) {
                 throw new RuntimeException('Credential data is invalid.');

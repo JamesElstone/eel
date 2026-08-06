@@ -14,7 +14,7 @@ final class _api_keys_editorCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'API identity and API key values are write-only. Leave either value blank while editing to preserve its saved value.';
+        return 'Software Reference is visible, editable metadata and is not used for authentication. API identity and API key values are write-only; leave either blank while editing to preserve its saved value.';
     }
 
     public function services(): array
@@ -35,11 +35,12 @@ final class _api_keys_editorCard extends CardBaseFramework
             throw new RuntimeException('API credential editor catalog could not be encoded.');
         }
 
-        return '<form method="post" action="?page=settings" data-ajax="true" class="settings-stack" data-api-credential-editor="true" data-api-credential-catalog="' . \eel_accounts\Support\Utf8::html($catalogJson) . '">'
+        return $this->repairForm($context, $csrf)
+            . '<form method="post" action="?page=settings" data-ajax="true" class="settings-stack" data-api-credential-editor="true" data-api-credential-catalog="' . \eel_accounts\Support\Utf8::html($catalogJson) . '">'
             . $this->hiddenPageCards($context)
             . HelperFramework::csrfHiddenInput($csrf)
             . '<input type="hidden" name="card_action" value="ApiKeysEditor"><input type="hidden" name="edit_credential_id" value="" data-api-credential-id>'
-            . '<section class="panel-soft"><h3 class="card-title">Existing API Keys</h3><div class="table-scroll"><table><thead><tr><th>Provider</th><th>Gateway</th><th>Tag</th><th>Environment</th><th>Schema</th><th>URL</th><th>Action</th></tr></thead><tbody>'
+            . '<section class="panel-soft"><h3 class="card-title">Existing API Keys</h3><div class="table-scroll"><table><thead><tr><th>Provider</th><th>Gateway</th><th>Tag</th><th>Environment</th><th>Schema</th><th>URL</th><th>Software Reference</th><th>Action</th></tr></thead><tbody>'
             . $this->rows($rows) . '</tbody></table></div></section>'
             . '<section class="panel-soft"><h3 class="card-title" data-api-credential-editor-title>Add Credential</h3><div class="api-credential-fields">'
             . $this->select('Provider', 'credential[provider]', 'provider', $catalog)
@@ -48,22 +49,41 @@ final class _api_keys_editorCard extends CardBaseFramework
             . $this->select('Environment', 'credential[environment]', 'environment', $catalog)
             . $this->schemaSelect()
             . $this->input('URL', 'credential[url]')
+            . $this->softwareReferenceInput()
             . $this->secretInput('API identity', 'credential[api_identity]', 'Set/replace API identity (optional for new credentials)')
             . $this->secretInput('API key', 'credential[api_key]', 'Set/replace API key')
             . '</div><div class="api-credential-actions"><button class="button primary" type="submit">Save API Credential</button><button class="button" type="button" data-api-credential-clear="true">Clear</button></div></section></form>';
+    }
+
+    private function repairForm(array $context, string $csrf): string
+    {
+        $error = $context['service_errors']['api_keys_editor'] ?? null;
+        $message = is_array($error) ? (string)($error['message'] ?? '') : '';
+        if (!(bool)AppConfigurationStore::get('developer_options', false)
+            || !str_contains($message, 'API key file is not readable')) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=settings" data-ajax="true" class="settings-stack">'
+            . $this->hiddenPageCards($context)
+            . HelperFramework::csrfHiddenInput($csrf)
+            . '<input type="hidden" name="card_action" value="ApiKeysEditor">'
+            . '<input type="hidden" name="api_keys_editor_operation" value="repair_file">'
+            . '<div class="api-credential-actions"><button class="button primary" type="submit">Fix error</button></div>'
+            . '</form>';
     }
 
     /** @param list<array<string, mixed>> $rows */
     private function rows(array $rows): string
     {
         if ($rows === []) {
-            return '<tr><td colspan="7">No API credential metadata is available.</td></tr>';
+            return '<tr><td colspan="8">No API credential metadata is available.</td></tr>';
         }
         $html = '';
         foreach ($rows as $row) {
             $id = trim((string)($row['id'] ?? ''));
             if ($id === '') { continue; }
-            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '</td><td><button class="button button-inline" type="button" data-api-credential-edit="true" data-credential-id="' . \eel_accounts\Support\Utf8::html($id) . '" data-credential-provider="' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '" data-credential-gateway="' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '" data-credential-tag="' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '" data-credential-environment="' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '" data-credential-schema="' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '" data-credential-url="' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '">Edit</button></td></tr>';
+            $html .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '</td><td>' . \eel_accounts\Support\Utf8::html((string)($row['software_reference'] ?? '')) . '</td><td><button class="button button-inline" type="button" data-api-credential-edit="true" data-credential-id="' . \eel_accounts\Support\Utf8::html($id) . '" data-credential-provider="' . \eel_accounts\Support\Utf8::html((string)($row['provider'] ?? '')) . '" data-credential-gateway="' . \eel_accounts\Support\Utf8::html((string)($row['gateway'] ?? '')) . '" data-credential-tag="' . \eel_accounts\Support\Utf8::html((string)($row['tag'] ?? '')) . '" data-credential-environment="' . \eel_accounts\Support\Utf8::html((string)($row['environment'] ?? '')) . '" data-credential-schema="' . \eel_accounts\Support\Utf8::html((string)($row['schema'] ?? '')) . '" data-credential-url="' . \eel_accounts\Support\Utf8::html((string)($row['url'] ?? '')) . '" data-credential-software-reference="' . \eel_accounts\Support\Utf8::html((string)($row['software_reference'] ?? '')) . '">Edit</button></td></tr>';
         }
         return $html;
     }
@@ -89,6 +109,11 @@ final class _api_keys_editorCard extends CardBaseFramework
     private function schemaSelect(): string
     {
         return '<label>Schema<select class="select" name="credential[schema]"><option value="HTTPS" selected>HTTPS</option><option value="HTTP">HTTP</option></select></label>';
+    }
+
+    private function softwareReferenceInput(): string
+    {
+        return '<label>Software Reference<input class="input" name="credential[software_reference]" type="text" value="" autocomplete="off" maxlength="' . ApiCredentialFileFormat::MAX_SOFTWARE_REFERENCE_LENGTH . '"></label>';
     }
 
     private function secretInput(string $label, string $name, string $placeholder): string

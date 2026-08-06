@@ -4,21 +4,25 @@
 
 Feature name: `gateway_aware_api_credentials`.
 
-API credentials now use one strict CSV layout:
+API credentials use the following canonical CSV layout:
 
 ```text
-PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY
+PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,SOFTWARE_REFERENCE,API_IDENTITY,API_KEY
 ```
 
-`SecurityStore::loadCredential()` and `ApiHelperOutbound::loadCredential()` now require provider, gateway, tag, and environment. Outbound requests that select a credential by metadata must supply all four values. Legacy five-, six-, and seven-column layouts, default-environment fallback, gateway-less lookup, malformed rows, and duplicate credential identities are rejected.
+The preceding eight-column layout without `SOFTWARE_REFERENCE` remains readable. Legacy rows expose an empty software reference, and the next successful editor save upgrades the file to the canonical layout while preserving comments, ordering, credentials, verified backups, and private permissions. Other old layouts, default-environment fallback, gateway-less lookup, malformed rows, and duplicate credential identities remain rejected.
+
+`SOFTWARE_REFERENCE` is optional, visible metadata for an opaque provider-defined identifier. It is trimmed, limited to 1,000 Unicode characters, and cannot contain NUL, CR, or LF. It is not used by eelKit authentication helpers; downstream projects own provider-specific requiredness, labels, formats, and protocol mappings.
 
 `API_IDENTITY` and `API_KEY` are write-only fields. They are standard CSV-quoted on write and preserve valid UTF-8 values, including commas, quotes, leading/trailing whitespace, and embedded line breaks; NUL and invalid UTF-8 values are rejected. OAuth client credentials use `API_IDENTITY` as the client ID and `API_KEY` as the client secret. Basic authentication uses them as username and password respectively; the former colon-packed OAuth value is no longer supported.
 
 Downstream projects define their permitted credential combinations through one or more classes implementing `ApiCredentialCatalogProviderInterface`, configured at `api_credentials.catalog_providers`. Each catalog entry declares an allowed provider, gateway, tag, and environment; optional labels support the editor. Catalogs can define gateways beyond common `REST` and `XML` values, and the framework rejects rows or submissions outside the configured combinations.
 
-eelKit now provides an opt-in `api_keys_editor` card, `ApiKeysEditorAction`, and `ApiKeysEditorService`. Add the card to a downstream page and grant its card permission deliberately. The editor lists metadata only, keeps identities and keys write-only, validates all selector combinations server-side, preserves an unchanged secret field when its edit control is blank, and writes with locking, verified backups, and atomic replacement. It does not include provider-specific setup workflows.
+eelKit provides an `api_keys_editor` card, `ApiKeysEditorAction`, and `ApiKeysEditorService` on the Settings page. Grant non-administrator roles access deliberately. The editor lists metadata including Software Reference, keeps identities and keys write-only, validates all selector combinations server-side, preserves an unchanged authentication field when its edit control is blank, and writes with locking, verified backups, and atomic replacement. It does not include provider-specific setup workflows.
 
-The shared browser code dynamically filters the Provider, Gateway, Tag, and Environment selects to valid catalog combinations. The card is not included in eelKit's default Settings page.
+When Developer Options are enabled, an unreadable or missing API credential file error offers a `Fix error` action. The action repairs access to an existing file where the PHP process has sufficient ownership, or creates a missing file containing the canonical CSV header. The server rechecks Developer Options, card access, and CSRF before making the repair.
+
+The shared browser code dynamically filters the Provider, Gateway, Tag, and Environment selects to valid catalog combinations and restores Software Reference when a credential is selected for editing.
 
 ## Streamed card-action progress
 

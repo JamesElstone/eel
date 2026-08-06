@@ -193,7 +193,9 @@ Downstream code must continue these patterns. Never concatenate request data int
 - Generated facts are hexadecimal 256-bit values.
 - Updates take an exclusive file lock and rewrite facts in a stable format.
 - On Unix-like systems the security key file is forced to mode `0600`.
-- API credentials are selected by provider, tag, and TEST/LIVE environment rather than embedded in application source.
+- API credentials are selected by provider, gateway, tag, and environment rather than embedded in application source.
+- The canonical credential header is `PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,SOFTWARE_REFERENCE,API_IDENTITY,API_KEY`; the legacy eight-column header without `SOFTWARE_REFERENCE` remains readable and is upgraded on the next successful editor save.
+- `SOFTWARE_REFERENCE` is visible, optional metadata and is never used by generic authentication helpers. `API_IDENTITY` and `API_KEY` remain write-only authentication values.
 - `secure/README.md` explicitly requires the directory to remain outside public serving paths and out of version control.
 
 Windows ACLs are not managed by the PHP file-mode control. Operators must restrict the `secure` directory using the host operating system's access controls. Secrets should be backed up securely, excluded from logs, and rotated through a planned process.

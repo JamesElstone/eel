@@ -44,6 +44,7 @@ final class _settings extends PageContextFramework
             'invitation_settings',
             'sms_settings',
             'smtp_settings',
+            'api_keys_editor',
          ];
     }
 

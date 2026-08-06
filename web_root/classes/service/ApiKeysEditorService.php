@@ -9,8 +9,6 @@ declare(strict_types=1);
 
 final class ApiKeysEditorService
 {
-    private const HEADER = ['PROVIDER', 'GATEWAY', 'TAG', 'ENVIRONMENT', 'SCHEMA', 'URL', 'API_IDENTITY', 'API_KEY'];
-
     public function __construct(
         private readonly ?string $keysPath = null,
         private readonly ?ApiCredentialCatalogService $catalogService = null,
@@ -25,6 +23,63 @@ final class ApiKeysEditorService
             if (($entry['kind'] ?? '') === 'credential') { $rows[] = $this->metadata($entry); }
         }
         return ['rows' => $rows, 'catalog' => $this->catalog()->entries()];
+    }
+
+    /** @return array{created:bool} */
+    public function repairFile(): array
+    {
+        $path = $this->path();
+        $directory = dirname($path);
+
+        if (!is_dir($directory) && !@mkdir($directory, 0700, true) && !is_dir($directory)) {
+            throw new RuntimeException('The configured API key directory could not be created.');
+        }
+
+        if (file_exists($path)) {
+            if (!is_file($path)) {
+                throw new RuntimeException('The configured API key path is not a regular file.');
+            }
+
+            $this->restrictPermissions($path);
+            clearstatcache(true, $path);
+            if (!is_readable($path) || !is_writable($path)) {
+                throw new RuntimeException('The API key file permissions could not be repaired for the PHP process.');
+            }
+
+            return ['created' => false];
+        }
+
+        $handle = @fopen($path, 'x+b');
+        if ($handle === false) {
+            throw new RuntimeException('The API key file could not be created.');
+        }
+
+        $written = false;
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                throw new RuntimeException('The new API key file could not be locked.');
+            }
+
+            $header = $this->csvLine(ApiCredentialFileFormat::CANONICAL_HEADER);
+            $this->restrictPermissions($path);
+            $written = fwrite($handle, $header) === strlen($header) && fflush($handle);
+            if (!$written) {
+                throw new RuntimeException('The API key file header could not be written.');
+            }
+            $this->restrictPermissions($path);
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            if (!$written) { @unlink($path); }
+        }
+
+        clearstatcache(true, $path);
+        if (!is_readable($path) || !is_writable($path) || file_get_contents($path) !== $header) {
+            @unlink($path);
+            throw new RuntimeException('The new API key file could not be verified.');
+        }
+
+        return ['created' => true];
     }
 
     /** @param array<string, mixed> $submitted @return array{changed:bool,backup_created:bool} */
@@ -103,27 +158,35 @@ final class ApiKeysEditorService
     {
         $document = [];
         $headerRead = false;
+        $layout = '';
         foreach ($this->csvRecords($contents) as $recordIndex => $rawRecord) {
             $body = rtrim($rawRecord, "\r\n");
             $trimmed = trim($body);
             if ($trimmed === '' || str_starts_with($trimmed, '#')) { $document[] = ['kind' => 'raw', 'raw' => $rawRecord]; continue; }
             $fields = str_getcsv($body, ',', '"', '');
             if (!$headerRead) {
-                if ($fields !== self::HEADER) { throw new RuntimeException('API key file header must be PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY.'); }
+                $layout = ApiCredentialFileFormat::requireLayout($fields);
                 $document[] = ['kind' => 'header'];
                 $headerRead = true;
                 continue;
             }
-            if (count($fields) !== 8) { throw new RuntimeException('API credential record ' . ($recordIndex + 1) . ' must contain exactly eight columns.'); }
+            $expectedColumns = ApiCredentialFileFormat::expectedColumnCount($layout);
+            if (count($fields) !== $expectedColumns) {
+                throw new RuntimeException('API credential record ' . ($recordIndex + 1) . ' must contain exactly '
+                    . $expectedColumns . ' columns for the active layout; accepted layouts use '
+                    . ApiCredentialFileFormat::columnCountRequirement() . '.');
+            }
             $selection = $this->catalog()->requireAllowed((string)$fields[0], (string)$fields[1], (string)$fields[2], (string)$fields[3]);
             $schema = strtoupper(trim((string)$fields[4]));
             $url = trim((string)$fields[5]);
-            $apiIdentity = (string)$fields[6];
-            $apiKey = (string)$fields[7];
+            $canonical = $layout === ApiCredentialFileFormat::CANONICAL_LAYOUT;
+            $softwareReference = ApiCredentialFileFormat::normaliseSoftwareReference($canonical ? $fields[6] : '');
+            $apiIdentity = (string)$fields[$canonical ? 7 : 6];
+            $apiKey = (string)$fields[$canonical ? 8 : 7];
             if ($schema === '' || $apiKey === '') { throw new RuntimeException('API credential record ' . ($recordIndex + 1) . ' has a blank schema or API key.'); }
             $this->assertSecretValue($apiIdentity, 'API identity');
             $this->assertSecretValue($apiKey, 'API key');
-            $document[] = ['kind' => 'credential', 'id' => 'record-' . $recordIndex, 'api_identity' => $apiIdentity, 'api_key' => $apiKey, 'schema' => $schema, 'url' => $url] + $selection;
+            $document[] = ['kind' => 'credential', 'id' => 'record-' . $recordIndex, 'software_reference' => $softwareReference, 'api_identity' => $apiIdentity, 'api_key' => $apiKey, 'schema' => $schema, 'url' => $url] + $selection;
         }
         if (!$headerRead) { throw new RuntimeException('API key file is missing the required credential header.'); }
         return $document;
@@ -161,22 +224,23 @@ final class ApiKeysEditorService
         $output = '';
         foreach ($document as $entry) {
             if (($entry['kind'] ?? '') === 'raw') { $output .= (string)$entry['raw']; }
-            elseif (($entry['kind'] ?? '') === 'header') { $output .= $this->csvLine(self::HEADER); }
+            elseif (($entry['kind'] ?? '') === 'header') { $output .= $this->csvLine(ApiCredentialFileFormat::CANONICAL_HEADER); }
             elseif (($entry['kind'] ?? '') === 'credential') {
-                $output .= $this->csvLine([$entry['provider'], $entry['gateway'], $entry['tag'], $entry['environment'], $entry['schema'], $entry['url'], $entry['api_identity'], $entry['api_key']], [6, 7]);
+                $output .= $this->csvLine([$entry['provider'], $entry['gateway'], $entry['tag'], $entry['environment'], $entry['schema'], $entry['url'], $entry['software_reference'], $entry['api_identity'], $entry['api_key']], [7, 8]);
             }
         }
         return $output;
     }
 
-    /** @param array<string, mixed> $values @return array{provider:string,gateway:string,tag:string,environment:string,schema:string,url:string} */
+    /** @param array<string, mixed> $values @return array{provider:string,gateway:string,tag:string,environment:string,schema:string,url:string,software_reference:string} */
     private function validatedMetadata(array $values): array
     {
         $selection = $this->catalog()->requireAllowed((string)($values['provider'] ?? ''), (string)($values['gateway'] ?? ''), (string)($values['tag'] ?? ''), (string)($values['environment'] ?? ''));
         $schema = strtoupper(trim((string)($values['schema'] ?? '')));
         $url = trim((string)($values['url'] ?? ''));
+        $softwareReference = ApiCredentialFileFormat::normaliseSoftwareReference($values['software_reference'] ?? '');
         if (preg_match('/^[A-Z][A-Z0-9+_.-]{0,31}$/D', $schema) !== 1 || strlen($url) > 1000 || str_contains($url, "\n") || str_contains($url, "\r")) { throw new RuntimeException('Credential schema or URL is invalid.'); }
-        return $selection + ['schema' => $schema, 'url' => $url];
+        return $selection + ['schema' => $schema, 'url' => $url, 'software_reference' => $softwareReference];
     }
 
     private function assertSecretValue(string $value, string $label): void
@@ -200,7 +264,7 @@ final class ApiKeysEditorService
     private function nextId(array $document): string { return 'new-' . count($document) . '-' . bin2hex(random_bytes(4)); }
 
     /** @param array<string, mixed> $entry @return array<string,string> */
-    private function metadata(array $entry): array { return array_intersect_key($entry, array_flip(['id', 'provider', 'gateway', 'tag', 'environment', 'schema', 'url'])); }
+    private function metadata(array $entry): array { return array_intersect_key($entry, array_flip(['id', 'provider', 'gateway', 'tag', 'environment', 'schema', 'url', 'software_reference'])); }
 
     private function catalog(): ApiCredentialCatalogService { return $this->catalogService ?? new ApiCredentialCatalogService(); }
     private function path(): string { return $this->keysPath ?? SecurityStore::apiKeysPath(); }

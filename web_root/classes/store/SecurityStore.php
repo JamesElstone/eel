@@ -38,6 +38,7 @@ final class SecurityStore
         $catalog = [];
         $catalogService = new ApiCredentialCatalogService();
         $headerRead = false;
+        $layout = '';
         $rowNumber = 0;
 
         try {
@@ -50,15 +51,16 @@ final class SecurityStore
                 }
 
                 if (!$headerRead) {
-                    if ($row !== ['PROVIDER', 'GATEWAY', 'TAG', 'ENVIRONMENT', 'SCHEMA', 'URL', 'API_IDENTITY', 'API_KEY']) {
-                        throw new RuntimeException('API key file header must be PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,API_IDENTITY,API_KEY.');
-                    }
+                    $layout = ApiCredentialFileFormat::requireLayout($row);
                     $headerRead = true;
                     continue;
                 }
 
-                if (count($row) !== 8) {
-                    throw new RuntimeException('API credential row ' . $rowNumber . ' must contain exactly eight columns.');
+                $expectedColumns = ApiCredentialFileFormat::expectedColumnCount($layout);
+                if (count($row) !== $expectedColumns) {
+                    throw new RuntimeException('API credential row ' . $rowNumber . ' must contain exactly '
+                        . $expectedColumns . ' columns for the active layout; accepted layouts use '
+                        . ApiCredentialFileFormat::columnCountRequirement() . '.');
                 }
 
                 $selection = $catalogService->requireAllowed(
@@ -69,8 +71,10 @@ final class SecurityStore
                 );
                 $schema = strtoupper(trim((string)$row[4]));
                 $url = trim((string)$row[5]);
-                $apiIdentity = (string)$row[6];
-                $apiKey = (string)$row[7];
+                $canonical = $layout === ApiCredentialFileFormat::CANONICAL_LAYOUT;
+                $softwareReference = ApiCredentialFileFormat::normaliseSoftwareReference($canonical ? $row[6] : '');
+                $apiIdentity = (string)$row[$canonical ? 7 : 6];
+                $apiKey = (string)$row[$canonical ? 8 : 7];
                 if ($schema === '' || $apiKey === '') {
                     throw new RuntimeException('API credential row ' . $rowNumber . ' has a blank schema or API key.');
                 }
@@ -81,6 +85,7 @@ final class SecurityStore
                     ...$selection,
                     'schema' => $schema,
                     'url' => $url,
+                    'software_reference' => $softwareReference,
                     'api_identity' => $apiIdentity,
                     'api_key' => $apiKey,
                 ];

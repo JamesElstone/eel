@@ -2845,12 +2845,14 @@
                     const id = editor.querySelector('[data-api-credential-id]');
                     const schema = editor.querySelector('[name="credential[schema]"]');
                     const url = editor.querySelector('[name="credential[url]"]');
+                    const softwareReference = editor.querySelector('[name="credential[software_reference]"]');
                     const apiIdentity = editor.querySelector('[name="credential[api_identity]"]');
                     const apiKey = editor.querySelector('[name="credential[api_key]"]');
                     const title = editor.querySelector('[data-api-credential-editor-title]');
                     if (id instanceof HTMLInputElement) id.value = String(button.dataset.credentialId || '');
-                    if (schema instanceof HTMLInputElement) schema.value = String(button.dataset.credentialSchema || '');
+                    if (schema instanceof HTMLSelectElement) schema.value = String(button.dataset.credentialSchema || '');
                     if (url instanceof HTMLInputElement) url.value = String(button.dataset.credentialUrl || '');
+                    if (softwareReference instanceof HTMLInputElement) softwareReference.value = String(button.dataset.credentialSoftwareReference || '');
                     if (apiIdentity instanceof HTMLTextAreaElement) { apiIdentity.value = ''; apiIdentity.placeholder = 'Leave blank to preserve the current API identity'; }
                     if (apiKey instanceof HTMLTextAreaElement) { apiKey.value = ''; apiKey.placeholder = 'Leave blank to preserve the current API key'; }
                     if (title instanceof HTMLElement) title.textContent = 'Edit Credential';
@@ -2866,12 +2868,14 @@
                     const id = editor.querySelector('[data-api-credential-id]');
                     const schema = editor.querySelector('[name="credential[schema]"]');
                     const url = editor.querySelector('[name="credential[url]"]');
+                    const softwareReference = editor.querySelector('[name="credential[software_reference]"]');
                     const apiIdentity = editor.querySelector('[name="credential[api_identity]"]');
                     const apiKey = editor.querySelector('[name="credential[api_key]"]');
                     const title = editor.querySelector('[data-api-credential-editor-title]');
                     if (id instanceof HTMLInputElement) id.value = '';
                     if (schema instanceof HTMLSelectElement) schema.value = 'HTTPS';
                     if (url instanceof HTMLInputElement) url.value = '';
+                    if (softwareReference instanceof HTMLInputElement) softwareReference.value = '';
                     if (apiIdentity instanceof HTMLTextAreaElement) { apiIdentity.value = ''; apiIdentity.placeholder = 'Set/replace API identity (optional for new credentials)'; }
                     if (apiKey instanceof HTMLTextAreaElement) { apiKey.value = ''; apiKey.placeholder = 'Set/replace API key'; }
                     if (title instanceof HTMLElement) title.textContent = 'Add Credential';

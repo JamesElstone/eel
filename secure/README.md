@@ -15,3 +15,13 @@ chmod 775 secure
 
 If first-user setup reports that `bootstrap_code.txt` could not be created,
 check that the PHP user has write permission to this directory.
+
+## API credential file
+
+The canonical `api.keys` CSV header is:
+
+```text
+PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,SOFTWARE_REFERENCE,API_IDENTITY,API_KEY
+```
+
+The legacy eight-column header without `SOFTWARE_REFERENCE` remains readable and is upgraded on the next successful editor save. Software Reference is optional, visible metadata for a provider-defined identifier; it is not used for authentication. API Identity and API Key remain write-only authentication fields.

@@ -16,7 +16,7 @@ $harness->check(ApiHelperOutbound::class, 'requires every selector for automatic
 });
 
 $harness->check(ApiHelperOutbound::class, 'uses separate identity and key values for OAuth and basic credentials', function () use ($harness): void {
-    $credential = ['api_identity' => "client: id\n", 'api_key' => "secret: key\n"];
+    $credential = ['software_reference' => 'must-not-be-authentication', 'api_identity' => "client: id\n", 'api_key' => "secret: key\n"];
     $harness->assertSame(["client: id\n", "secret: key\n"], ApiHelperOutbound::resolveClientCredentials([], $credential));
     $harness->assertSame(["client: id\n", "secret: key\n"], ApiHelperOutbound::resolveBasicCredentials([], $credential));
     try {

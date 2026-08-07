@@ -65,6 +65,29 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
 
         try {
             $response = (new \eel_accounts\Outbound\HmrcOutbound($config))->validateAntiFraudHeaders();
+        } catch (Throwable $exception) {
+            $message = strtolower(trim($exception->getMessage()));
+            $transportFaultMarkers = [
+                'could not resolve host',
+                'connection reset',
+                'connection timed out',
+                'empty reply from server',
+                'failed to connect',
+                'http/2 stream',
+                'operation timed out',
+                'recv failure',
+                'remote service did not respond',
+                'send failure',
+                'ssl connection timeout',
+            ];
+
+            foreach ($transportFaultMarkers as $marker) {
+                if (str_contains($message, $marker)) {
+                    $harness->skip('HMRC anti-fraud sandbox transport failure: ' . $exception->getMessage());
+                }
+            }
+
+            throw $exception;
         } finally {
             $_SERVER = $previousServer;
             $_COOKIE = $previousCookie;
@@ -77,6 +100,10 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
         }
 
         $statusCode = (int)($response['status_code'] ?? 0);
+        if ($statusCode === 0 || $statusCode === 408 || $statusCode === 429 || $statusCode >= 500) {
+            $harness->skip('HMRC anti-fraud sandbox service unavailable (HTTP ' . $statusCode . ').');
+        }
+
         $body = json_decode((string)($response['body'] ?? ''), true);
 
         $harness->assertTrue($statusCode >= 200 && $statusCode < 300);

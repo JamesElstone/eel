@@ -22,6 +22,7 @@ final class UnifiedApprovalWorkflowTestFixture
         GoldenAccountsFixture::build();
         $companyId = GoldenAccountsFixture::CT600A_COMPANY_ID;
         $accountingPeriodId = GoldenAccountsFixture::CT600A_ACCOUNTING_PERIOD_ID;
+        self::resetPriorWorkflowState($companyId, $accountingPeriodId);
         self::prepareLockedCorporationTaxBasis($companyId, $accountingPeriodId);
         ixbrl_test_complete_disclosures($companyId, $accountingPeriodId, self::ACTOR);
         self::ensureReturnAuthorisation($companyId, $accountingPeriodId);
@@ -85,6 +86,88 @@ final class UnifiedApprovalWorkflowTestFixture
             'accounting_period_id' => $accountingPeriodId,
             'stale_approval_id' => $staleApprovalId,
         ];
+    }
+
+    /**
+     * The test runner intentionally shares its SQLite database between files.
+     * Restore the mutable approval boundary that an earlier golden lifecycle
+     * may have completed, while retaining its reusable ledger fixture.
+     */
+    private static function resetPriorWorkflowState(int $companyId, int $accountingPeriodId): void
+    {
+        InterfaceDB::transaction(static function () use ($companyId, $accountingPeriodId): void {
+            // The golden CT600A lifecycle deliberately leaves later-relief
+            // evidence and an accepted first CT period behind. Remove that
+            // scenario-only mutation before reconstructing the base fixture.
+            InterfaceDB::prepareExecute(
+                'DELETE FROM journal_lines
+                 WHERE journal_id IN (
+                     SELECT id FROM journals
+                     WHERE id = :journal_id AND company_id = :company_id
+                 )',
+                ['journal_id' => 9855, 'company_id' => $companyId]
+            );
+            InterfaceDB::prepareExecute(
+                'DELETE FROM journals
+                 WHERE id = :journal_id AND company_id = :company_id',
+                ['journal_id' => 9855, 'company_id' => $companyId]
+            );
+            InterfaceDB::prepareExecute(
+                'DELETE FROM transactions
+                 WHERE id = :transaction_id AND company_id = :company_id',
+                ['transaction_id' => 9845, 'company_id' => $companyId]
+            );
+            InterfaceDB::prepareExecute(
+                'DELETE FROM statement_uploads
+                 WHERE id = :upload_id AND company_id = :company_id',
+                ['upload_id' => 9833, 'company_id' => $companyId]
+            );
+            InterfaceDB::prepareExecute(
+                "UPDATE corporation_tax_periods
+                 SET status = 'computed', latest_submission_id = NULL
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :period_id
+                   AND status = 'accepted'",
+                ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+            );
+            $approvalIds = array_map(
+                'intval',
+                array_column(
+                    InterfaceDB::fetchAll(
+                        'SELECT id FROM hmrc_ct_filing_approvals
+                         WHERE company_id = :company_id
+                           AND accounting_period_id = :period_id',
+                        ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+                    ),
+                    'id'
+                )
+            );
+            foreach ($approvalIds as $approvalId) {
+                InterfaceDB::prepareExecute(
+                    'DELETE FROM hmrc_ct_filing_approval_period_bases
+                     WHERE hmrc_ct_filing_approval_id = :approval_id',
+                    ['approval_id' => $approvalId]
+                );
+                InterfaceDB::prepareExecute(
+                    'UPDATE ct_period_filing_bases
+                     SET hmrc_ct_filing_approval_id = NULL
+                     WHERE hmrc_ct_filing_approval_id = :approval_id',
+                    ['approval_id' => $approvalId]
+                );
+                InterfaceDB::prepareExecute(
+                    'DELETE FROM hmrc_ct_filing_approvals WHERE id = :approval_id',
+                    ['approval_id' => $approvalId]
+                );
+            }
+            InterfaceDB::prepareExecute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 0, locked_at = NULL, locked_by = NULL
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :period_id',
+                ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+            );
+        });
+        \eel_accounts\Support\RequestCache::clear();
     }
 
     private static function prepareLockedCorporationTaxBasis(int $companyId, int $accountingPeriodId): void

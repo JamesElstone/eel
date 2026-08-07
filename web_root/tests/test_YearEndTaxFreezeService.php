@@ -154,10 +154,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $blocked = $service->build(49, 79, [$periods[0]], [], 2);
 
             $harness->assertSame('blocked', (string)($blocked['freeze_status'] ?? ''));
-            $harness->assertSame(2, (int)($blocked['blocking_diagnostic_count'] ?? 0));
+            $harness->assertSame(4, (int)($blocked['blocking_diagnostic_count'] ?? 0));
             $harness->assertSame(null, $service->approvalBasis($blocked));
-            $harness->assertTrue(in_array('nominal_unknown_treatment', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
-            $harness->assertTrue(in_array('ct_period_computation_count', array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code'), true));
+            $codes = array_column((array)($blocked['blocking_diagnostics'] ?? []), 'code');
+            $harness->assertTrue(in_array('nominal_unknown_treatment', $codes, true));
+            $harness->assertTrue(in_array('ct_period_computation_count', $codes, true));
+            $harness->assertTrue(in_array('ct_period_turnover_unreconciled', $codes, true));
+            $harness->assertTrue(in_array('ct600_box_145_unreconciled', $codes, true));
         });
 
         $harness->check(\eel_accounts\Service\YearEndTaxFreezeService::class, 'blocks approval when disallowable sources do not cross-cast to the aggregate', static function () use ($harness, $service): void {

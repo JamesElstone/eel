@@ -578,8 +578,11 @@ function goldenCt600aIxbrlMappings(array $filing): array
     $specs = [
         ['identity.company_name', 'CompanyName', 'text', 'instant', 'identity'],
         ['filing_identity.utr', 'TaxReference', 'text', 'instant', 'identity'],
+        ['accounting_period.start_date', 'PeriodOfAccountStartDate', 'date', 'instant', 'identity'],
+        ['accounting_period.end_date', 'PeriodOfAccountEndDate', 'date', 'instant', 'identity'],
         ['ct_period.start_date', 'StartOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
         ['ct_period.end_date', 'EndOfPeriodCoveredByReturn', 'date', 'instant', 'identity'],
+        ['supported_return_profile.company_is_partner_in_firm', 'CompanyIsMemberOfPartnership', 'boolean', 'instant', 'identity'],
         ['computation.summary.accounting_profit', 'ProfitLossPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.disallowable_add_backs', 'AdjustmentsMiscellaneousExpensesPerAccounts', 'numeric', 'duration', 'accounts_adjustments'],
         ['computation.summary.capital_expenditure_add_backs', 'AdjustmentsCapitalExpenditure', 'numeric', 'duration', 'accounts_adjustments'],
@@ -630,7 +633,11 @@ function goldenCt600aIxbrlMappings(array $filing): array
             'sign_multiplier' => 1,
             'presentation_section' => $section,
             'presentation_label' => $key,
-            'source_value' => $facts[$key] ?? ($type === 'numeric' ? 0.0 : ''),
+            'source_value' => $facts[$key] ?? match ($type) {
+                'numeric' => 0.0,
+                'boolean' => false,
+                default => '',
+            },
         ];
     }
     return $mappings;

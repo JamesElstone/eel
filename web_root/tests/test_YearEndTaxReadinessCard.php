@@ -243,7 +243,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));
         $harness->assertSame(true, str_contains($html, 'Net S455 tax'));
         $harness->assertSame(2, substr_count($html, 'Actual trading turnover'));
-        $harness->assertSame(2, substr_count($html, 'CT600 box 145'));
+        $harness->assertSame(3, substr_count($html, 'CT600 box 145'));
         $harness->assertSame(true, str_contains($html, 'shortest CT period'));
         $harness->assertSame(true, str_contains($html, 'whole-pound rounding residual'));
         $harness->assertSame(true, str_contains($html, 'CT600A net tax payable [A80]'));
@@ -268,7 +268,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="tax_readiness_acknowledgement"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
-        $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertSame(true, str_contains(
+            $html,
+            '<button class="button" type="submit">Revoke approval</button>'
+        ));
         $harness->assertSame(false, str_contains($html, 'checked required'));
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));
         $harness->assertSame(true, str_contains($html, '$ 2,375.00'));

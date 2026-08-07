@@ -148,7 +148,7 @@ final readonly class IxbrlAuthorityProfile
 
     public function fingerprint(): string
     {
-        return hash('sha256', json_encode(
+        return hash('sha256', \eel_accounts\Support\Utf8::json(
             $this->canonicalise($this->toArray()),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         ));

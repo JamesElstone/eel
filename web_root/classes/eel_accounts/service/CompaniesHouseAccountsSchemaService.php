@@ -311,6 +311,7 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
             $this->migrateLegacyAssets();
             return $this->refreshLocked($progress);
         } finally {
+            $this->removeStagingDirectoryIfEmpty();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -854,5 +855,6 @@ final class CompaniesHouseAccountsSchemaService implements CompaniesHouseSchemaC
     private function lastInsertId(): int { return (int)(\InterfaceDB::fetchColumn(strtolower(\InterfaceDB::driverName())==='sqlite'?'SELECT last_insert_rowid()':'SELECT LAST_INSERT_ID()') ?: 0); }
     private function progress(mixed $progress,string $message,int $percent): void { if($progress instanceof \ActionProgressFramework){$progress->report($message,$percent);return;} if(is_callable($progress)){$progress($message,$percent);} }
     private function ensureDirectory(string $path): void { if(!is_dir($path)&&!mkdir($path,0770,true)&&!is_dir($path)){throw new \RuntimeException('Companies House schema cache directory could not be created.');} }
+    private function removeStagingDirectoryIfEmpty(): void { if(is_dir($this->stagingDirectory)){@rmdir($this->stagingDirectory);} }
     private function removeTree(string $path): void { if(!is_dir($path)){return;} foreach(new \FilesystemIterator($path) as $item){$item->isDir()&&!$item->isLink()?$this->removeTree($item->getPathname()):unlink($item->getPathname());} rmdir($path); }
 }

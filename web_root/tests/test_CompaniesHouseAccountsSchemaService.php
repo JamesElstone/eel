@@ -75,6 +75,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, $first['success']);
                 $harness->assertSame(true, $first['changed']);
                 $harness->assertSame(false, $second['changed']);
+                $harness->assertFalse(is_dir($staging));
                 $fileIdentities = static function (array $files): array {
                     foreach ($files as &$file) {
                         unset(
@@ -243,6 +244,34 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 } finally {
                     @unlink($newVersionSource);
                 }
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\CompaniesHouseAccountsSchemaService::class,
+            'removes only an empty staging root',
+            static function () use ($harness): void {
+                $staging = test_tmp_directory() . DIRECTORY_SEPARATOR
+                    . 'companies-house-schema-staging-' . bin2hex(random_bytes(5));
+                $activeWorkspace = $staging . DIRECTORY_SEPARATOR . 'active-refresh';
+                if (!mkdir($activeWorkspace, 0777, true) && !is_dir($activeWorkspace)) {
+                    throw new RuntimeException('Could not create the concurrent staging fixture.');
+                }
+                $service = new \eel_accounts\Service\CompaniesHouseAccountsSchemaService(
+                    null,
+                    test_tmp_directory() . DIRECTORY_SEPARATOR
+                        . 'eel-ch-schema-' . bin2hex(random_bytes(5)),
+                    $staging
+                );
+                $cleanup = new ReflectionMethod($service, 'removeStagingDirectoryIfEmpty');
+                $cleanup->setAccessible(true);
+
+                $cleanup->invoke($service);
+                $harness->assertTrue(is_dir($activeWorkspace));
+
+                rmdir($activeWorkspace);
+                $cleanup->invoke($service);
+                $harness->assertFalse(is_dir($staging));
             }
         );
 

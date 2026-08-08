@@ -1,5 +1,34 @@
 # eelKit Changes
 
+## Opt-in multiline table exports
+
+Feature name: `multiline_table_exports`.
+
+`TableFramework` columns can now preserve internal line breaks in exported values on a per-column basis. Existing columns retain their previous whitespace-collapsing behaviour unless they explicitly opt in:
+
+```php
+->column(
+    'transaction_id',
+    'Transaction / Correlation ID',
+    export: static fn(array $row): string => implode("\n", [
+        (string)($row['transaction_id'] ?? ''),
+        (string)($row['correlation_id'] ?? ''),
+    ]),
+    preserveExportLineBreaks: true
+)
+```
+
+Opted-in values normalize CRLF and standalone CR to LF, preserve internal LF boundaries, collapse other repeated whitespace within each line, and trim surrounding whitespace. CSV and TSV quoting remains the responsibility of `fputcsv()`, XLSX stores the LF in the inline string value, and ASCII exports continue to flatten multiline cells so each record occupies one rendered table row. HTML table rendering is unchanged.
+
+The final optional `preserveExportLineBreaks` argument is also available on `textColumn()`, `badgeColumn()`, `textWithJsonSummaryColumn()`, and `primarySecondaryColumn()`. Sorting retains its existing normalization; columns that require a sort representation different from their exported multiline text can continue to provide the existing `sort` callback.
+
+Compatibility notes:
+
+- The option defaults to `false`, so existing exports remain unchanged.
+- Existing positional and named column calls remain valid because the new parameter is last.
+- HTML `<br>` elements are not converted into export line breaks; callbacks should return LF-separated text explicitly.
+- XLSX values retain line breaks without adding wrap-text styling or automatic row-height changes.
+
 ## Gateway-aware API credentials editor
 
 Feature name: `gateway_aware_api_credentials`.

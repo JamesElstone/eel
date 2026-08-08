@@ -19,6 +19,7 @@ final class TableColumnFramework
         private readonly bool $exportable = true,
         private readonly string $exportType = 'string',
         private readonly mixed $sort = null,
+        private readonly bool $preserveExportLineBreaks = false,
     ) {
     }
 
@@ -75,7 +76,7 @@ final class TableColumnFramework
             return $this->normaliseExportValue(strip_tags((string)($this->html)($row, $this)));
         }
 
-        return $this->scalarValue($row);
+        return $this->normaliseExportValue($row[$this->key] ?? '');
     }
 
     public function exportType(): string
@@ -102,10 +103,15 @@ final class TableColumnFramework
     {
         $value = $row[$this->key] ?? '';
 
-        return $this->normaliseExportValue($value);
+        return $this->normaliseValue($value, false);
     }
 
     private function normaliseExportValue(mixed $value): string
+    {
+        return $this->normaliseValue($value, $this->preserveExportLineBreaks);
+    }
+
+    private function normaliseValue(mixed $value, bool $preserveLineBreaks): string
     {
         if ($value === null) {
             return '';
@@ -115,10 +121,19 @@ final class TableColumnFramework
             return $value ? 'Yes' : 'No';
         }
 
-        if (is_scalar($value)) {
-            return trim(preg_replace('/\s+/', ' ', (string)$value) ?? (string)$value);
+        if (!$preserveLineBreaks) {
+            if (is_scalar($value)) {
+                return trim(preg_replace('/\s+/', ' ', (string)$value) ?? (string)$value);
+            }
+
+            return trim(preg_replace('/\s+/', ' ', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '') ?? '');
         }
 
-        return trim(preg_replace('/\s+/', ' ', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '') ?? '');
+        $stringValue = is_scalar($value)
+            ? (string)$value
+            : (json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '');
+        $stringValue = str_replace(["\r\n", "\r"], "\n", $stringValue);
+
+        return trim(preg_replace('/[^\S\n]+/', ' ', $stringValue) ?? $stringValue);
     }
 }

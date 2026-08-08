@@ -218,6 +218,213 @@ $harness->check(TableFramework::class, 'exports unpaginated rows and export-spec
     $harness->assertSame(false, str_contains($ascii, 'Ignore'));
 });
 
+$harness->check(TableFramework::class, 'keeps legacy export whitespace normalisation by default', function () use ($harness): void {
+    $rows = [['value' => "  Line 1\t\tpart\r\nLine 2   part\rLine 3  "]];
+    $defaultCsv = TableFramework::make('default_whitespace', $rows)
+        ->column('value', 'Value')
+        ->exportCsv();
+    $explicitFalseCsv = TableFramework::make('explicit_whitespace', $rows)
+        ->column('value', 'Value', preserveExportLineBreaks: false)
+        ->exportCsv();
+
+    $harness->assertSame("Value\n\"Line 1 part Line 2 part Line 3\"\n", $defaultCsv);
+    $harness->assertSame($defaultCsv, $explicitFalseCsv);
+});
+
+$harness->check(TableFramework::class, 'preserves multiline scalar and callback values in CSV and TSV', function () use ($harness): void {
+    $parseDelimited = static function (string $contents, string $delimiter): array {
+        $handle = fopen('php://temp', 'r+');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open temporary delimited export stream.');
+        }
+
+        fwrite($handle, $contents);
+        rewind($handle);
+        $rows = [];
+        while (($row = fgetcsv($handle, 0, $delimiter, '"', '')) !== false) {
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        return $rows;
+    };
+
+    $table = TableFramework::make('multiline_delimited', [[
+        'id' => 'TXN-1',
+        'raw' => "  Line 1\t\tpart\r\nLine 2\r\rLine 4  ",
+        'callback' => 'unused',
+        'html' => 'unused',
+    ]])
+        ->column('id', 'ID')
+        ->column('raw', 'Raw', preserveExportLineBreaks: true)
+        ->column(
+            'callback',
+            'Callback',
+            export: static fn(): string => "Error 1, \"quoted\"\r\nLocation\t\tone\rError 2",
+            preserveExportLineBreaks: true
+        )
+        ->column(
+            'html',
+            'HTML',
+            html: static fn(): string => "<span>HTML 1\r\nHTML 2</span>",
+            export: true,
+            preserveExportLineBreaks: true
+        );
+
+    $expectedRaw = "Line 1 part\nLine 2\n\nLine 4";
+    $expectedCallback = "Error 1, \"quoted\"\nLocation one\nError 2";
+    $expectedHtml = "HTML 1\nHTML 2";
+    $csv = $table->exportCsv();
+    $tsv = $table->exportTsv();
+    $csvRows = $parseDelimited($csv, ',');
+    $tsvRows = $parseDelimited($tsv, "\t");
+    $html = $table->render(['page' => ['page_id' => 'test']]);
+
+    $harness->assertSame(['ID', 'Raw', 'Callback', 'HTML'], $csvRows[0]);
+    $harness->assertSame(['TXN-1', $expectedRaw, $expectedCallback, $expectedHtml], $csvRows[1]);
+    $harness->assertSame($csvRows, $tsvRows);
+    $harness->assertTrue(str_contains($csv, "\"Error 1, \"\"quoted\"\"\nLocation one\nError 2\""));
+    $harness->assertTrue(str_contains($tsv, "\"Line 1 part\nLine 2\n\nLine 4\""));
+    $harness->assertTrue(str_contains($html, '>Line 1 part Line 2 Line 4</td>'));
+});
+
+$harness->check(TableFramework::class, 'preserves multiline XLSX values and flattens ASCII records', function () use ($harness): void {
+    $extractZipEntry = static function (string $archive, string $targetName): string {
+        $offset = 0;
+        $archiveLength = strlen($archive);
+
+        while ($offset + 30 <= $archiveLength) {
+            $header = unpack(
+                'Vsignature/vversion/vflags/vcompression/vtime/vdate/Vcrc/VcompressedLength/VcontentsLength/vnameLength/vextraLength',
+                substr($archive, $offset, 30)
+            );
+            if (!is_array($header) || (int)($header['signature'] ?? 0) !== 0x04034b50) {
+                break;
+            }
+
+            $nameLength = (int)($header['nameLength'] ?? 0);
+            $extraLength = (int)($header['extraLength'] ?? 0);
+            $compressedLength = (int)($header['compressedLength'] ?? 0);
+            $nameOffset = $offset + 30;
+            $contentsOffset = $nameOffset + $nameLength + $extraLength;
+            $name = substr($archive, $nameOffset, $nameLength);
+            $compressed = substr($archive, $contentsOffset, $compressedLength);
+
+            if ($name === $targetName) {
+                if ((int)($header['compression'] ?? 0) === 0) {
+                    return $compressed;
+                }
+
+                $contents = gzinflate($compressed);
+                if (!is_string($contents)) {
+                    throw new RuntimeException('Unable to inflate XLSX worksheet entry.');
+                }
+
+                return $contents;
+            }
+
+            $offset = $contentsOffset + $compressedLength;
+        }
+
+        throw new RuntimeException('XLSX worksheet entry was not found.');
+    };
+
+    $table = TableFramework::make('multiline_formats', [[
+        'id' => '1',
+        'evidence' => "Line 1\r\nLine 2 & \"quoted\"",
+    ]])
+        ->column('id', 'ID')
+        ->column('evidence', 'Evidence', preserveExportLineBreaks: true);
+
+    $worksheetXml = $extractZipEntry($table->exportXlsx(), 'xl/worksheets/sheet1.xml');
+    $previousXmlErrorMode = libxml_use_internal_errors(true);
+    $worksheet = simplexml_load_string($worksheetXml);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previousXmlErrorMode);
+    $harness->assertTrue($worksheet !== false);
+
+    $worksheet->registerXPathNamespace('s', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+    $evidenceCells = $worksheet->xpath('//s:c[@r="B2"]/s:is/s:t');
+    $harness->assertTrue(is_array($evidenceCells));
+    $harness->assertSame("Line 1\nLine 2 & \"quoted\"", (string)($evidenceCells[0] ?? ''));
+
+    $ascii = $table->exportAscii();
+    $harness->assertTrue(str_contains($ascii, '| 1  | Line 1 Line 2 & "quoted" |'));
+    $harness->assertSame(5, substr_count($ascii, "\n"));
+});
+
+$harness->check(TableFramework::class, 'passes multiline preservation through convenience columns', function () use ($harness): void {
+    $table = TableFramework::make('multiline_convenience', [[
+        'text' => "Text 1\nText 2",
+        'status' => 'ready',
+        'primary' => 'Primary',
+        'details_json' => '{"detail":"value"}',
+        'secondary' => 'Secondary',
+    ]])
+        ->textColumn('text', 'Text', preserveExportLineBreaks: true)
+        ->badgeColumn(
+            'status',
+            'Status',
+            labelFormatter: static fn(): string => "Ready\nStatus",
+            preserveExportLineBreaks: true
+        )
+        ->textWithJsonSummaryColumn(
+            'primary',
+            'Summary',
+            'details_json',
+            separator: "\n",
+            preserveExportLineBreaks: true
+        )
+        ->primarySecondaryColumn(
+            'primary',
+            'Primary / Secondary',
+            'secondary',
+            separator: "\n",
+            preserveExportLineBreaks: true
+        );
+
+    $handle = fopen('php://temp', 'r+');
+    if ($handle === false) {
+        throw new RuntimeException('Unable to open temporary CSV stream.');
+    }
+    fwrite($handle, $table->exportCsv());
+    rewind($handle);
+    fgetcsv($handle, 0, ',', '"', '');
+    $values = fgetcsv($handle, 0, ',', '"', '');
+    fclose($handle);
+
+    $harness->assertSame([
+        "Text 1\nText 2",
+        "Ready\nStatus",
+        "Primary\ndetail: value",
+        "Primary\nSecondary",
+    ], $values);
+});
+
+$harness->check(TableFramework::class, 'keeps multiline column sorting backward compatible', function () use ($harness): void {
+    $rows = [
+        ['id' => 'beta', 'evidence' => "Beta\nEvidence", 'sort_rank' => 2],
+        ['id' => 'alpha', 'evidence' => "Alpha\nEvidence", 'sort_rank' => 1],
+    ];
+
+    $defaultSorted = TableFramework::make('multiline_default_sort', $rows)
+        ->column('evidence', 'Evidence', preserveExportLineBreaks: true)
+        ->sorting('evidence', 'asc')
+        ->sortedRows();
+    $customSorted = TableFramework::make('multiline_custom_sort', array_reverse($rows))
+        ->column(
+            'evidence',
+            'Evidence',
+            sort: static fn(array $row): int => (int)$row['sort_rank'],
+            preserveExportLineBreaks: true
+        )
+        ->sorting('evidence', 'desc')
+        ->sortedRows();
+
+    $harness->assertSame(['alpha', 'beta'], array_column($defaultSorted, 'id'));
+    $harness->assertSame(['beta', 'alpha'], array_column($customSorted, 'id'));
+});
+
 $harness->check(TableFramework::class, 'exports ASCII grid tables', function () use ($harness): void {
     $table = TableFramework::make('demo_table', [
         ['id' => 261, 'display_name' => 'Alex Example'],

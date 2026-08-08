@@ -16,7 +16,7 @@ use eel_accounts\Support\RequestCache;
  */
 final class IxbrlFilingApprovalWorkflowService
 {
-    public const STATE_TOKEN_VERSION = 'ixbrl-filing-approval-workflow-state-v1';
+    public const STATE_TOKEN_VERSION = 'ixbrl-filing-approval-workflow-state-v2';
 
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit',
@@ -52,6 +52,10 @@ final class IxbrlFilingApprovalWorkflowService
             }
 
             $disclosures = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
+            $formBlockers = array_merge(
+                $formBlockers,
+                (array)($disclosures['approval_blockers'] ?? [])
+            );
             if (empty($disclosures['available']) || empty($disclosures['complete'])
                 || empty($disclosures['profile_supported'])) {
                 $disclosureErrors = array_merge(
@@ -278,6 +282,17 @@ final class IxbrlFilingApprovalWorkflowService
             );
             $this->assertSuccessfulResult($disclosures, 'The accounts disclosures could not be saved.');
             RequestCache::clear();
+            $approvalBlockers = (array)($disclosures['approval_blockers'] ?? []);
+            if ($approvalBlockers === []) {
+                $savedDisclosures = (new IxbrlAccountsDisclosureService())->fetch(
+                    $companyId,
+                    $accountingPeriodId
+                );
+                $approvalBlockers = (array)($savedDisclosures['approval_blockers'] ?? []);
+            }
+            if ($approvalBlockers !== []) {
+                throw new \RuntimeException((string)reset($approvalBlockers));
+            }
 
             $this->report($progressClosure, 'Saving the Corporation Tax return authorisation…', 18);
             $authorisationResult = (new Ct600ReturnAuthorisationService())->saveIfChanged(
@@ -738,7 +753,7 @@ final class IxbrlFilingApprovalWorkflowService
             ['company_id' => $companyId]
         );
         $yearEnd = \InterfaceDB::fetchOne(
-            'SELECT id, is_locked, locked_at, locked_by, updated_at
+            'SELECT id, is_locked, locked_at, locked_by, review_notes, updated_at
              FROM year_end_reviews
              WHERE company_id = :company_id AND accounting_period_id = :period_id
              LIMIT 1' . $suffix,
@@ -750,6 +765,15 @@ final class IxbrlFilingApprovalWorkflowService
              LIMIT 1' . $suffix,
             $params
         );
+        $directorsReportSources = \InterfaceDB::tableExists('year_end_review_acknowledgements')
+            ? \InterfaceDB::fetchAll(
+                'SELECT check_code, acknowledged_at, note, basis_version, basis_hash
+                 FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :period_id
+                 ORDER BY acknowledged_at, check_code' . $suffix,
+                $params
+            )
+            : [];
         $authorisation = \InterfaceDB::fetchOne(
             'SELECT * FROM ct600_return_authorisations
              WHERE company_id = :company_id AND accounting_period_id = :period_id
@@ -866,6 +890,7 @@ final class IxbrlFilingApprovalWorkflowService
             'company_settings' => $companySettings,
             'accounting_period' => is_array($period) ? $period : null,
             'year_end_lock' => is_array($yearEnd) ? $yearEnd : null,
+            'directors_report_sources' => $directorsReportSources,
             'disclosure' => is_array($disclosure) ? $disclosure : null,
             'return_authorisation' => is_array($authorisation) ? $authorisation : null,
             'ct_scope' => is_array($scope) ? $scope : null,

@@ -26,7 +26,7 @@ final class IxbrlAuthorityProfileService
 
     private const HMRC_CT_ACCOUNTS_VERSION = '1.0.0';
     private const HMRC_CT_COMPUTATION_VERSION = '1.1.0';
-    private const COMPANIES_HOUSE_ACCOUNTS_VERSION = '1.0.0';
+    private const COMPANIES_HOUSE_ACCOUNTS_VERSION = '1.1.0';
     private const SUPPORTED_TRANSFORMS = [
         'numdotdecimal',
         'datedaymonthyearen',

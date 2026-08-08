@@ -68,6 +68,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             foreach (['period_start', 'period_end', 'balance_sheet_date', 'accounts_approval_date'] as $factKey) {
                 $harness->assertSame('instant_end', (string)$mappings[$factKey]['context_profile']);
             }
+            $harness->assertSame(
+                'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
+                (string)$mappings['profit_loss_not_delivered_statement']['taxonomy_concept']
+            );
+            $harness->assertSame(
+                'inverse_disclosure_statement',
+                (string)$mappings['directors_report_small_companies_statement']['calculation_type']
+            );
+            foreach ([
+                'profit_loss_not_delivered_statement',
+                'directors_report_small_companies_statement',
+                'directors_report_signing_date',
+                'director_signing_directors_report',
+            ] as $optionalFactKey) {
+                $harness->assertSame(0, (int)$mappings[$optionalFactKey]['is_required']);
+            }
         });
 
         $harness->check($service::class, 'maps only taxonomy-backed director monetary totals', static function () use ($harness, $service): void {

@@ -13,7 +13,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsReportService
 {
     /** Increment whenever the deterministic report-basis construction changes. */
-    public const BASIS_VERSION = 'ixbrl-accounts-report-v9';
+    public const BASIS_VERSION = 'ixbrl-accounts-report-v10';
 
     public function build(int $companyId, int $accountingPeriodId): array
     {
@@ -80,6 +80,14 @@ final class IxbrlAccountsReportService
             );
         }
         $disclosures = (array)($disclosureContext['disclosures'] ?? []);
+        $directorsReport = (array)($disclosureContext['director_report']
+            ?? (new IxbrlDirectorsReportContentService())->fetch($companyId, $accountingPeriodId));
+        if ((int)($disclosures['directors_report_exempt_section_415a'] ?? 1) === 0
+            && !empty($directorsReport['review_notes_blank'])) {
+            throw new \DomainException(
+                'Enter Year End Notes before approving accounts which include a Directors\' Report.'
+            );
+        }
         $directorLoanDisclosure = (new DirectorLoanService())->fetchDisclosureSummary($companyId, $accountingPeriodId);
         if (empty($directorLoanDisclosure['success'])) {
             throw new \DomainException(
@@ -221,6 +229,7 @@ final class IxbrlAccountsReportService
             ],
             'year_end' => $yearEnd,
             'disclosures' => $this->disclosureBasis($disclosures),
+            'director_report' => $directorsReport,
             'director_loan_disclosure' => $directorLoanDisclosure,
             'director_loan_year_end_approval' => $directorLoanApproval,
             'current_mapping' => $this->mappingBasis($current),
@@ -253,6 +262,7 @@ final class IxbrlAccountsReportService
             'company' => $company,
             'accounting_period' => $period,
             'disclosures' => $disclosures,
+            'director_report' => $directorsReport,
             'director_loan_disclosure' => $directorLoanDisclosure,
             'director_loan_year_end_approval' => $directorLoanApproval,
             'current' => $current,
@@ -323,6 +333,8 @@ final class IxbrlAccountsReportService
             'has_material_off_balance_sheet_arrangements',
             'has_director_advances_credits_or_guarantees',
             'has_financial_commitments_guarantees_or_contingencies',
+            'directors_report_exempt_section_415a',
+            'profit_loss_not_delivered_section_444',
             'revision',
         ];
         return array_intersect_key($row, array_flip($keys));

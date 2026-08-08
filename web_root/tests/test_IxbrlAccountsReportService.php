@@ -17,7 +17,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check($service::class, 'declares an explicit report-basis version', static function () use ($harness, $service): void {
-            $harness->assertSame('ixbrl-accounts-report-v9', $service::BASIS_VERSION);
+            $harness->assertSame('ixbrl-accounts-report-v10', $service::BASIS_VERSION);
         });
 
         $harness->check(
@@ -46,12 +46,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'approving_director_name' => 'James Elstone',
                 'principal_activity_sic_code' => '43210',
                 'principal_activity_statement' => 'The principal activity of the company during the period was Electrical installation.',
+                'directors_report_exempt_section_415a' => 0,
+                'profit_loss_not_delivered_section_444' => 1,
                 'updated_at' => '2026-07-24 12:00:00',
             ]);
 
             $harness->assertSame(17, (int)($basis['approving_director_id'] ?? 0));
             $harness->assertSame('James Elstone', (string)($basis['approving_director_name'] ?? ''));
             $harness->assertSame('43210', (string)($basis['principal_activity_sic_code'] ?? ''));
+            $harness->assertSame(0, (int)($basis['directors_report_exempt_section_415a'] ?? -1));
+            $harness->assertSame(1, (int)($basis['profit_loss_not_delivered_section_444'] ?? -1));
             $harness->assertSame(
                 'The principal activity of the company during the period was Electrical installation.',
                 (string)($basis['principal_activity_statement'] ?? '')

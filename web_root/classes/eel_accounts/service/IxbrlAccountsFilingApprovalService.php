@@ -7,7 +7,7 @@ namespace eel_accounts\Service;
 /** Freezes the statutory-accounts basis and builds its accounts facts atomically. */
 final class IxbrlAccountsFilingApprovalService
 {
-    public const BASIS_VERSION = 'accounts-filing-approval-v9';
+    public const BASIS_VERSION = 'accounts-filing-approval-v10';
     public const CT_BASIS_VERSION = 'ct-period-filing-model-v11';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
@@ -543,6 +543,7 @@ final class IxbrlAccountsFilingApprovalService
             'accounts_report' => [
                 'basis_version' => IxbrlAccountsReportService::BASIS_VERSION,
                 'basis_hash' => (string)$report['basis_hash'],
+                'director_report' => (array)($report['director_report'] ?? []),
             ],
         ];
         $json = $this->canonicalJson($basis);

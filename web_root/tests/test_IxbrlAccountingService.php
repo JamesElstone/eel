@@ -906,6 +906,119 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertFalse(str_contains($xhtml, 'The originally filed accounts omitted fixed assets.'));
             }
         );
+        $harness->check(
+            \eel_accounts\Service\IxbrlAccountingService::class,
+            'applies Section 444 and Section 415A only to the Companies House artifact',
+            static function () use ($harness, $service): void {
+                $render = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
+                $render->setAccessible(true);
+                $facts = ixbrlRenderFixtureFacts();
+                $factsWithoutElection = $facts;
+                $facts[] = ixbrlRenderFact(
+                    'profit_loss_not_delivered_statement',
+                    'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
+                    'text', null, 'Section 444 election.', null, null, null, 'current_period_duration'
+                );
+                $profile = (new \eel_accounts\Service\IxbrlAuthorityProfileService())->profile(
+                    \eel_accounts\Service\IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+                );
+                $companiesHouse = (string)$render->invoke($service, $facts, false, '', $profile);
+                $companiesHouseWithoutElection = (string)$render->invoke(
+                    $service,
+                    $factsWithoutElection,
+                    false,
+                    '',
+                    $profile
+                );
+                $hmrc = (string)$render->invoke($service, $facts, false, '');
+                $validate = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
+                $validate->setAccessible(true);
+
+                $harness->assertFalse(str_contains($companiesHouse, 'class="accountspage pagebreak statement-page profit-loss-page"'));
+                $harness->assertFalse(str_contains($companiesHouse, 'name="core:TurnoverRevenue"'));
+                $harness->assertTrue(str_contains($companiesHouse, 'Section 444 election.'));
+                $harness->assertTrue(str_contains($companiesHouse, 'exemption under section 415A'));
+                $harness->assertTrue(str_contains($companiesHouseWithoutElection, 'profit-loss-page'));
+                $harness->assertTrue(str_contains($companiesHouseWithoutElection, 'exemption under section 415A'));
+                $harness->assertTrue(str_contains($hmrc, 'class="accountspage pagebreak statement-page profit-loss-page"'));
+                $harness->assertTrue(str_contains($hmrc, 'name="core:TurnoverRevenue"'));
+                $harness->assertFalse(str_contains($hmrc, 'Section 444 election.'));
+                $harness->assertFalse(str_contains($hmrc, 'exemption under section 415A'));
+                $harness->assertSame([], $validate->invoke($service, $companiesHouse, $facts, $profile));
+                $harness->assertSame([], $validate->invoke(
+                    $service,
+                    $companiesHouseWithoutElection,
+                    $factsWithoutElection,
+                    $profile
+                ));
+                $harness->assertSame([], $validate->invoke($service, $hmrc, $facts));
+            }
+        );
+        $harness->check(
+            \eel_accounts\Service\IxbrlAccountingService::class,
+            'renders an escaped ordered Directors Report as the final Companies House page',
+            static function () use ($harness, $service): void {
+                $render = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'renderXhtml');
+                $render->setAccessible(true);
+                $facts = ixbrlRenderFixtureFacts();
+                $statement = ixbrlRenderFact(
+                    'directors_report_small_companies_statement',
+                    'direp:StatementThatDirectorsReportHasBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime',
+                    'text', null, 'Prepared under the small companies regime.', null, null, null, 'current_period_duration'
+                );
+                $statement['source_json'] = json_encode([
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                    'director_report' => [
+                        'review_notes' => 'Opening <script>alert(1)</script> & café.',
+                        'confirmation_sentences' => ['First confirmation.', 'Second confirmation!'],
+                    ],
+                ]);
+                $facts[] = $statement;
+                $facts[] = ixbrlRenderFact(
+                    'directors_report_signing_date', 'direp:DateSigningDirectorsReport',
+                    'date', null, null, '2026-03-01', null, null, 'current_period_end'
+                );
+                $facts[] = ixbrlRenderFact(
+                    'director_signing_directors_report', 'direp:DirectorSigningDirectorsReport',
+                    'text', null, '', null, null, null, 'current_period_duration_director_1'
+                );
+                $profile = (new \eel_accounts\Service\IxbrlAuthorityProfileService())->profile(
+                    \eel_accounts\Service\IxbrlAuthorityProfileService::COMPANIES_HOUSE_ACCOUNTS
+                );
+                $xhtml = (string)$render->invoke($service, $facts, false, 'EEL-AR-TEST', $profile);
+                $factsWithElection = $facts;
+                $factsWithElection[] = ixbrlRenderFact(
+                    'profit_loss_not_delivered_statement',
+                    'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
+                    'text', null, 'Section 444 election.', null, null, null, 'current_period_duration'
+                );
+                $xhtmlWithElection = (string)$render->invoke(
+                    $service,
+                    $factsWithElection,
+                    false,
+                    'EEL-AR-TEST',
+                    $profile
+                );
+                $validate = new ReflectionMethod(\eel_accounts\Service\IxbrlAccountingService::class, 'validateInlineXbrl');
+                $validate->setAccessible(true);
+
+                $harness->assertTrue(str_contains($xhtml, 'class="accountspage pagebreak directors-report-page"'));
+                $harness->assertTrue(str_contains($xhtml, '&lt;script&gt;alert(1)&lt;/script&gt; &amp; café.'));
+                $harness->assertTrue(strpos($xhtml, 'First confirmation.') < strpos($xhtml, 'Second confirmation!'));
+                $harness->assertFalse(str_contains($xhtml, 'exemption under section 415A'));
+                $harness->assertTrue(strrpos($xhtml, 'EEL-AR-TEST') > strrpos($xhtml, 'Directors’ Report'));
+                $harness->assertSame([], $validate->invoke($service, $xhtml, $facts, $profile));
+                $harness->assertFalse(str_contains($xhtmlWithElection, 'profit-loss-page'));
+                $harness->assertTrue(str_contains($xhtmlWithElection, 'directors-report-page'));
+                $harness->assertSame([], $validate->invoke(
+                    $service,
+                    $xhtmlWithElection,
+                    $factsWithElection,
+                    $profile
+                ));
+            }
+        );
     }
 );
 

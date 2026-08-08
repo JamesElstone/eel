@@ -1754,7 +1754,7 @@ CREATE TABLE `ixbrl_fact_mappings` (
   `local_name` varchar(255) DEFAULT NULL,
   `label` varchar(255) NOT NULL,
   `value_type` enum('numeric','text','date','boolean') NOT NULL,
-  `calculation_type` enum('nominal_subtype_sum','nominal_account_sum','manual','derived','company_field','period_field','disclosure_field','disclosure_statement','absence_statement','application_value','fixed_marker','director_loan_statement','director_loan_numeric') NOT NULL,
+  `calculation_type` enum('nominal_subtype_sum','nominal_account_sum','manual','derived','company_field','period_field','disclosure_field','disclosure_statement','absence_statement','application_value','fixed_marker','director_loan_statement','director_loan_numeric','inverse_disclosure_statement','directors_report_signing_date','directors_report_marker') NOT NULL,
   `source_key` varchar(150) DEFAULT NULL,
   `sign_multiplier` decimal(8,2) NOT NULL DEFAULT 1.00,
   `period_type` enum('instant','duration') DEFAULT NULL,
@@ -1822,6 +1822,8 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   `audit_exempt_section_477` tinyint(1) DEFAULT NULL,
   `directors_acknowledge_responsibilities` tinyint(1) DEFAULT NULL,
   `members_have_not_required_audit` tinyint(1) DEFAULT NULL,
+  `directors_report_exempt_section_415a` tinyint(1) NOT NULL DEFAULT 1,
+  `profit_loss_not_delivered_section_444` tinyint(1) NOT NULL DEFAULT 1,
   `companies_house_revised_accounts_public_register_confirmed` tinyint(1) DEFAULT NULL,
   `revision` int(10) unsigned NOT NULL DEFAULT 1,
   `created_by` varchar(100) NOT NULL,
@@ -1844,6 +1846,8 @@ CREATE TABLE `ixbrl_accounts_disclosures` (
   CONSTRAINT `chk_ixbrl_disclosures_audit_exempt` CHECK (`audit_exempt_section_477` is null or `audit_exempt_section_477` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_directors_responsibilities` CHECK (`directors_acknowledge_responsibilities` is null or `directors_acknowledge_responsibilities` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_members_audit` CHECK (`members_have_not_required_audit` is null or `members_have_not_required_audit` in (0,1)),
+  CONSTRAINT `chk_ixbrl_disclosures_directors_report_415a` CHECK (`directors_report_exempt_section_415a` in (0,1)),
+  CONSTRAINT `chk_ixbrl_disclosures_profit_loss_444` CHECK (`profit_loss_not_delivered_section_444` in (0,1)),
   CONSTRAINT `chk_ixbrl_disclosures_ch_public_register` CHECK (`companies_house_revised_accounts_public_register_confirmed` is null or `companies_house_revised_accounts_public_register_confirmed` in (0,1)),
   CONSTRAINT `fk_ixbrl_disclosures_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_ixbrl_disclosures_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -1896,6 +1900,10 @@ INSERT INTO `ixbrl_fact_mappings` (`fact_key`,`taxonomy_concept`,`namespace_uri`
 ('principal_activity_description','bus:DescriptionPrincipalActivities','http://xbrl.frc.org.uk/cd/2026-01-01/business','DescriptionPrincipalActivities','Principal activity','text','disclosure_field','principal_activity_statement',1,'duration',NULL,NULL,'duration',NULL,0,1,305,1),
 ('entity_dormant','bus:EntityDormantTruefalse','http://xbrl.frc.org.uk/cd/2026-01-01/business','EntityDormantTruefalse','Entity dormant','boolean','disclosure_field','entity_dormant',1,'duration',NULL,NULL,'duration',NULL,0,1,310,1),
 ('small_companies_regime_statement','direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','Small companies regime statement','text','disclosure_statement','prepared_under_small_companies_regime',1,'duration',NULL,NULL,'duration',NULL,0,1,320,1),
+('profit_loss_not_delivered_statement','direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006','Section 444(5A) profit and loss non-delivery election','text','disclosure_statement','profit_loss_not_delivered_section_444',1,'duration',NULL,NULL,'duration',NULL,0,0,351,1),
+('directors_report_small_companies_statement','direp:StatementThatDirectorsReportHasBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatDirectorsReportHasBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime','Directors Report small companies regime statement','text','inverse_disclosure_statement','directors_report_exempt_section_415a',1,'duration',NULL,NULL,'duration',NULL,0,0,352,1),
+('directors_report_signing_date','direp:DateSigningDirectorsReport','http://xbrl.frc.org.uk/reports/2026-01-01/direp','DateSigningDirectorsReport','Date signing Directors Report','date','directors_report_signing_date','accounts_approval_date',1,'instant',NULL,NULL,'instant_end',NULL,0,0,353,1),
+('director_signing_directors_report','direp:DirectorSigningDirectorsReport','http://xbrl.frc.org.uk/reports/2026-01-01/direp','DirectorSigningDirectorsReport','Director signing Directors Report','text','directors_report_marker','approving_director_name',1,'duration',NULL,NULL,'duration_director_1','{"bus:EntityOfficersDimension":"bus:Director1"}',0,0,354,1),
 ('audit_exemption_statement','direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies','Audit exemption statement','text','disclosure_statement','audit_exempt_section_477',1,'duration',NULL,NULL,'duration',NULL,0,1,330,1),
 ('directors_responsibility_statement','direp:StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct','Directors responsibilities statement','text','disclosure_statement','directors_acknowledge_responsibilities',1,'duration',NULL,NULL,'duration',NULL,0,1,340,1),
 ('members_no_audit_statement','direp:StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit','http://xbrl.frc.org.uk/reports/2026-01-01/direp','StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit','Members have not required an audit statement','text','disclosure_statement','members_have_not_required_audit',1,'duration',NULL,NULL,'duration',NULL,0,1,350,1),
@@ -4636,6 +4644,9 @@ VALUES
   ('computation_ixbrl', 'supported_return_profile.company_is_partner_in_firm', 'Company is a partner in a firm', 'boolean', 'identity', 1);
 INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_08_04_001_hmrc_computation_mandatory_facts.sql');
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_08_08_001_companies_house_report_exemptions.sql'),
+  ('2026_08_08_002_companies_house_report_mapping_parity.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

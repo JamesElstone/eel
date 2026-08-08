@@ -12,7 +12,7 @@ namespace eel_accounts\Service;
 /** Creates a complete revised-report copy without mutating the ordinary accounts artifact. */
 final class IxbrlRevisedAccountsArtifactService
 {
-    public const PRESENTATION_VERSION = 'companies-house-revised-accounts-presentation-v2';
+    public const PRESENTATION_VERSION = 'companies-house-revised-accounts-presentation-v3';
 
     private const XHTML_NS = 'http://www.w3.org/1999/xhtml';
     private const IX_NS = 'http://www.xbrl.org/2013/inlineXBRL';

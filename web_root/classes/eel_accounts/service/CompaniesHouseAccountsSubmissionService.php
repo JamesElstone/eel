@@ -3052,6 +3052,22 @@ final class CompaniesHouseAccountsSubmissionService
         array $model,
         array $supersededFacts = []
     ): array {
+        $omitPublicProfitLoss = (int)(($model['disclosures'] ?? [])['profit_loss_not_delivered_section_444'] ?? 1) === 1;
+        $publicBalanceSheetMetrics = [
+            'called_up_share_capital_not_paid',
+            'fixed_assets',
+            'current_assets',
+            'prepayments_accrued_income',
+            'creditors_within_one_year',
+            'creditors_after_more_than_one_year',
+            'creditors_after_one_year',
+            'net_current_assets_liabilities',
+            'total_assets_less_current_liabilities',
+            'provisions_for_liabilities',
+            'accruals_deferred_income',
+            'net_assets_liabilities',
+            'equity_capital_reserves',
+        ];
         $nonCompliance = [];
         $amendments = [];
         $this->appendRevisionDisclosurePart(
@@ -3102,6 +3118,9 @@ final class CompaniesHouseAccountsSubmissionService
             }
             $key = trim((string)($row['metric_key'] ?? ''));
             $label = trim((string)($row['label'] ?? ''));
+            if ($omitPublicProfitLoss && !in_array($key, $publicBalanceSheetMetrics, true)) {
+                continue;
+            }
             if ($key !== '') {
                 $changedMetrics[$key] = true;
             }
@@ -3146,7 +3165,7 @@ final class CompaniesHouseAccountsSubmissionService
         $equityChanged = isset($changedMetrics['equity_capital_reserves']);
         $depreciation = round((float)($buckets['depreciation_write_offs'] ?? 0), 2);
 
-        if ($fixedAssetsChanged && abs($depreciation) >= 0.005) {
+        if ($fixedAssetsChanged && abs($depreciation) >= 0.005 && !$omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
                 'The original fixed assets presentation did not reflect the depreciation charge supported by the accounting records.'
@@ -3156,6 +3175,17 @@ final class CompaniesHouseAccountsSubmissionService
                 'Fixed assets were corrected to '
                     . $this->revisionMoney($buckets['fixed_assets'] ?? 0)
                     . ' after recognising depreciation of ' . $this->revisionMoney($depreciation) . '.'
+            );
+        }
+        if ($fixedAssetsChanged && $omitPublicProfitLoss) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original fixed assets balance did not agree with the current accounting records.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'Fixed assets were corrected to '
+                    . $this->revisionMoney($buckets['fixed_assets'] ?? 0) . '.'
             );
         }
         if ($prepaymentsApplicable) {
@@ -3251,7 +3281,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'total_amounts_written_off',
                 'total_amounts_waived',
             ]);
-        if ($directorLoanApplicable && $creditorCorrection === []) {
+        if ($directorLoanApplicable && $creditorCorrection === [] && !$omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
                 'The original accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
@@ -3281,17 +3311,31 @@ final class CompaniesHouseAccountsSubmissionService
                     . ', and the related creditor maturity presentation was updated from the approved accounting model.'
             );
         }
+        if ($directorLoanApplicable && $creditorCorrection === [] && $omitPublicProfitLoss) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                'The original accounts did not clearly present the director-loan balance as an asset or liability at the balance-sheet date.'
+            );
+            $this->appendRevisionDisclosurePart(
+                $amendments,
+                'The director-loan asset or liability and its creditor maturity classification were corrected using the approved balance-sheet model.'
+            );
+        }
 
         if ($nonCompliance === []) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The originally filed accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.'
+                $omitPublicProfitLoss
+                    ? 'The originally filed accounts contained incorrect asset, liability or reserve classifications or balances.'
+                    : 'The originally filed accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.'
             );
         }
         if ($amendments === []) {
             $this->appendRevisionDisclosurePart(
                 $amendments,
-                'The revised accounts correct the affected classifications, disclosures and financial-statement balances so that they agree with the current accounting records.'
+                $omitPublicProfitLoss
+                    ? 'The revised accounts correct the affected asset, liability, reserve and related balance-sheet disclosures so that they agree with the current accounting records.'
+                    : 'The revised accounts correct the affected classifications, disclosures and financial-statement balances so that they agree with the current accounting records.'
             );
         }
 

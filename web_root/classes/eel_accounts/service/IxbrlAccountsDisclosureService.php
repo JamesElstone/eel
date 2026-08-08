@@ -33,6 +33,8 @@ final class IxbrlAccountsDisclosureService
         'audit_exempt_section_477',
         'directors_acknowledge_responsibilities',
         'members_have_not_required_audit',
+        'directors_report_exempt_section_415a',
+        'profit_loss_not_delivered_section_444',
         'companies_house_revised_accounts_public_register_confirmed',
     ];
     private const FIELD_LABELS = [
@@ -53,6 +55,8 @@ final class IxbrlAccountsDisclosureService
         'audit_exempt_section_477' => 'section 477 audit exemption statement',
         'directors_acknowledge_responsibilities' => 'directors responsibilities acknowledgement',
         'members_have_not_required_audit' => 'members have not required an audit statement',
+        'directors_report_exempt_section_415a' => 'section 415A Directors\' Report exemption',
+        'profit_loss_not_delivered_section_444' => 'section 444 profit and loss filing election',
         'companies_house_revised_accounts_public_register_confirmed' => 'Companies House revised accounts public-register confirmation',
     ];
 
@@ -116,7 +120,7 @@ final class IxbrlAccountsDisclosureService
                 'director_suggestions' => $this->directorSuggestions($companyId),
                 'principal_activity_suggestions' => $this->principalActivitySuggestions($companyId),
                 'accounting_period' => $period,
-                'errors' => ['The latest iXBRL principal-activity migration has not been applied.'],
+                'errors' => ['The latest iXBRL accounts-disclosure migrations have not been applied.'],
             ];
         }
 
@@ -146,6 +150,16 @@ final class IxbrlAccountsDisclosureService
         ));
         $tradingEvidence = $this->calculateTradingEvidence($companyId, $period, $dormancy);
         $companiesHouseRevisionRequired = $this->companiesHouseRevisionRequired($companyId, $accountingPeriodId);
+        $directorReport = (new IxbrlDirectorsReportContentService())->fetch(
+            $companyId,
+            $accountingPeriodId
+        );
+        $directorReportRequired = (int)($disclosures['directors_report_exempt_section_415a'] ?? 1) === 0;
+        $directorReportBlockers = $directorReportRequired && !empty($directorReport['review_notes_blank'])
+            ? ['Enter Year End Notes before approving accounts which include a Directors\' Report.']
+            : [];
+        $directorReport['required'] = $directorReportRequired;
+        $directorReport['approval_blockers'] = $directorReportBlockers;
         $missing = $this->missingFields($disclosures, $companiesHouseRevisionRequired);
         $unsupported = $this->unsupportedProfileFields($disclosures, $companiesHouseRevisionRequired);
         $profileErrors = $this->unsupportedProfileErrors($disclosures, $companiesHouseRevisionRequired);
@@ -209,6 +223,8 @@ final class IxbrlAccountsDisclosureService
             'dormancy' => $dormancy,
             'small_companies_regime' => $smallCompanies,
             'companies_house_revision_required' => $companiesHouseRevisionRequired,
+            'director_report' => $directorReport,
+            'approval_blockers' => $directorReportBlockers,
             'director_validation_errors' => $directorValidationErrors,
             'principal_activity_validation_errors' => $principalActivityValidationErrors,
             'errors' => [],
@@ -340,6 +356,8 @@ final class IxbrlAccountsDisclosureService
                              audit_exempt_section_477 = :audit_exempt_section_477,
                              directors_acknowledge_responsibilities = :directors_acknowledge_responsibilities,
                              members_have_not_required_audit = :members_have_not_required_audit,
+                             directors_report_exempt_section_415a = :directors_report_exempt_section_415a,
+                             profit_loss_not_delivered_section_444 = :profit_loss_not_delivered_section_444,
                              companies_house_revised_accounts_public_register_confirmed = :companies_house_revised_accounts_public_register_confirmed,
                              revision = :revision,
                              updated_by = :updated_by,
@@ -364,6 +382,8 @@ final class IxbrlAccountsDisclosureService
                             prepared_under_small_companies_regime,
                             audit_exempt_section_477, directors_acknowledge_responsibilities,
                             members_have_not_required_audit,
+                            directors_report_exempt_section_415a,
+                            profit_loss_not_delivered_section_444,
                             companies_house_revised_accounts_public_register_confirmed,
                             revision, created_by, updated_by,
                             created_at, updated_at
@@ -382,6 +402,8 @@ final class IxbrlAccountsDisclosureService
                             :prepared_under_small_companies_regime,
                             :audit_exempt_section_477, :directors_acknowledge_responsibilities,
                             :members_have_not_required_audit,
+                            :directors_report_exempt_section_415a,
+                            :profit_loss_not_delivered_section_444,
                             :companies_house_revised_accounts_public_register_confirmed,
                             :revision, :created_by, :updated_by,
                             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -427,6 +449,8 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477',
             'directors_acknowledge_responsibilities',
             'members_have_not_required_audit',
+            'directors_report_exempt_section_415a',
+            'profit_loss_not_delivered_section_444',
             'companies_house_revised_accounts_public_register_confirmed',
         ];
         if (!in_array($field, $allowed, true)) {
@@ -846,6 +870,8 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477',
             'directors_acknowledge_responsibilities',
             'members_have_not_required_audit',
+            'directors_report_exempt_section_415a',
+            'profit_loss_not_delivered_section_444',
             'micro_entity_eligibility_confirmed',
             'going_concern_basis_appropriate',
             'has_material_off_balance_sheet_arrangements',
@@ -855,7 +881,11 @@ final class IxbrlAccountsDisclosureService
         ];
         $booleans = [];
         foreach ($booleanFields as $field) {
-            $value = $this->booleanValue($input[$field] ?? null);
+            $default = in_array($field, [
+                'directors_report_exempt_section_415a',
+                'profit_loss_not_delivered_section_444',
+            ], true) ? 1 : null;
+            $value = $this->booleanValue($input[$field] ?? $default);
             if ($field === 'companies_house_revised_accounts_public_register_confirmed'
                 && !$companiesHouseRevisionRequired) {
                 $booleans[$field] = $value;
@@ -892,6 +922,8 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477' => $booleans['audit_exempt_section_477'],
             'directors_acknowledge_responsibilities' => $booleans['directors_acknowledge_responsibilities'],
             'members_have_not_required_audit' => $booleans['members_have_not_required_audit'],
+            'directors_report_exempt_section_415a' => $booleans['directors_report_exempt_section_415a'],
+            'profit_loss_not_delivered_section_444' => $booleans['profit_loss_not_delivered_section_444'],
             'companies_house_revised_accounts_public_register_confirmed' => $booleans['companies_house_revised_accounts_public_register_confirmed'],
         ], array_values(array_unique($errors))];
     }
@@ -918,6 +950,8 @@ final class IxbrlAccountsDisclosureService
                 'audit_exempt_section_477',
                 'directors_acknowledge_responsibilities',
                 'members_have_not_required_audit',
+                'directors_report_exempt_section_415a',
+                'profit_loss_not_delivered_section_444',
                 'micro_entity_eligibility_confirmed',
                 'going_concern_basis_appropriate',
                 'has_material_off_balance_sheet_arrangements',
@@ -1059,6 +1093,8 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477' => null,
             'directors_acknowledge_responsibilities' => null,
             'members_have_not_required_audit' => null,
+            'directors_report_exempt_section_415a' => 1,
+            'profit_loss_not_delivered_section_444' => 1,
             'companies_house_revised_accounts_public_register_confirmed' => null,
         ];
     }
@@ -1078,6 +1114,8 @@ final class IxbrlAccountsDisclosureService
             'audit_exempt_section_477',
             'directors_acknowledge_responsibilities',
             'members_have_not_required_audit',
+            'directors_report_exempt_section_415a',
+            'profit_loss_not_delivered_section_444',
             'companies_house_revised_accounts_public_register_confirmed',
             'revision',
         ] as $field) {
@@ -1166,7 +1204,9 @@ final class IxbrlAccountsDisclosureService
             && \InterfaceDB::tableExists('sic_section')
             && \InterfaceDB::columnExists(self::TABLE, 'approving_director_id')
             && \InterfaceDB::columnExists(self::TABLE, 'principal_activity_sic_code')
-            && \InterfaceDB::columnExists(self::TABLE, 'principal_activity_statement');
+            && \InterfaceDB::columnExists(self::TABLE, 'principal_activity_statement')
+            && \InterfaceDB::columnExists(self::TABLE, 'directors_report_exempt_section_415a')
+            && \InterfaceDB::columnExists(self::TABLE, 'profit_loss_not_delivered_section_444');
     }
 
     private function principalActivitySuggestions(int $companyId): array

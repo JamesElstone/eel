@@ -64,7 +64,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $h->check($service::class, 'versions the separated accounts and CT filing contracts', static function () use ($h, $service): void {
-            $h->assertSame('accounts-filing-approval-v9', $service::BASIS_VERSION);
+            $h->assertSame('accounts-filing-approval-v10', $service::BASIS_VERSION);
             $h->assertSame('ct-period-filing-model-v11', $service::CT_BASIS_VERSION);
         });
 
@@ -142,7 +142,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
 
             $h->assertTrue(is_array($projected));
-            $h->assertSame('accounts-filing-approval-v9', (string)$projected['basis_version']);
+            $h->assertSame('accounts-filing-approval-v10', (string)$projected['basis_version']);
             $h->assertSame($currentReportReference, (array)$projected['accounts_report']);
             $h->assertSame(false, array_key_exists('corporation_tax_return_authorisation', $projected));
             $h->assertSame(false, array_key_exists('corporation_tax_filing_scope', $projected));

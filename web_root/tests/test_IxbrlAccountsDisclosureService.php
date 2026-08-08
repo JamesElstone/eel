@@ -68,6 +68,24 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
                 $principalActivityMigration,
                 "'bus:DescriptionPrincipalActivities'"
             ));
+
+            $companiesHouseReportMigration = (string)file_get_contents(
+                dirname(__DIR__, 2)
+                . DIRECTORY_SEPARATOR . 'db_schema'
+                . DIRECTORY_SEPARATOR . 'migrations'
+                . DIRECTORY_SEPARATOR . '2026_08_08_001_companies_house_report_exemptions.sql'
+            );
+            foreach ([
+                'directors_report_exempt_section_415a TINYINT(1) NOT NULL DEFAULT 1',
+                'profit_loss_not_delivered_section_444 TINYINT(1) NOT NULL DEFAULT 1',
+                'CHECK (directors_report_exempt_section_415a IN (0, 1))',
+                'CHECK (profit_loss_not_delivered_section_444 IN (0, 1))',
+                "'inverse_disclosure_statement'",
+                "'directors_report_signing_date'",
+                "'directors_report_marker'",
+            ] as $requiredDefinition) {
+                $harness->assertTrue(str_contains($companiesHouseReportMigration, $requiredDefinition));
+            }
         }
     );
 
@@ -88,7 +106,22 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
             $harness->assertSame(0, (int)$validated['has_financial_commitments_guarantees_or_contingencies']);
             $harness->assertSame(1, (int)$validated['micro_entity_eligibility_confirmed']);
             $harness->assertSame(1, (int)$validated['going_concern_basis_appropriate']);
+            $harness->assertSame(1, (int)$validated['directors_report_exempt_section_415a']);
+            $harness->assertSame(1, (int)$validated['profit_loss_not_delivered_section_444']);
             $harness->assertSame([], $unsupported->invoke($service, $validated));
+
+            foreach (['directors_report_exempt_section_415a', 'profit_loss_not_delivered_section_444'] as $newBoolean) {
+                $bothAnswers = $noAnswers;
+                $bothAnswers[$newBoolean] = 0;
+                [$answerValues, $answerErrors] = $validate->invoke($service, $bothAnswers, $period);
+                $harness->assertSame([], $answerErrors);
+                $harness->assertSame(0, (int)$answerValues[$newBoolean]);
+
+                $invalidAnswer = $noAnswers;
+                $invalidAnswer[$newBoolean] = '2';
+                [, $invalidErrors] = $validate->invoke($service, $invalidAnswer, $period);
+                $harness->assertTrue(str_contains(implode(' ', $invalidErrors), 'with Yes or No'));
+            }
 
             $missingAnswer = $noAnswers;
             unset($missingAnswer['has_director_advances_credits_or_guarantees']);

@@ -342,6 +342,16 @@ final class IxbrlFactBuilderService
             'disclosure_statement' => !empty($disclosures[$sourceKey])
                 ? (new IxbrlTaxonomyProfileService())->statementText($sourceKey)
                 : null,
+            'inverse_disclosure_statement' => array_key_exists($sourceKey, $disclosures)
+                && (int)$disclosures[$sourceKey] === 0
+                    ? (new IxbrlTaxonomyProfileService())->statementText($sourceKey)
+                    : null,
+            'directors_report_signing_date' => (int)($disclosures['directors_report_exempt_section_415a'] ?? 1) === 0
+                ? ($disclosures[$sourceKey] ?? null)
+                : null,
+            'directors_report_marker' => (int)($disclosures['directors_report_exempt_section_415a'] ?? 1) === 0
+                ? ''
+                : null,
             'absence_statement' => array_key_exists($sourceKey, $disclosures)
                 && (int)$disclosures[$sourceKey] === 0
                     ? (new IxbrlTaxonomyProfileService())->absenceStatementText((string)$mapping['fact_key'])
@@ -440,6 +450,9 @@ final class IxbrlFactBuilderService
                         'creditors_after_more_than_one_year',
                     ], true)
                 ) ? $directorLoanYearEndApproval : [],
+                'director_report' => (string)($mapping['fact_key'] ?? '') === 'directors_report_small_companies_statement'
+                    ? (array)($report['director_report'] ?? [])
+                    : [],
             ],
         ];
     }

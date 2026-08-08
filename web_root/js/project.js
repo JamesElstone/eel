@@ -1119,6 +1119,8 @@
             const canEdit = form.dataset.ixbrlDisclosuresCanEdit === '1';
             const initiallyLocked = form.dataset.ixbrlDisclosuresInitiallyLocked === '1';
             const serverCanApprove = form.dataset.ixbrlApprovalCanApprove === '1';
+            const directorsReportNotesBlank = form.dataset.ixbrlDirectorsReportNotesBlank === '1';
+            const directorsReportWarning = form.querySelector('[data-ixbrl-directors-report-warning="true"]');
             const ctConfirmationNames = [
                 'original_unfiled_confirmed',
                 'authority_confirmed',
@@ -1157,11 +1159,20 @@
                     const selected = form.querySelector(`input[name="${name}"]:checked`);
                     return selected instanceof HTMLInputElement && selected.value === '1';
                 });
+                const directorsReportExemption = form.querySelector('input[name="directors_report_exempt_section_415a"]:checked');
+                const directorsReportBlocked = directorsReportNotesBlank
+                    && directorsReportExemption instanceof HTMLInputElement
+                    && directorsReportExemption.value === '0';
+                if (directorsReportWarning instanceof HTMLElement) {
+                    directorsReportWarning.classList.toggle('is-hidden', !directorsReportBlocked);
+                    directorsReportWarning.setAttribute('aria-hidden', directorsReportBlocked ? 'false' : 'true');
+                }
                 editButton.disabled = !canEdit || !initiallyLocked || editing;
                 saveButton.disabled = !canEdit || !editing || !changed || !form.checkValidity();
                 cancelButton.disabled = !canEdit || (!changed && (!initiallyLocked || !editing));
                 approvalButton.disabled = !(serverCanApprove || changed)
                     || !ctConfirmationsAreYes
+                    || directorsReportBlocked
                     || !form.checkValidity();
             };
 

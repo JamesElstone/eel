@@ -385,6 +385,7 @@ final class IxbrlAccountingService
             IxbrlAuthorityProfileService::HMRC_CT_ACCOUNTS
         );
         $this->renderAuthority = $authorityProfile->authority();
+        $companiesHouse = $authorityProfile->authority() === 'COMPANIES_HOUSE';
         $indexed = $this->indexFacts($facts);
         $missingFactKeys = [];
         $missingComparativeFactKeys = [];
@@ -417,6 +418,10 @@ final class IxbrlAccountingService
             );
         }
         $this->assertMicroStatementsReconcile($indexed);
+        $profitLossNotDeliveredFact = $this->currentFact($indexed, 'profit_loss_not_delivered_statement');
+        $omitProfitLoss = $companiesHouse && $profitLossNotDeliveredFact !== [];
+        $directorsReportStatement = $this->currentFact($indexed, 'directors_report_small_companies_statement');
+        $includeDirectorsReport = $companiesHouse && $directorsReportStatement !== [];
         $companyName = $this->currentFact($indexed, 'entity_name');
         $companyNumber = $this->factValue($this->currentFact($indexed, 'company_number'));
         $periodStart = $this->factValue($this->currentFact($indexed, 'period_start'));
@@ -473,6 +478,11 @@ final class IxbrlAccountingService
                 $statements .= '<p>' . $this->inlineFact($fact) . '</p>' . "\n";
             }
         }
+        if ($omitProfitLoss) {
+            $statements .= '<p class="section-444-election">'
+                . $this->inlineFact($profitLossNotDeliveredFact)
+                . '</p>' . "\n";
+        }
         $employees = $this->currentFact($indexed, 'average_number_employees');
         $approvalDate = $this->currentFact($indexed, 'accounts_approval_date');
         $director = $this->currentFact($indexed, 'approving_director_name');
@@ -485,6 +495,25 @@ final class IxbrlAccountingService
         }
 
         $notes = $this->notes($indexed, $periodEnd);
+        if ($companiesHouse && !$includeDirectorsReport) {
+            $notes .= '<div class="note keepTogether directors-report-exemption"><p>'
+                . 'The company has taken advantage of the exemption under section 415A of the Companies Act 2006 and has not prepared a Directors’ Report.'
+                . '</p></div>';
+        }
+        $profitLossPage = $omitProfitLoss ? '' : '<div class="accountspage pagebreak statement-page profit-loss-page">'
+            . $this->pageHeader($indexed, 'Profit and loss account')
+            . '<h2>Profit and loss account</h2>'
+            . '<p class="period-subtitle">For the period ended ' . $this->inlineFact(
+                $this->currentFact($indexed, 'period_end'),
+                ['natural_date' => true]
+            ) . '</p>'
+            . $this->profitAndLossTable($indexed)
+            . $this->grossProfitBridge($indexed)
+            . '</div>' . "\n";
+        $directorsReportPage = $includeDirectorsReport
+            ? $this->directorsReportPage($indexed, $directorsReportStatement, $evidenceArtifactId)
+            : '';
+        $notesFooter = $includeDirectorsReport ? '' : $this->evidenceFooter($evidenceArtifactId);
 
         $namespaceAttributes = '';
         foreach (IxbrlTaxonomyProfileService::NAMESPACES as $prefix => $uri) {
@@ -551,16 +580,7 @@ final class IxbrlAccountingService
             )
             . ' and are presented in pounds sterling (GBP) to the nearest penny.</p>'
             . '</div></div>' . "\n"
-            . '<div class="accountspage pagebreak statement-page">'
-            . $this->pageHeader($indexed, 'Profit and loss account')
-            . '<h2>Profit and loss account</h2>'
-            . '<p class="period-subtitle">For the period ended ' . $this->inlineFact(
-                $this->currentFact($indexed, 'period_end'),
-                ['natural_date' => true]
-            ) . '</p>'
-            . $this->profitAndLossTable($indexed)
-            . $this->grossProfitBridge($indexed)
-            . '</div>' . "\n"
+            . $profitLossPage
             . '<div class="accountspage pagebreak statement-page">'
             . $this->pageHeader($indexed, 'Balance sheet')
             . '<h2>Micro-entity Balance Sheet as at '
@@ -579,8 +599,9 @@ final class IxbrlAccountingService
                 ['natural_date' => true]
             ) . '</p>'
             . $notes
-            . $this->evidenceFooter($evidenceArtifactId)
+            . $notesFooter
             . '</div>' . "\n"
+            . $directorsReportPage
             . '</body></html>' . "\n";
 
         if ($authorityProfile->authority() === 'COMPANIES_HOUSE') {
@@ -589,6 +610,50 @@ final class IxbrlAccountingService
         }
 
         return $xhtml;
+    }
+
+    private function directorsReportPage(
+        array $indexed,
+        array $statementFact,
+        string $evidenceArtifactId
+    ): string {
+        $source = $this->factSource($statementFact);
+        $content = (array)($source['director_report'] ?? []);
+        $reviewNotes = trim((string)($content['review_notes'] ?? ''));
+        if ($reviewNotes === '') {
+            throw new \RuntimeException(
+                'The approved Directors\' Report basis does not contain Year End Notes.'
+            );
+        }
+        $opening = '<p>' . nl2br($this->e($reviewNotes), true) . '</p>';
+        $bullets = '';
+        foreach ((array)($content['confirmation_sentences'] ?? []) as $sentence) {
+            $sentence = trim((string)$sentence);
+            if ($sentence !== '') {
+                $bullets .= '<li>' . $this->e($sentence) . '</li>';
+            }
+        }
+        if ($bullets !== '') {
+            $bullets = '<ul class="directors-report-confirmations">' . $bullets . '</ul>';
+        }
+        $signingDate = $this->currentFact($indexed, 'directors_report_signing_date');
+        $signingMarker = $this->currentFact($indexed, 'director_signing_directors_report');
+        $director = $this->currentFact($indexed, 'approving_director_name');
+        if ($signingDate === [] || $signingMarker === [] || $director === []) {
+            throw new \RuntimeException('The approved Directors\' Report signing evidence is incomplete.');
+        }
+
+        return '<div class="accountspage pagebreak directors-report-page">'
+            . $this->pageHeader($indexed, 'Directors’ Report')
+            . '<h2>Directors’ Report</h2>'
+            . $opening . $bullets
+            . '<p class="directors-report-regime">' . $this->inlineFact($statementFact) . '</p>'
+            . '<div class="approval keepTogether"><p>Approved by the board and signed on '
+            . $this->inlineFact($signingDate, ['natural_date' => true]) . ' by:</p>'
+            . '<p class="signature">' . $this->e($this->factValue($director))
+            . $this->categoricalMarker($signingMarker) . '</p><p>Director</p></div>'
+            . $this->evidenceFooter($evidenceArtifactId)
+            . '</div>' . "\n";
     }
 
     private function profitAndLossTable(array $indexed): string
@@ -1264,6 +1329,25 @@ CSS;
         return [];
     }
 
+    /** @return array<string,mixed> */
+    private function factSource(array $fact): array
+    {
+        $source = json_decode((string)($fact['source_json'] ?? ''), true);
+        return is_array($source) ? $source : [];
+    }
+
+    private function hasSourceFactKey(array $facts, string $factKey): bool
+    {
+        foreach ($facts as $fact) {
+            if (is_array($fact)
+                && (string)($fact['fact_key'] ?? '') === $factKey
+                && !str_starts_with((string)($fact['context_ref'] ?? ''), 'comparative_')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function comparativeFact(array $indexed, string $key): array
     {
         foreach ((array)($indexed[$key] ?? []) as $context => $fact) {
@@ -1573,15 +1657,6 @@ CSS;
             'bus:VersionProductionSoftware',
             'core:DateAuthorisationFinancialStatementsForIssue',
             'core:DirectorSigningFinancialStatements',
-            'core:TurnoverRevenue',
-            'core:OtherOperatingIncomeFormat2',
-            'core:RawMaterialsConsumablesUsed',
-            'core:GrossProfitLoss',
-            'core:StaffCostsEmployeeBenefitsExpense',
-            'core:DepreciationAmortisationImpairmentExpense',
-            'core:OtherExternalCharges',
-            'core:OperatingProfitLoss',
-            'core:ProfitLoss',
             'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset',
             'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
             'core:ProvisionsForLiabilitiesBalanceSheetSubtotal',
@@ -1603,6 +1678,72 @@ CSS;
             if (($xpath->query($query)->length ?? 0) < 1) {
                 $errors[] = 'Required filing fact is missing: ' . $requiredConcept . '.';
             }
+        }
+        $profitLossConcepts = [
+            'core:TurnoverRevenue',
+            'core:OtherOperatingIncomeFormat2',
+            'core:RawMaterialsConsumablesUsed',
+            'core:GrossProfitLoss',
+            'core:StaffCostsEmployeeBenefitsExpense',
+            'core:DepreciationAmortisationImpairmentExpense',
+            'core:OtherExternalCharges',
+            'core:OperatingProfitLoss',
+            'core:TaxTaxCreditOnProfitOrLossOnOrdinaryActivities',
+            'core:ProfitLoss',
+        ];
+        $companiesHouse = $authorityProfile->authority() === 'COMPANIES_HOUSE';
+        $profitLossNotDelivered = $companiesHouse
+            && $this->hasSourceFactKey($sourceFacts, 'profit_loss_not_delivered_statement');
+        foreach ($profitLossConcepts as $profitLossConcept) {
+            $count = $xpath->query('//*[@name="' . $profitLossConcept . '"]')->length ?? 0;
+            if ($profitLossNotDelivered && $count > 0) {
+                $errors[] = 'Companies House Section 444 output must omit filing fact: '
+                    . $profitLossConcept . '.';
+            } elseif (!$profitLossNotDelivered && $count < 1) {
+                $errors[] = 'Required filing fact is missing: ' . $profitLossConcept . '.';
+            }
+        }
+        $profitLossPages = $xpath->query('//xhtml:div[contains(concat(" ", normalize-space(@class), " "), " profit-loss-page ")]')->length ?? 0;
+        $section444Concept = 'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006';
+        $section444Facts = $xpath->query('//*[@name="' . $section444Concept . '"]')->length ?? 0;
+        if ($companiesHouse && $profitLossNotDelivered) {
+            if ($profitLossPages !== 0 || $section444Facts !== 1) {
+                $errors[] = 'Companies House Section 444 output must omit the Profit and Loss page and include one tagged election statement.';
+            }
+        } elseif ($profitLossPages !== 1 || $section444Facts !== 0) {
+            $errors[] = $companiesHouse
+                ? 'Companies House output without a Section 444 election must retain one Profit and Loss page and omit the election statement.'
+                : 'HMRC accounts must retain one Profit and Loss page and omit the Section 444 election statement.';
+        }
+
+        $directorsReportConcepts = [
+            'direp:StatementThatDirectorsReportHasBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime',
+            'direp:DateSigningDirectorsReport',
+            'direp:DirectorSigningDirectorsReport',
+        ];
+        $directorsReportRequired = $companiesHouse
+            && $this->hasSourceFactKey($sourceFacts, 'directors_report_small_companies_statement');
+        $directorsReportPages = $xpath->query('//xhtml:div[contains(concat(" ", normalize-space(@class), " "), " directors-report-page ")]')->length ?? 0;
+        foreach ($directorsReportConcepts as $directorsReportConcept) {
+            $count = $xpath->query('//*[@name="' . $directorsReportConcept . '"]')->length ?? 0;
+            if ($directorsReportRequired && $count !== 1) {
+                $errors[] = 'Companies House Directors’ Report requires exactly one filing fact: '
+                    . $directorsReportConcept . '.';
+            } elseif (!$directorsReportRequired && $count !== 0) {
+                $errors[] = 'Directors’ Report fact must be absent for this authority or exemption choice: '
+                    . $directorsReportConcept . '.';
+            }
+        }
+        if ($directorsReportRequired && $directorsReportPages !== 1) {
+            $errors[] = 'Companies House output requires one final Directors’ Report page.';
+        } elseif (!$directorsReportRequired && $directorsReportPages !== 0) {
+            $errors[] = 'A Directors’ Report page is not permitted for this authority or exemption choice.';
+        }
+        $hasSection415aText = str_contains($xhtml, 'exemption under section 415A');
+        if ($companiesHouse && !$directorsReportRequired && !$hasSection415aText) {
+            $errors[] = 'Companies House output must include the Section 415A exemption statement on the final notes page.';
+        } elseif ((!$companiesHouse || $directorsReportRequired) && $hasSection415aText) {
+            $errors[] = 'The Section 415A exemption statement is not permitted for this output.';
         }
         foreach ($this->directorSigningValidationErrors($xpath) as $directorSigningError) {
             $errors[] = $directorSigningError;

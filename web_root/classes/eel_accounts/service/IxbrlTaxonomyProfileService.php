@@ -18,7 +18,7 @@ namespace eel_accounts\Service;
 final class IxbrlTaxonomyProfileService
 {
     public const PROFILE = 'frc-2026-frs-105';
-    public const BASIS_VERSION = 'ixbrl-accounts-v9';
+    public const BASIS_VERSION = 'ixbrl-accounts-v10';
     public const SCHEMA_REF = 'https://xbrl.frc.org.uk/FRS-102/2026-01-01/FRS-102-2026-01-01.xsd';
 
     public const NAMESPACES = [
@@ -114,6 +114,12 @@ final class IxbrlTaxonomyProfileService
             $this->mapping('audit_exemption_statement', 'direp', 'StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies', 'Audit exemption statement', 'text', 'disclosure_statement', 'audit_exempt_section_477', 'duration', null, null, null, false, 330),
             $this->mapping('directors_responsibility_statement', 'direp', 'StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct', 'Directors responsibilities statement', 'text', 'disclosure_statement', 'directors_acknowledge_responsibilities', 'duration', null, null, null, false, 340),
             $this->mapping('members_no_audit_statement', 'direp', 'StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit', 'Members have not required an audit statement', 'text', 'disclosure_statement', 'members_have_not_required_audit', 'duration', null, null, null, false, 350),
+            $this->mapping('profit_loss_not_delivered_statement', 'direp', 'StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006', 'Section 444(5A) profit and loss non-delivery election', 'text', 'disclosure_statement', 'profit_loss_not_delivered_section_444', 'duration', null, null, null, false, 351, false),
+            $this->mapping('directors_report_small_companies_statement', 'direp', 'StatementThatDirectorsReportHasBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime', 'Directors Report small companies regime statement', 'text', 'inverse_disclosure_statement', 'directors_report_exempt_section_415a', 'duration', null, null, null, false, 352, false),
+            $this->mapping('directors_report_signing_date', 'direp', 'DateSigningDirectorsReport', 'Date signing Directors Report', 'date', 'directors_report_signing_date', 'accounts_approval_date', 'instant_end', null, null, null, false, 353, false),
+            $this->mapping('director_signing_directors_report', 'direp', 'DirectorSigningDirectorsReport', 'Director signing Directors Report', 'text', 'directors_report_marker', 'approving_director_name', 'duration_director_1', null, null, [
+                'bus:EntityOfficersDimension' => 'bus:Director1',
+            ], false, 354, false),
             $this->mapping('no_material_off_balance_sheet_arrangements', 'core', 'GeneralDescriptionAnyOff-balanceSheetArrangementsIncludingNaturePurposeFinancialImpactOnEntity', 'No material off-balance sheet arrangements', 'text', 'absence_statement', 'has_material_off_balance_sheet_arrangements', 'duration', null, null, null, false, 360),
             $this->mapping('no_director_advances_or_credits', 'direp', 'GeneralDescriptionAdvancesCreditsToDirectorsIncludingTermsInterestRates', 'Director advances and credits to directors', 'text', 'director_loan_statement', 'has_director_advances_credits_or_guarantees', 'duration', null, null, null, false, 361),
             $this->mapping('no_director_guarantees', 'direp', 'GeneralDescriptionGuaranteesTheirTermsDirectors', 'No guarantees on behalf of directors', 'text', 'absence_statement', 'has_director_advances_credits_or_guarantees', 'duration', null, null, null, false, 362),
@@ -135,6 +141,8 @@ final class IxbrlTaxonomyProfileService
             'audit_exempt_section_477' => 'For the financial year the company was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.',
             'directors_acknowledge_responsibilities' => 'The directors acknowledge their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.',
             'members_have_not_required_audit' => 'The members have not required the company to obtain an audit of its accounts for the financial year in accordance with section 476 of the Companies Act 2006.',
+            'profit_loss_not_delivered_section_444' => 'The directors have elected not to deliver a copy of the company\'s profit and loss account in accordance with section 444(5A) of the Companies Act 2006.',
+            'directors_report_exempt_section_415a' => 'The Directors\' Report has been prepared in accordance with the provisions applicable to companies subject to the small companies regime.',
             default => '',
         };
     }
@@ -211,7 +219,8 @@ final class IxbrlTaxonomyProfileService
         ?string $decimals,
         ?array $dimensions,
         bool $comparativeEnabled,
-        int $sortOrder
+        int $sortOrder,
+        bool $required = true
     ): array {
         return [
             'fact_key' => $factKey,
@@ -231,7 +240,7 @@ final class IxbrlTaxonomyProfileService
                 ? \eel_accounts\Support\Utf8::json($dimensions, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
                 : null,
             'comparative_enabled' => $comparativeEnabled ? 1 : 0,
-            'is_required' => 1,
+            'is_required' => $required ? 1 : 0,
             'sort_order' => $sortOrder,
             'is_active' => 1,
         ];

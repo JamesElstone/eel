@@ -112,6 +112,51 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds conditional Companies House election and Directors Report provenance facts', static function () use ($harness, $service): void {
+            $mappings = [];
+            foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {
+                $mappings[(string)$mapping['fact_key']] = $mapping;
+            }
+            $build = new ReflectionMethod($service, 'factFromMapping');
+            $build->setAccessible(true);
+            $directorReport = [
+                'review_notes' => 'Opening narrative.',
+                'review_notes_hash' => str_repeat('a', 64),
+                'confirmation_sentences' => ['One.', 'Two!'],
+                'source_acknowledgements' => [[
+                    'check_code' => 'director_loan',
+                    'basis_hash' => str_repeat('b', 64),
+                    'note' => 'One. Two!',
+                ]],
+            ];
+            $report = [
+                'company' => [],
+                'accounting_period' => ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
+                'disclosures' => [
+                    'directors_report_exempt_section_415a' => 0,
+                    'profit_loss_not_delivered_section_444' => 1,
+                    'accounts_approval_date' => '2026-02-01',
+                    'approving_director_name' => 'Fixture Director',
+                ],
+                'current' => ['buckets' => [], 'sources' => []],
+                'director_report' => $directorReport,
+            ];
+
+            $election = $build->invoke($service, $mappings['profit_loss_not_delivered_statement'], $report, false);
+            $statement = $build->invoke($service, $mappings['directors_report_small_companies_statement'], $report, false);
+            $signingDate = $build->invoke($service, $mappings['directors_report_signing_date'], $report, false);
+            $signingMarker = $build->invoke($service, $mappings['director_signing_directors_report'], $report, false);
+            $harness->assertTrue(str_contains((string)$election['text_value'], 'section 444(5A)'));
+            $harness->assertSame($directorReport, $statement['source']['director_report']);
+            $harness->assertSame('2026-02-01', (string)$signingDate['date_value']);
+            $harness->assertSame('', (string)$signingMarker['text_value']);
+
+            $report['disclosures']['directors_report_exempt_section_415a'] = 1;
+            $harness->assertSame(null, $build->invoke($service, $mappings['directors_report_small_companies_statement'], $report, false));
+            $harness->assertSame(null, $build->invoke($service, $mappings['directors_report_signing_date'], $report, false));
+            $harness->assertSame(null, $build->invoke($service, $mappings['director_signing_directors_report'], $report, false));
+        });
+
         $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'uses official concepts contexts units and creditor dimensions', static function () use ($harness): void {
             $mappings = [];
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $mapping) {

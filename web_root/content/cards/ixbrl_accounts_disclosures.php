@@ -35,6 +35,8 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         'audit_exempt_section_477',
         'directors_acknowledge_responsibilities',
         'members_have_not_required_audit',
+        'directors_report_exempt_section_415a',
+        'profit_loss_not_delivered_section_444',
         'companies_house_revised_accounts_public_register_confirmed',
     ];
 
@@ -112,6 +114,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         $suggestions = (array)($result['suggested_disclosures'] ?? []);
         $suggestionSources = (array)($result['suggestion_sources'] ?? []);
         $directorLoanDisclosure = (array)($context['services']['director_loan_disclosure'] ?? []);
+        $directorReport = (array)($result['director_report'] ?? []);
         $workflowStatus = (array)($context['services']['ixbrl_filing_approval_workflow'] ?? []);
         $approvalStatus = (array)($workflowStatus['accounts']
             ?? $context['services']['ixbrl_filing_approval']
@@ -303,12 +306,16 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             && $stateToken !== ''
             && $externalBlockers === []
             && ($editing || $formBlockers === []);
+        $directorReportNotesBlank = !empty($directorReport['review_notes_blank']);
+        $directorReportApprovalBlocked = $directorReportNotesBlank
+            && (int)($display['directors_report_exempt_section_415a'] ?? 1) === 0;
 
         return '<div class="settings-stack">
             <form method="post" action="?page=disclosures" data-ajax="true" data-ixbrl-trading-form="true" data-ixbrl-disclosures-form="true" data-ixbrl-approval-form="true"
                 data-ixbrl-disclosures-can-edit="' . ($yearEndLocked ? '1' : '0') . '"
                 data-ixbrl-disclosures-initially-locked="' . ($disclosuresInitiallyLocked ? '1' : '0') . '"
-                data-ixbrl-approval-can-approve="' . ($approvalSubmissionAvailable ? '1' : '0') . '">
+                data-ixbrl-approval-can-approve="' . ($approvalSubmissionAvailable ? '1' : '0') . '"
+                data-ixbrl-directors-report-notes-blank="' . ($directorReportNotesBlank ? '1' : '0') . '">
             <input type="hidden" name="card_action" value="Ixbrl">
             ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -411,6 +418,11 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         ' . $this->yesNo('has_director_advances_credits_or_guarantees', 'Were there any director guarantees requiring disclosure?', $display['has_director_advances_credits_or_guarantees'] ?? null, $controlDisabled) . '
                         ' . $this->yesNo('has_financial_commitments_guarantees_or_contingencies', 'Are there any financial commitments, guarantees or contingencies requiring disclosure?', $display['has_financial_commitments_guarantees_or_contingencies'] ?? null, $controlDisabled) . '
                     </section>
+                    ' . $this->companiesHouseFilingOptionsPanel(
+                        $display,
+                        $controlDisabled,
+                        $directorReportNotesBlank
+                    ) . '
                     ' . $this->companiesHouseRevisedAccountsPanel($result, $display, $controlDisabled, $companyId, $accountingPeriodId) . '
                 </div>
                 ' . $this->ct600AuthorisationPanel(
@@ -427,11 +439,55 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                     $approvalNote,
                     $yearEndLocked,
                     $disclosuresInitiallyLocked,
-                    $approvalSubmissionAvailable,
+                    $approvalSubmissionAvailable && !$directorReportApprovalBlocked,
                     $bothCurrent
                 ) . '
             </form>
         </div>';
+    }
+
+    private function companiesHouseFilingOptionsPanel(
+        array $display,
+        bool $controlDisabled,
+        bool $reviewNotesBlank
+    ): string {
+        $question = function (string $name, string $label, string $helper) use ($display, $controlDisabled): string {
+            $value = $display[$name] ?? 1;
+            $normalised = $value === null || $value === '' ? 1 : (int)$value;
+            $yesId = 'ixbrl_' . $name . '_yes';
+            $noId = 'ixbrl_' . $name . '_no';
+            $disabled = $controlDisabled ? ' disabled aria-disabled="true"' : '';
+            return '<div class="form-row full ixbrl-companies-house-question">'
+                . '<div class="card-title">' . \eel_accounts\Support\Utf8::html($label) . '</div>'
+                . '<div class="helper ixbrl-question-helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>'
+                . '<div class="actions-row">'
+                . '<label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . $name . '" value="1" required data-ixbrl-disclosure-control="true" data-ixbrl-approval-control="true"' . ($normalised === 1 ? ' checked' : '') . $disabled . '> Yes</label>'
+                . '<label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . $name . '" value="0" required data-ixbrl-disclosure-control="true" data-ixbrl-approval-control="true"' . ($normalised === 0 ? ' checked' : '') . $disabled . '> No</label>'
+                . '</div>'
+                . $this->lockedMirror($name, $normalised, $controlDisabled)
+                . '</div>';
+        };
+        $warningHidden = $reviewNotesBlank
+            && (int)($display['directors_report_exempt_section_415a'] ?? 1) === 0
+                ? ''
+                : ' is-hidden';
+
+        return '<section class="panel-soft ixbrl-companies-house-filing-options">'
+            . '<h4 class="card-title">Companies House Filing Options</h4>'
+            . '<div class="helper">These elections affect only the Companies House copy. The HMRC accounts continue to include the Profit and Loss account and do not include Directors’ Report material.</div>'
+            . '<fieldset class="ixbrl-companies-house-filing-fieldset"><legend>Companies Act exemptions</legend>'
+            . $question(
+                'directors_report_exempt_section_415a',
+                'Are you claiming an Exemption from giving a Directors\' Report under Section 415A?',
+                'Yes is the default for a micro-entity. Choose No to include a Directors\' Report composed from Year End Notes followed by the non-empty Year End confirmation-note sentences.'
+            )
+            . '<div class="standout helper' . $warningHidden . '" data-ixbrl-directors-report-warning="true" aria-hidden="' . ($warningHidden === '' ? 'false' : 'true') . '">Year End Notes is blank. <a class="button" href="?page=year_end&amp;show_card=year_end_notes">Open Year End Notes</a> before approving accounts which include a Directors’ Report.</div>'
+            . $question(
+                'profit_loss_not_delivered_section_444',
+                'Are you claiming an Exemption from Public Profit & Loss Filing (Section 444)?',
+                'Yes omits the complete Profit and Loss page from the Companies House iXBRL and adds the Section 444(5A) election statement. It does not change the HMRC accounts.'
+            )
+            . '</fieldset></section>';
     }
 
     private function companiesHouseRevisedAccountsPanel(

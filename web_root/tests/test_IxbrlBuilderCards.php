@@ -684,6 +684,59 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'become public on the register and the original accounts remain visible'));
     });
 
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders one Companies Act fieldset between FRS 105 Notes and revised accounts', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => false,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'missing_labels' => [],
+                    'companies_house_revision_required' => true,
+                    'director_report' => ['review_notes_blank' => true],
+                    'disclosures' => [
+                        'accounting_standard' => 'FRS_105',
+                        'directors_report_exempt_section_415a' => 0,
+                        'profit_loss_not_delivered_section_444' => 1,
+                    ],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => true, 'sources' => []],
+                    'trading_status_answers' => ['is_still_trading' => 1, 'has_ever_traded' => 1],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval_workflow' => [
+                    'accounts' => ['state' => 'absent'],
+                    'hmrc' => ['state' => 'absent'],
+                    'state_token' => str_repeat('a', 64),
+                    'form_blockers' => [],
+                    'external_blockers' => [],
+                    'blockers' => [],
+                ],
+            ],
+        ]);
+        $notesPosition = strpos($html, 'FRS 105 Notes');
+        $optionsPosition = strpos($html, 'Companies House Filing Options');
+        $revisedPosition = strpos($html, 'Companies House Revised Accounts');
+        $harness->assertTrue($notesPosition !== false && $optionsPosition !== false && $notesPosition < $optionsPosition);
+        $harness->assertTrue($revisedPosition !== false && $optionsPosition < $revisedPosition);
+        $panelStart = strpos($html, '<section class="panel-soft ixbrl-companies-house-filing-options">');
+        $panelEnd = strpos($html, '</section>', $panelStart === false ? 0 : $panelStart);
+        $panel = $panelStart !== false && $panelEnd !== false
+            ? substr($html, $panelStart, $panelEnd - $panelStart)
+            : '';
+        $harness->assertSame(1, substr_count($panel, '<fieldset'));
+        $harness->assertTrue(str_contains($panel, 'name="directors_report_exempt_section_415a" value="0"'));
+        $harness->assertTrue(str_contains($panel, 'name="profit_loss_not_delivered_section_444" value="1"'));
+        $harness->assertTrue(str_contains($panel, 'show_card=year_end_notes'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-directors-report-notes-blank="1"'));
+        $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-submit="true" disabled'));
+    });
+
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'binds adaptive trading questions for initial and AJAX rendering', static function () use ($harness): void {
         $projectJs = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'project.js');
         $harness->assertTrue(str_contains($projectJs, 'initialiseIxbrlTradingForms'));
@@ -697,6 +750,8 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($projectJs, '[data-ixbrl-approval-mirror="true"]'));
         $harness->assertTrue(str_contains($projectJs, 'serverCanApprove || changed'));
         $harness->assertTrue(str_contains($projectJs, 'ctConfirmationsAreYes'));
+        $harness->assertTrue(str_contains($projectJs, 'directorsReportBlocked'));
+        $harness->assertTrue(str_contains($projectJs, 'data-ixbrl-directors-report-warning'));
         $harness->assertTrue(substr_count($projectJs, 'event.preventDefault()') >= 2);
         foreach (['original_unfiled_confirmed', 'authority_confirmed', 'declaration_confirmed'] as $confirmation) {
             $harness->assertTrue(str_contains($projectJs, "'" . $confirmation . "'"));

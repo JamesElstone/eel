@@ -775,6 +775,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ],
                 ];
                 $model = [
+                    'disclosures' => [
+                        'profit_loss_not_delivered_section_444' => 0,
+                    ],
                     'current' => [
                         'buckets' => [
                             'fixed_assets' => 431.43,
@@ -892,6 +895,60 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $invokePrivate($service, 'revisionMoney', -58.54)
                 );
                 $harness->assertTrue(str_contains($amendments, 'Fixed assets were restated'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'suppresses generated profit and loss change wording when Section 444 non-delivery is elected',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $supplied = 'User supplied explanation about an exceptional correction';
+                $texts = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    ['variance_explanation' => $supplied],
+                    [
+                        'non_compliance_explanation' => $supplied,
+                        'significant_amendments' => 'User supplied amendments remain unchanged',
+                    ],
+                    ['rows' => [[
+                        'metric_key' => 'turnover',
+                        'label' => 'Turnover',
+                        'app_value' => 1000.0,
+                        'filed_value' => 500.0,
+                        'variance' => 500.0,
+                        'status' => 'fail',
+                    ], [
+                        'metric_key' => 'fixed_assets',
+                        'label' => 'Fixed assets',
+                        'app_value' => 400.0,
+                        'filed_value' => 200.0,
+                        'variance' => 200.0,
+                        'status' => 'fail',
+                    ]]],
+                    [
+                        'disclosures' => ['profit_loss_not_delivered_section_444' => 1],
+                        'current' => [
+                            'buckets' => [
+                                'fixed_assets' => 400.0,
+                                'depreciation_write_offs' => 75.0,
+                            ],
+                            'director_loan_reporting_presentation' => [],
+                        ],
+                        'director_loan_disclosure' => [],
+                    ],
+                    []
+                );
+                $combined = mb_strtolower(
+                    (string)$texts['non_compliance_explanation'] . ' '
+                    . (string)$texts['significant_amendments']
+                );
+                $harness->assertTrue(str_contains($combined, mb_strtolower($supplied)));
+                $harness->assertTrue(str_contains($combined, 'user supplied amendments remain unchanged'));
+                $harness->assertTrue(str_contains($combined, 'fixed assets'));
+                $harness->assertFalse(str_contains($combined, 'turnover'));
+                $harness->assertFalse(str_contains($combined, 'depreciation'));
+                $harness->assertFalse(str_contains($combined, 'profit'));
             }
         );
 

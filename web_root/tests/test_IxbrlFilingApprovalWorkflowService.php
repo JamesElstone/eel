@@ -264,6 +264,63 @@ $workflowFixture = UnifiedApprovalWorkflowTestFixture::seed();
             $h->assertFalse(hash_equals($first, (string)$invoke('tokenForSnapshot', $right)));
         });
 
+        $h->check($service::class, 'allows draft saving but blocks direct approval when a required Directors Report has blank Year End Notes', static function () use (
+            $h,
+            $service,
+            $companyId,
+            $accountingPeriodId,
+            $ap79Input,
+            $ap79ImmutableCounts
+        ): void {
+            InterfaceDB::beginTransaction();
+            InterfaceDB::prepareExecute(
+                'UPDATE year_end_reviews
+                 SET review_notes = NULL
+                 WHERE company_id = :company_id AND accounting_period_id = :period_id',
+                ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+            );
+            InterfaceDB::prepareExecute(
+                'UPDATE ixbrl_accounts_disclosures
+                 SET directors_report_exempt_section_415a = 0
+                 WHERE company_id = :company_id AND accounting_period_id = :period_id',
+                ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+            );
+            \eel_accounts\Support\RequestCache::reset();
+            $status = $service->status($companyId, $accountingPeriodId);
+            $blockers = implode(' ', (array)($status['form_blockers'] ?? []));
+            $h->assertTrue(str_contains($blockers, 'Enter Year End Notes'));
+            $h->assertFalse((bool)($status['can_approve'] ?? true));
+
+            $input = $ap79Input();
+            $input['directors_report_exempt_section_415a'] = '0';
+            $input['profit_loss_not_delivered_section_444'] = '1';
+            $before = $ap79ImmutableCounts();
+            $draft = $service->saveDraft(
+                $companyId,
+                $accountingPeriodId,
+                $input,
+                'workflow-test',
+                (string)$status['state_token']
+            );
+            $h->assertTrue((bool)($draft['success'] ?? false));
+
+            $afterDraftStatus = $service->status($companyId, $accountingPeriodId);
+            try {
+                $service->approveAll(
+                    $companyId,
+                    $accountingPeriodId,
+                    $input,
+                    'workflow-test',
+                    '',
+                    (string)$afterDraftStatus['state_token']
+                );
+                $h->assertTrue(false);
+            } catch (RuntimeException $exception) {
+                $h->assertTrue(str_contains($exception->getMessage(), 'Enter Year End Notes'));
+            }
+            $h->assertSame($before, $ap79ImmutableCounts());
+        });
+
         $h->check($service::class, 'detects a database state change before any draft write', static function () use ($h, $invoke): void {
             InterfaceDB::beginTransaction();
             $number = str_pad((string)random_int(1, 99999999), 8, '0', STR_PAD_LEFT);

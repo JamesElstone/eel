@@ -684,7 +684,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, 'become public on the register and the original accounts remain visible'));
     });
 
-    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders one Companies Act fieldset between FRS 105 Notes and revised accounts', static function () use ($harness, $card): void {
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'renders two Companies Act fieldsets between FRS 105 Notes and revised accounts', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => [
@@ -720,7 +720,7 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
             ],
         ]);
         $notesPosition = strpos($html, 'FRS 105 Notes');
-        $optionsPosition = strpos($html, 'Companies House Filing Options');
+        $optionsPosition = strpos($html, 'Companies House Privacy Options');
         $revisedPosition = strpos($html, 'Companies House Revised Accounts');
         $harness->assertTrue($notesPosition !== false && $optionsPosition !== false && $notesPosition < $optionsPosition);
         $harness->assertTrue($revisedPosition !== false && $optionsPosition < $revisedPosition);
@@ -729,7 +729,20 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $panel = $panelStart !== false && $panelEnd !== false
             ? substr($html, $panelStart, $panelEnd - $panelStart)
             : '';
-        $harness->assertSame(1, substr_count($panel, '<fieldset'));
+        $harness->assertSame(2, substr_count($panel, '<fieldset'));
+        $harness->assertTrue(str_contains($panel, '<h4 class="card-title ixbrl-frs105-notes-title">Companies House Privacy Options</h4>'));
+        $harness->assertSame(2, substr_count($panel, '<fieldset class="panel-soft ixbrl-companies-house-question">'));
+        $harness->assertFalse(str_contains($panel, 'Companies Act exemptions'));
+        $harness->assertFalse(str_contains($panel, 'Yes is the default for a micro-entity'));
+        $harness->assertFalse(str_contains($panel, 'Yes omits the complete Profit and Loss page'));
+        $harness->assertTrue(str_contains(
+            $panel,
+            'The Directors&#039; Report uses Year End Notes as its opening text, followed by ordered bullet points created from each sentence in the non-empty Year End Confirmation Notes.'
+        ));
+        $harness->assertTrue(str_contains(
+            $panel,
+            'If exempted, the Profit and Loss account is withheld from the Companies House filing.'
+        ));
         $harness->assertTrue(str_contains($panel, 'name="directors_report_exempt_section_415a" value="0"'));
         $harness->assertTrue(str_contains($panel, 'name="profit_loss_not_delivered_section_444" value="1"'));
         $harness->assertTrue(str_contains($panel, 'show_card=year_end_notes'));

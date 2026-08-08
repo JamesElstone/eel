@@ -451,21 +451,29 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
         bool $controlDisabled,
         bool $reviewNotesBlank
     ): string {
-        $question = function (string $name, string $label, string $helper) use ($display, $controlDisabled): string {
+        $question = function (
+            string $name,
+            string $label,
+            string $helper = '',
+            string $additionalHtml = ''
+        ) use ($display, $controlDisabled): string {
             $value = $display[$name] ?? 1;
             $normalised = $value === null || $value === '' ? 1 : (int)$value;
             $yesId = 'ixbrl_' . $name . '_yes';
             $noId = 'ixbrl_' . $name . '_no';
             $disabled = $controlDisabled ? ' disabled aria-disabled="true"' : '';
-            return '<div class="form-row full ixbrl-companies-house-question">'
-                . '<div class="card-title">' . \eel_accounts\Support\Utf8::html($label) . '</div>'
-                . '<div class="helper ixbrl-question-helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>'
+            return '<fieldset class="panel-soft ixbrl-companies-house-question">'
+                . '<legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend>'
+                . ($helper !== ''
+                    ? '<div class="helper ixbrl-question-helper">' . \eel_accounts\Support\Utf8::html($helper) . '</div>'
+                    : '')
                 . '<div class="actions-row">'
                 . '<label for="' . $yesId . '"><input id="' . $yesId . '" type="radio" name="' . $name . '" value="1" required data-ixbrl-disclosure-control="true" data-ixbrl-approval-control="true"' . ($normalised === 1 ? ' checked' : '') . $disabled . '> Yes</label>'
                 . '<label for="' . $noId . '"><input id="' . $noId . '" type="radio" name="' . $name . '" value="0" required data-ixbrl-disclosure-control="true" data-ixbrl-approval-control="true"' . ($normalised === 0 ? ' checked' : '') . $disabled . '> No</label>'
                 . '</div>'
                 . $this->lockedMirror($name, $normalised, $controlDisabled)
-                . '</div>';
+                . $additionalHtml
+                . '</fieldset>';
         };
         $warningHidden = $reviewNotesBlank
             && (int)($display['directors_report_exempt_section_415a'] ?? 1) === 0
@@ -473,21 +481,19 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                 : ' is-hidden';
 
         return '<section class="panel-soft ixbrl-companies-house-filing-options">'
-            . '<h4 class="card-title">Companies House Filing Options</h4>'
-            . '<div class="helper">These elections affect only the Companies House copy. The HMRC accounts continue to include the Profit and Loss account and do not include Directors’ Report material.</div>'
-            . '<fieldset class="ixbrl-companies-house-filing-fieldset"><legend>Companies Act exemptions</legend>'
+            . '<h4 class="card-title ixbrl-frs105-notes-title">Companies House Privacy Options</h4>'
             . $question(
                 'directors_report_exempt_section_415a',
                 'Are you claiming an Exemption from giving a Directors\' Report under Section 415A?',
-                'Yes is the default for a micro-entity. Choose No to include a Directors\' Report composed from Year End Notes followed by the non-empty Year End confirmation-note sentences.'
+                'The Directors\' Report uses Year End Notes as its opening text, followed by ordered bullet points created from each sentence in the non-empty Year End Confirmation Notes.',
+                '<div class="standout helper' . $warningHidden . '" data-ixbrl-directors-report-warning="true" aria-hidden="' . ($warningHidden === '' ? 'false' : 'true') . '">Year End Notes is blank. <a class="button" href="?page=year_end&amp;show_card=year_end_notes">Open Year End Notes</a> before approving accounts which include a Directors’ Report.</div>'
             )
-            . '<div class="standout helper' . $warningHidden . '" data-ixbrl-directors-report-warning="true" aria-hidden="' . ($warningHidden === '' ? 'false' : 'true') . '">Year End Notes is blank. <a class="button" href="?page=year_end&amp;show_card=year_end_notes">Open Year End Notes</a> before approving accounts which include a Directors’ Report.</div>'
             . $question(
                 'profit_loss_not_delivered_section_444',
                 'Are you claiming an Exemption from Public Profit & Loss Filing (Section 444)?',
-                'Yes omits the complete Profit and Loss page from the Companies House iXBRL and adds the Section 444(5A) election statement. It does not change the HMRC accounts.'
+                'If exempted, the Profit and Loss account is withheld from the Companies House filing.'
             )
-            . '</fieldset></section>';
+            . '</section>';
     }
 
     private function companiesHouseRevisedAccountsPanel(

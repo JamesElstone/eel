@@ -29,9 +29,92 @@ if (!function_exists('test_output_bootstrap')) {
                 'passed_tests' => 0,
                 'failed_tests' => 0,
                 'skipped_tests' => 0,
+                'allowed_skipped_tests' => 0,
+                'unexpected_skipped_tests' => 0,
+            ],
+            'skip_policy' => [
+                'strict' => false,
+                'allowed_categories' => [],
             ],
             'classes' => [],
             'messages' => [],
+        ];
+    }
+}
+
+if (!function_exists('test_output_normalize_skip_category')) {
+    function test_output_normalize_skip_category(string $category): string
+    {
+        $normalizedCategory = strtolower($category);
+
+        if ($normalizedCategory === '' || preg_match('/^[a-z0-9_-]+$/D', $normalizedCategory) !== 1) {
+            throw new InvalidArgumentException(
+                'Invalid skip category "' . $category
+                . '". Skip categories may contain only letters, digits, hyphens, and underscores.'
+            );
+        }
+
+        return $normalizedCategory;
+    }
+}
+
+if (!function_exists('test_output_configure_skip_policy')) {
+    function test_output_configure_skip_policy(bool $strict, array $allowedCategories = []): void
+    {
+        test_output_bootstrap();
+
+        $normalizedCategories = [];
+
+        foreach ($allowedCategories as $category) {
+            if (!is_string($category)) {
+                throw new InvalidArgumentException('Skip policy categories must be strings.');
+            }
+
+            $normalizedCategory = test_output_normalize_skip_category($category);
+            $normalizedCategories[$normalizedCategory] = true;
+        }
+
+        $GLOBALS['test_output_state']['skip_policy'] = [
+            'strict' => $strict,
+            'allowed_categories' => array_keys($normalizedCategories),
+        ];
+    }
+}
+
+if (!function_exists('test_output_parse_skip_policy_arguments')) {
+    /**
+     * @param array<int, mixed> $arguments
+     * @return array{strict: bool, allowed_categories: list<string>}
+     */
+    function test_output_parse_skip_policy_arguments(array $arguments): array
+    {
+        $strict = false;
+        $allowedCategories = [];
+
+        foreach (array_slice($arguments, 1) as $argument) {
+            if (!is_string($argument)) {
+                continue;
+            }
+
+            if ($argument === '--strict-skips') {
+                $strict = true;
+                continue;
+            }
+
+            if ($argument === '--allow-skip-category') {
+                throw new InvalidArgumentException(
+                    'The --allow-skip-category option requires a category in the form --allow-skip-category=<category>.'
+                );
+            }
+
+            if (str_starts_with($argument, '--allow-skip-category=')) {
+                $allowedCategories[] = substr($argument, strlen('--allow-skip-category='));
+            }
+        }
+
+        return [
+            'strict' => $strict,
+            'allowed_categories' => $allowedCategories,
         ];
     }
 }
@@ -49,9 +132,14 @@ if (!function_exists('test_output_result')) {
         string $className,
         string $description,
         string $result,
-        string $diagnostic = ''
+        string $diagnostic = '',
+        string $skipCategory = 'unclassified'
     ): void {
         test_output_bootstrap();
+
+        if ($result === 'skip') {
+            $skipCategory = test_output_normalize_skip_category($skipCategory);
+        }
 
         $suffix = match ($result) {
             'fail' => ' failed.',
@@ -64,7 +152,7 @@ if (!function_exists('test_output_result')) {
             $message .= ' ' . $diagnostic;
         }
 
-        test_output_record_result($className, $description, $result, $message);
+        test_output_record_result($className, $description, $result, $message, $diagnostic, $skipCategory);
     }
 }
 
@@ -77,21 +165,29 @@ if (!function_exists('test_output_failure_line')) {
 }
 
 if (!function_exists('test_output_skip_line')) {
-    function test_output_skip_line(string $message): void
+    function test_output_skip_line(string $message, string $category = 'unclassified'): void
     {
         test_output_bootstrap();
-        test_output_record_message($message, 'skip');
+        test_output_record_message($message, 'skip', $category);
     }
 }
 
 if (!function_exists('test_output_record_message')) {
-    function test_output_record_message(string $message, string $result): void
+    function test_output_record_message(
+        string $message,
+        string $result,
+        string $skipCategory = 'unclassified'
+    ): void
     {
         test_output_bootstrap();
 
+        if ($result === 'skip') {
+            $skipCategory = test_output_normalize_skip_category($skipCategory);
+        }
+
         $pattern = match ($result) {
-            'fail' => '/^([^:]+):\s+(.+?) failed\.(?:\s+.*)?$/s',
-            'skip' => '/^([^:]+):\s+(.+?) skipped\.(?:\s+.*)?$/s',
+            'fail' => '/^([^:]+):\s+(.+?) failed\.(?:\s+(.*))?$/s',
+            'skip' => '/^([^:]+):\s+(.+?) skipped\.(?:\s+(.*))?$/s',
             default => '/^([^:]+):\s+(.+?)(?:\.)?$/s',
         };
 
@@ -109,7 +205,14 @@ if (!function_exists('test_output_record_message')) {
             return;
         }
 
-        test_output_record_result(trim($matches[1]), trim($matches[2]), $result, $message);
+        test_output_record_result(
+            trim($matches[1]),
+            trim($matches[2]),
+            $result,
+            $message,
+            isset($matches[3]) ? trim($matches[3]) : '',
+            $skipCategory
+        );
     }
 }
 
@@ -118,7 +221,9 @@ if (!function_exists('test_output_record_result')) {
         string $className,
         string $description,
         string $result,
-        string $message
+        string $message,
+        string $diagnostic = '',
+        string $skipCategory = 'unclassified'
     ): void {
         test_output_bootstrap();
 
@@ -136,10 +241,17 @@ if (!function_exists('test_output_record_result')) {
             ];
         }
 
-        $state['classes'][$className]['tests'][] = [
+        $test = [
             'name' => $description,
             'result' => $result,
         ];
+
+        if ($result === 'skip') {
+            $test['diagnostic'] = $diagnostic;
+            $test['skip_category'] = test_output_normalize_skip_category($skipCategory);
+        }
+
+        $state['classes'][$className]['tests'][] = $test;
 
         if ($result === 'fail') {
             $state['classes'][$className]['result'] = 'fail';
@@ -164,6 +276,12 @@ if (!function_exists('test_output_render')) {
         $failedClasses = 0;
         $totalTests = 0;
         $failedTests = 0;
+        $skippedTests = 0;
+        $allowedSkippedTests = 0;
+        $unexpectedSkippedTests = 0;
+        $skipPolicy = $state['skip_policy'] ?? [];
+        $strictSkips = (bool)($skipPolicy['strict'] ?? false);
+        $allowedCategories = array_fill_keys($skipPolicy['allowed_categories'] ?? [], true);
 
         foreach ($classes as $class) {
             $totalTests += count($class['tests']);
@@ -173,7 +291,14 @@ if (!function_exists('test_output_render')) {
                     $failedTests++;
                 }
                 if (($test['result'] ?? 'pass') === 'skip') {
-                    $state['summary']['skipped_tests']++;
+                    $skippedTests++;
+                    $skipCategory = (string)($test['skip_category'] ?? 'unclassified');
+
+                    if (isset($allowedCategories[$skipCategory])) {
+                        $allowedSkippedTests++;
+                    } else {
+                        $unexpectedSkippedTests++;
+                    }
                 }
             }
 
@@ -187,8 +312,24 @@ if (!function_exists('test_output_render')) {
         $state['summary']['passed_classes'] = $totalClasses - $failedClasses;
         $state['summary']['total_tests'] = $totalTests;
         $state['summary']['failed_tests'] = $failedTests;
-        $state['summary']['passed_tests'] = $totalTests - $failedTests;
-        $state['summary']['status'] = $failedTests === 0 && $state['summary']['status'] !== 'failing' ? 'healthy' : 'failing';
+        $state['summary']['skipped_tests'] = $skippedTests;
+        $state['summary']['allowed_skipped_tests'] = $allowedSkippedTests;
+        $state['summary']['unexpected_skipped_tests'] = $unexpectedSkippedTests;
+        $state['summary']['passed_tests'] = $totalTests - $failedTests - $skippedTests;
+
+        $hasFailureMessage = false;
+        foreach ($state['messages'] as $message) {
+            if (($message['result'] ?? 'pass') === 'fail') {
+                $hasFailureMessage = true;
+                break;
+            }
+        }
+
+        $state['summary']['status'] = (
+            $failedTests === 0
+            && !$hasFailureMessage
+            && (!$strictSkips || $unexpectedSkippedTests === 0)
+        ) ? 'healthy' : 'failing';
         $state['completed_at'] = gmdate('c');
 
         if (!headers_sent()) {

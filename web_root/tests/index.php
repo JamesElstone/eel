@@ -18,6 +18,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 
 $testsDirectory = __DIR__;
 test_output_bootstrap();
+
+if (PHP_SAPI === 'cli') {
+    try {
+        $skipPolicy = test_output_parse_skip_policy_arguments($_SERVER['argv'] ?? []);
+        test_output_configure_skip_policy(
+            $skipPolicy['strict'],
+            $skipPolicy['allowed_categories']
+        );
+    } catch (Throwable $exception) {
+        test_output_result(
+            'TestRunner',
+            'configures skip policy',
+            'fail',
+            $exception->getMessage()
+        );
+        test_output_render();
+        exit(1);
+    }
+}
+
 $files = glob($testsDirectory . DIRECTORY_SEPARATOR . 'test_*.php');
 
 if ($files === false) {

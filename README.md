@@ -168,6 +168,33 @@ eel should keep accounting behaviour in app-owned services, repositories, pages,
 
 ---
 
+## Running Tests
+
+Run the full local suite with:
+
+```bash
+php web_root/tests/index.php
+```
+
+The runner returns JSON and exits with a non-zero code if any test fails.
+
+Skipped tests are reported separately and are never counted as passed. Test code can attach a machine-readable category when skipping:
+
+```php
+$harness->skip('MariaDB-specific assertion running under SQLite.', 'database-engine');
+```
+
+Normal runs remain healthy when tests are skipped. For readiness checks, enable strict skip handling and explicitly allow only expected environmental categories:
+
+```bash
+php web_root/tests/index.php \
+  --strict-skips \
+  --allow-skip-category=database-engine \
+  --allow-skip-category=external-service
+```
+
+In strict mode, any skipped test whose category is not listed makes the run unhealthy and produces a non-zero exit code. Legacy one-argument `skip()` calls use the `unclassified` category.
+
 ## License
 
 This repository is mixed-licensed.

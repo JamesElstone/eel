@@ -1,5 +1,30 @@
 # eelKit Changes
 
+## Policy-aware test skips
+
+Feature name: `policy_aware_test_skips`.
+
+The test harness now accepts an optional machine-readable category when skipping a test:
+
+```php
+$harness->skip('MariaDB-specific assertion running under SQLite.', 'database-engine');
+```
+
+Categories are normalized to lowercase and may contain letters, digits, hyphens, and underscores. Existing one-argument calls remain compatible and use `unclassified`; invalid categories are reported as test failures. Skipped-test JSON records include both `diagnostic` and `skip_category`.
+
+Test summaries no longer count skipped tests as passed. They retain the existing totals and add `allowed_skipped_tests` and `unexpected_skipped_tests`. Normal runs remain healthy when tests are skipped.
+
+CLI readiness checks can opt into strict handling and repeat the category allowlist option:
+
+```bash
+php web_root/tests/index.php \
+  --strict-skips \
+  --allow-skip-category=database-engine \
+  --allow-skip-category=external-service
+```
+
+Strict runs fail when any skip category is not explicitly allowed. Allowed skips remain reported as skipped, and actual failures remain fatal regardless of the skip policy. Web-based runs and existing CLI consumers retain non-strict behavior unless strict policy is explicitly configured.
+
 ## Opt-in multiline table exports
 
 Feature name: `multiline_table_exports`.

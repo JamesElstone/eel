@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PeriodLedgerTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\CtPeriodTurnoverService::class,
@@ -100,15 +101,81 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $h->check($service::class, 'derives the reconciled AP79 turnover from the posted ledger', static function () use ($h, $service): void {
-            if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
-                $h->skip('Corporation Tax periods are unavailable on the default connection.');
-            }
-            $periods = (new \eel_accounts\Service\CorporationTaxPeriodService())
-                ->fetchExistingForAccountingPeriod(49, 79);
-            if (count($periods) !== 2) {
-                $h->skip('The AP79 two-period fixture is unavailable.');
-            }
-            $result = $service->fetch(49, 79, $periods);
+            $h->assertTrue(\InterfaceDB::tableExists('corporation_tax_periods'));
+
+            \InterfaceDB::beginTransaction();
+            $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+            $companyNumber = 'CTT' . $marker;
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active)
+                 VALUES (:company_name, :company_number, 1)',
+                [
+                    'company_name' => 'CT Turnover Fixture ' . $marker,
+                    'company_number' => $companyNumber,
+                ]
+            );
+            $companyId = (int)\InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $companyNumber]
+            );
+            $h->assertTrue($companyId > 0);
+
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'AP79 turnover fixture',
+                    'period_start' => '2022-09-05',
+                    'period_end' => '2023-09-30',
+                ]
+            );
+            $accountingPeriodId = (int)\InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                ['company_id' => $companyId]
+            );
+            $h->assertTrue($accountingPeriodId > 0);
+
+            $turnoverNominalId = periodLedgerTestInsertNominal(
+                'CTI' . $marker,
+                'Turnover ' . $marker,
+                'income',
+                'allowable'
+            );
+            $bankNominalId = periodLedgerTestInsertNominal(
+                'CTA' . $marker,
+                'Bank ' . $marker,
+                'asset',
+                'other'
+            );
+            periodLedgerTestInsertJournal(
+                $companyId,
+                $accountingPeriodId,
+                '2023-09-04',
+                'ct-turnover-first-' . $marker,
+                [
+                    [$bankNominalId, 9393.64, 0.0],
+                    [$turnoverNominalId, 0.0, 9393.64],
+                ]
+            );
+            periodLedgerTestInsertJournal(
+                $companyId,
+                $accountingPeriodId,
+                '2023-09-30',
+                'ct-turnover-second-' . $marker,
+                [
+                    [$bankNominalId, 631.80, 0.0],
+                    [$turnoverNominalId, 0.0, 631.80],
+                ]
+            );
+
+            $synced = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $h->assertSame(true, (bool)($synced['success'] ?? false));
+            $periods = (array)($synced['periods'] ?? []);
+            $h->assertCount(2, $periods);
+
+            $result = $service->fetch($companyId, $accountingPeriodId, $periods);
             $facts = (array)($result['periods'] ?? []);
 
             $h->assertSame(true, (bool)($result['available'] ?? false));
@@ -117,7 +184,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertSame(631.80, (float)$facts[1]['actual_turnover']);
             $h->assertSame(9394, (int)$facts[0]['ct600_box_145_whole_pounds']);
             $h->assertSame(631, (int)$facts[1]['ct600_box_145_whole_pounds']);
-            $h->assertSame(7, (int)$result['rounding_residual_ct_period_id']);
+            $h->assertSame((int)$periods[1]['id'], (int)$result['rounding_residual_ct_period_id']);
         });
     }
 );

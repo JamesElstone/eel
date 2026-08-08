@@ -14,7 +14,10 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\JournalCorrectionService::class, static function (GeneratedServiceClassTestHarness $harness): void {
     $harness->check(\eel_accounts\Service\JournalCorrectionService::class, 'database rejects direct journal mutations and parent deletion', static function () use ($harness): void {
         if (!in_array(InterfaceDB::driverName(), ['mysql', 'odbc'], true)) {
-            $harness->skip('MySQL/MariaDB journal guard triggers are verified by this database test.');
+            $harness->skip(
+                'MySQL/MariaDB journal guard triggers are verified by this database test.',
+                'database-engine'
+            );
         }
 
         $triggerCount = (int)InterfaceDB::fetchColumn(

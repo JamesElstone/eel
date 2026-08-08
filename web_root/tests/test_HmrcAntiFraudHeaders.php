@@ -83,7 +83,10 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
 
             foreach ($transportFaultMarkers as $marker) {
                 if (str_contains($message, $marker)) {
-                    $harness->skip('HMRC anti-fraud sandbox transport failure: ' . $exception->getMessage());
+                    $harness->skip(
+                        'HMRC anti-fraud sandbox transport failure: ' . $exception->getMessage(),
+                        'external-service'
+                    );
                 }
             }
 
@@ -101,7 +104,10 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
 
         $statusCode = (int)($response['status_code'] ?? 0);
         if ($statusCode === 0 || $statusCode === 408 || $statusCode === 429 || $statusCode >= 500) {
-            $harness->skip('HMRC anti-fraud sandbox service unavailable (HTTP ' . $statusCode . ').');
+            $harness->skip(
+                'HMRC anti-fraud sandbox service unavailable (HTTP ' . $statusCode . ').',
+                'external-service'
+            );
         }
 
         $body = json_decode((string)($response['body'] ?? ''), true);

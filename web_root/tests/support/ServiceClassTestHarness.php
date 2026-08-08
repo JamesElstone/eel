@@ -217,7 +217,12 @@ final class GeneratedServiceClassTestHarness
             $callback();
             $this->reportPass($className, $description);
         } catch (GeneratedServiceClassTestSkippedException $exception) {
-            $this->reportSkip($className, $description, $exception->getMessage());
+            $this->reportSkip(
+                $className,
+                $description,
+                $exception->getMessage(),
+                $exception->getCategory()
+            );
         } catch (Throwable $exception) {
             $this->reportFailure($className, $description, $exception);
         } finally {
@@ -234,9 +239,9 @@ final class GeneratedServiceClassTestHarness
         }
     }
 
-    public function skip(string $reason = 'skipped'): never
+    public function skip(string $reason = 'skipped', string $category = 'unclassified'): never
     {
-        throw new GeneratedServiceClassTestSkippedException($reason);
+        throw new GeneratedServiceClassTestSkippedException($reason, $category);
     }
 
     private function reportPass(string $className, string $description): void
@@ -251,10 +256,16 @@ final class GeneratedServiceClassTestHarness
         );
     }
 
-    private function reportSkip(string $className, string $description, string $reason): void
+    private function reportSkip(
+        string $className,
+        string $description,
+        string $reason,
+        string $category
+    ): void
     {
         test_output_skip_line(
-            $className . ': ' . $description . ' skipped. ' . $reason
+            $className . ': ' . $description . ' skipped. ' . $reason,
+            $category
         );
     }
 
@@ -317,4 +328,16 @@ final class GeneratedServiceClassTestHarness
 
 final class GeneratedServiceClassTestSkippedException extends RuntimeException
 {
+    private string $category;
+
+    public function __construct(string $reason, string $category)
+    {
+        parent::__construct($reason);
+        $this->category = test_output_normalize_skip_category($category);
+    }
+
+    public function getCategory(): string
+    {
+        return $this->category;
+    }
 }

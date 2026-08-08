@@ -577,28 +577,93 @@ $harness->run(HmrcSubmissionAction::class, static function (
         HmrcSubmissionAction::class,
         'enforces developer mode and an explicitly bound exchange for archived response reprocessing',
         static function () use ($harness, $action): void {
-            $adminUserId = (int)(InterfaceDB::fetchColumn(
-                'SELECT id FROM users WHERE role_id = :role_id ORDER BY id LIMIT 1',
-                ['role_id' => RoleAssignmentService::ADMIN_ROLE_ID]
-            ) ?: 0);
-            $period = InterfaceDB::fetchOne(
-                'SELECT c.id AS company_id, c.company_name, c.company_number,
-                        ap.id AS accounting_period_id, ctp.id AS ct_period_id
-                 FROM corporation_tax_periods ctp
-                 INNER JOIN companies c ON c.id = ctp.company_id
-                 INNER JOIN accounting_periods ap ON ap.id = ctp.accounting_period_id
-                 WHERE ctp.status <> :status
-                 ORDER BY ctp.id
-                 LIMIT 1',
-                ['status' => 'superseded']
-            );
-            if ($adminUserId <= 0 || !is_array($period)) {
-                $harness->skip('An administrator and CT period fixture are required.');
-            }
-
             $previousDeveloperOptions = AppConfigurationStore::get('developer_options', false);
             $context = new \eel_accounts\Service\AccountingContextService();
+            InterfaceDB::beginTransaction();
             try {
+                $marker = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 10));
+                $companyNumber = 'HRP' . $marker;
+                $adminEmail = 'hmrc-reprocess-' . strtolower($marker) . '@example.test';
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO users (display_name, email_address, role_id)
+                     VALUES (:display_name, :email_address, :role_id)',
+                    [
+                        'display_name' => 'HMRC Reprocess Administrator',
+                        'email_address' => $adminEmail,
+                        'role_id' => RoleAssignmentService::ADMIN_ROLE_ID,
+                    ]
+                );
+                $adminUserId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM users WHERE email_address = :email_address',
+                    ['email_address' => $adminEmail]
+                );
+                $harness->assertTrue($adminUserId > 0);
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number, is_active)
+                     VALUES (:company_name, :company_number, 1)',
+                    [
+                        'company_name' => 'HMRC Reprocess Fixture ' . $marker,
+                        'company_number' => $companyNumber,
+                    ]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM companies WHERE company_number = :company_number',
+                    ['company_number' => $companyNumber]
+                );
+                $harness->assertTrue($companyId > 0);
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                     VALUES (:company_id, :label, :period_start, :period_end)',
+                    [
+                        'company_id' => $companyId,
+                        'label' => 'HMRC reprocess fixture',
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                    ]
+                );
+                $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM accounting_periods WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                    ['company_id' => $companyId]
+                );
+                $harness->assertTrue($accountingPeriodId > 0);
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO corporation_tax_periods (
+                        company_id, accounting_period_id, sequence_no,
+                        period_start, period_end, status
+                     ) VALUES (
+                        :company_id, :accounting_period_id, 1,
+                        :period_start, :period_end, :status
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'period_start' => '2025-01-01',
+                        'period_end' => '2025-12-31',
+                        'status' => 'pending',
+                    ]
+                );
+                $ctPeriodId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM corporation_tax_periods
+                     WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                     ORDER BY id DESC LIMIT 1',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                    ]
+                );
+                $harness->assertTrue($ctPeriodId > 0);
+                $period = [
+                    'company_id' => $companyId,
+                    'company_name' => 'HMRC Reprocess Fixture ' . $marker,
+                    'company_number' => $companyNumber,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'ct_period_id' => $ctPeriodId,
+                ];
+
                 authenticateTestSession($adminUserId);
                 $context->setPageContext(
                     (int)$period['company_id'],
@@ -641,7 +706,6 @@ $harness->run(HmrcSubmissionAction::class, static function (
                     'Developer Options must be enabled'
                 ));
 
-                InterfaceDB::beginTransaction();
                 InterfaceDB::prepareExecute(
                     'INSERT INTO hmrc_ct600_submissions
                         (company_id, accounting_period_id, ct_period_id, mode, environment,
@@ -661,7 +725,11 @@ $harness->run(HmrcSubmissionAction::class, static function (
                         'submission_type' => 'original',
                     ]
                 );
-                $submissionId = (int)(InterfaceDB::fetchColumn('SELECT LAST_INSERT_ID()') ?: 0);
+                $submissionId = (int)(InterfaceDB::fetchColumn(
+                    InterfaceDB::driverName() === 'sqlite'
+                        ? 'SELECT last_insert_rowid()'
+                        : 'SELECT LAST_INSERT_ID()'
+                ) ?: 0);
                 $harness->assertTrue($submissionId > 0);
 
                 AppConfigurationStore::set('developer_options', true);
@@ -676,13 +744,23 @@ $harness->run(HmrcSubmissionAction::class, static function (
                         (string)($missing->flashMessages()[0]['message'] ?? '')
                     );
                 }
+
+                $unbound = $action->handle($request([
+                    'submission_id' => (string)$submissionId,
+                    'exchange_id' => '999999',
+                ]), createTestPageServiceFramework());
+                $harness->assertFalse($unbound->isSuccess());
+                $harness->assertSame(
+                    'The selected HMRC exchange does not belong to this submission.',
+                    (string)($unbound->flashMessages()[0]['message'] ?? '')
+                );
             } finally {
-                if (InterfaceDB::inTransaction()) {
-                    InterfaceDB::rollBack();
-                }
                 AppConfigurationStore::set('developer_options', (bool)$previousDeveloperOptions);
                 $context->clearPageContext();
                 clearAuthenticatedTestSession();
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
             }
         }
     );

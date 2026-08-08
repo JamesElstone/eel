@@ -154,6 +154,10 @@
   margin-bottom: 16px;
 }
 
+.card-body .ixbrl-ct-declaration-first-question {
+  margin-top: 16px;
+}
+
 .card-body .ixbrl-frs105-notes-title {
   margin-bottom: 16px;
 }

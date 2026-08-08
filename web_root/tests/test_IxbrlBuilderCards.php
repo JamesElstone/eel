@@ -732,6 +732,24 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertSame(2, substr_count($panel, '<fieldset'));
         $harness->assertTrue(str_contains($panel, '<h4 class="card-title ixbrl-frs105-notes-title">Companies House Privacy Options</h4>'));
         $harness->assertSame(2, substr_count($panel, '<fieldset class="panel-soft ixbrl-companies-house-question">'));
+        $harness->assertTrue(str_contains(
+            $panel,
+            'Are you claiming an Exemption from giving a Directors&#039; Report under section 415A of the Companies Act 2006?'
+        ));
+        $harness->assertTrue(str_contains(
+            $panel,
+            'Are you claiming an Exemption from Public Profit &amp; Loss Filing under section 444 of the Companies Act 2006?'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'no audit is required under section 476 of the Companies Act 2006?'
+        ));
+        $harness->assertTrue(str_contains(
+            $html,
+            'audit exemption under section 477 of the Companies Act 2006?'
+        ));
+        $harness->assertFalse(str_contains($html, '(Section'));
+        $harness->assertFalse(str_contains($html, 'under Section'));
         $harness->assertFalse(str_contains($panel, 'Companies Act exemptions'));
         $harness->assertFalse(str_contains($panel, 'Yes is the default for a micro-entity'));
         $harness->assertFalse(str_contains($panel, 'Yes omits the complete Profit and Loss page'));
@@ -748,6 +766,10 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         $harness->assertTrue(str_contains($panel, 'show_card=year_end_notes'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-directors-report-notes-blank="1"'));
         $harness->assertTrue(str_contains($html, 'data-ixbrl-approval-submit="true" disabled'));
+        $harness->assertTrue(str_contains(
+            $html,
+            '<fieldset class="panel-soft ixbrl-ct-declaration-first-question"><legend>Are these original returns that have not already been filed for the CT periods listed above?</legend>'
+        ));
     });
 
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'binds adaptive trading questions for initial and AJAX rendering', static function () use ($harness): void {

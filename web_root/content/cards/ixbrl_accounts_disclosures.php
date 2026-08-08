@@ -403,7 +403,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
                         </div>
                         ' . $this->yesNo('audit_exempt_section_477', 'Is the company claiming audit exemption under section 477 of the Companies Act 2006?', $display['audit_exempt_section_477'] ?? null, $controlDisabled) . '
                         ' . $this->yesNo('directors_acknowledge_responsibilities', 'Do the directors acknowledge their Companies Act responsibilities for the records and accounts?', $display['directors_acknowledge_responsibilities'] ?? null, $controlDisabled) . '
-                        ' . $this->yesNo('members_have_not_required_audit', 'Do the relevant business voting parties confirm that no audit is required under section 476?', $display['members_have_not_required_audit'] ?? null, $controlDisabled) . '
+                        ' . $this->yesNo('members_have_not_required_audit', 'Do the relevant business voting parties confirm that no audit is required under section 476 of the Companies Act 2006?', $display['members_have_not_required_audit'] ?? null, $controlDisabled) . '
                     </section>
                     <section class="panel-soft">
                         <h4 class="card-title">Eligibility and accounting basis</h4>
@@ -484,13 +484,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             . '<h4 class="card-title ixbrl-frs105-notes-title">Companies House Privacy Options</h4>'
             . $question(
                 'directors_report_exempt_section_415a',
-                'Are you claiming an Exemption from giving a Directors\' Report under Section 415A?',
+                'Are you claiming an Exemption from giving a Directors\' Report under section 415A of the Companies Act 2006?',
                 'The Directors\' Report uses Year End Notes as its opening text, followed by ordered bullet points created from each sentence in the non-empty Year End Confirmation Notes.',
                 '<div class="standout helper' . $warningHidden . '" data-ixbrl-directors-report-warning="true" aria-hidden="' . ($warningHidden === '' ? 'false' : 'true') . '">Year End Notes is blank. <a class="button" href="?page=year_end&amp;show_card=year_end_notes">Open Year End Notes</a> before approving accounts which include a Directors’ Report.</div>'
             )
             . $question(
                 'profit_loss_not_delivered_section_444',
-                'Are you claiming an Exemption from Public Profit & Loss Filing (Section 444)?',
+                'Are you claiming an Exemption from Public Profit & Loss Filing under section 444 of the Companies Act 2006?',
                 'If exempted, the Profit and Loss account is withheld from the Companies House filing.'
             )
             . '</section>';
@@ -647,8 +647,9 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             $value = array_key_exists($key, $submittedInput) ? $submittedInput[$key] : ($saved[$key] ?? null);
             return $value === null || $value === '' ? null : (int)$value;
         };
-        $question = function (string $key, string $label, ?int $value) use ($disabledAttribute, $controlDisabled): string {
-            return '<fieldset class="panel-soft"><legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend><div class="actions-row">'
+        $question = function (string $key, string $label, ?int $value, string $additionalClass = '') use ($disabledAttribute, $controlDisabled): string {
+            $classes = 'panel-soft' . ($additionalClass !== '' ? ' ' . $additionalClass : '');
+            return '<fieldset class="' . $classes . '"><legend>' . \eel_accounts\Support\Utf8::html($label) . '</legend><div class="actions-row">'
                 . '<label><input type="radio" name="' . $key . '" value="1" required data-ct600-authorisation-field="true" data-ixbrl-approval-control="true"' . ($value === 1 ? ' checked' : '') . $disabledAttribute . '> Yes</label>'
                 . '<label><input type="radio" name="' . $key . '" value="0" required data-ct600-authorisation-field="true" data-ixbrl-approval-control="true"' . ($value === 0 ? ' checked' : '') . $disabledAttribute . '> No</label>'
                 . '</div>' . $this->lockedMirror($key, $value === null ? '' : $value, $controlDisabled) . '</fieldset>';
@@ -664,7 +665,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             . '<tr><th scope="row">Last updated on</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_at'] ?? 'Not saved')) . '</td></tr>'
             . '<tr><th scope="row">Last updated by</th><td>' . \eel_accounts\Support\Utf8::html((string)($saved['saved_by_display_name'] ?? 'Not saved')) . '</td></tr>'
             . '</tbody></table></div>'
-            . $question('original_unfiled_confirmed', 'Are these original returns that have not already been filed for the CT periods listed above?', $answer('original_unfiled_confirmed'))
+            . $question('original_unfiled_confirmed', 'Are these original returns that have not already been filed for the CT periods listed above?', $answer('original_unfiled_confirmed'), 'ixbrl-ct-declaration-first-question')
             . $question('authority_confirmed', 'Are you authorised to file these Corporation Tax returns for the company?', $answer('authority_confirmed'))
             . $question('declaration_confirmed', 'Do you declare that the information in these returns is correct and complete to the best of your knowledge and belief?', $answer('declaration_confirmed'))
             . '</section>';

@@ -84,18 +84,20 @@ final class TableFramework
         string $cellClass = '',
         bool $exportable = true,
         string $exportType = 'string',
-        callable|bool|null $sort = null
+        callable|bool|null $sort = null,
+        bool $preserveExportLineBreaks = false
     ): self {
         $this->columns[] = new TableColumnFramework(
-            $key,
-            $label,
-            $html,
-            $export,
-            $headerClass,
-            $cellClass,
-            $exportable,
-            $exportType,
-            $sort
+            key: $key,
+            label: $label,
+            html: $html,
+            export: $export,
+            headerClass: $headerClass,
+            cellClass: $cellClass,
+            exportable: $exportable,
+            exportType: $exportType,
+            sort: $sort,
+            preserveExportLineBreaks: $preserveExportLineBreaks
         );
 
         return $this;
@@ -109,7 +111,8 @@ final class TableFramework
         string $cellClass = '',
         bool $exportable = true,
         string $exportType = 'string',
-        callable|bool|null $sort = null
+        callable|bool|null $sort = null,
+        bool $preserveExportLineBreaks = false
     ): self {
         return $this->column(
             $key,
@@ -120,7 +123,8 @@ final class TableFramework
             cellClass: $cellClass,
             exportable: $exportable,
             exportType: $exportType,
-            sort: $sort
+            sort: $sort,
+            preserveExportLineBreaks: $preserveExportLineBreaks
         );
     }
 
@@ -135,7 +139,8 @@ final class TableFramework
         string $headerClass = '',
         string $cellClass = '',
         bool $exportable = true,
-        callable|bool|null $sort = null
+        callable|bool|null $sort = null,
+        bool $preserveExportLineBreaks = false
     ): self {
         $formatLabel = static function (array $row) use ($key, $fallback, $labelSeparator, $labelFormatter): string {
             $value = self::stringValue($row[$key] ?? null, $fallback);
@@ -158,7 +163,8 @@ final class TableFramework
             headerClass: $headerClass,
             cellClass: $cellClass,
             exportable: $exportable,
-            sort: $sort
+            sort: $sort,
+            preserveExportLineBreaks: $preserveExportLineBreaks
         );
     }
 
@@ -171,7 +177,8 @@ final class TableFramework
         string $headerClass = '',
         string $cellClass = '',
         bool $exportable = true,
-        callable|bool|null $sort = null
+        callable|bool|null $sort = null,
+        bool $preserveExportLineBreaks = false
     ): self {
         return $this->column(
             $key,
@@ -192,7 +199,8 @@ final class TableFramework
             headerClass: $headerClass,
             cellClass: $cellClass,
             exportable: $exportable,
-            sort: $sort
+            sort: $sort,
+            preserveExportLineBreaks: $preserveExportLineBreaks
         );
     }
 
@@ -209,7 +217,8 @@ final class TableFramework
         string $headerClass = '',
         string $cellClass = '',
         bool $exportable = true,
-        callable|bool|null $sort = null
+        callable|bool|null $sort = null,
+        bool $preserveExportLineBreaks = false
     ): self {
         return $this->column(
             $primaryKey,
@@ -243,7 +252,8 @@ final class TableFramework
             headerClass: $headerClass,
             cellClass: $cellClass,
             exportable: $exportable,
-            sort: $sort
+            sort: $sort,
+            preserveExportLineBreaks: $preserveExportLineBreaks
         );
     }
 

@@ -66,7 +66,7 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
                 $options .= '<option value="' . $value . '"' . ($treatment === $value ? ' selected' : '') . '>' . $label . '</option>';
             }
             $guidance = trim((string)($item['guidance_url'] ?? '')) !== ''
-                ? '<a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$item['guidance_url']) . '">BIM guidance</a>'
+                ? '<a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$item['guidance_url']) . '">BIM Guidance</a>'
                 : '';
             $source = trim((string)($item['source_url'] ?? '')) !== ''
                 ? '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html((string)$item['source_url']) . '">' . \eel_accounts\Support\Utf8::html((string)$item['source_label']) . '</a>'

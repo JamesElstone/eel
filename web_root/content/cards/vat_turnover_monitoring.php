@@ -255,7 +255,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
     private function thresholdImportNotice(): string
     {
         return '<div class="helper"><strong>Threshold unavailable.</strong> '
-            . '<a class="button button-inline" href="?page=artefacts">Import HMRC VAT thresholds on the Rates / Thresholds / Artefacts page</a>.'
+            . '<a class="button button-inline" href="?page=artefacts">Import HMRC VAT Thresholds on the Rates / Thresholds / Artefacts Page</a>.'
             . '</div>';
     }
 

@@ -86,10 +86,10 @@ $harness->run(_transactions_monthly_statusCard::class, static function (Generate
         $harness->assertTrue(str_contains($html, '5 raw rows'));
         $harness->assertTrue(str_contains($html, 'value="YearEnd"'));
         $harness->assertTrue(str_contains($html, 'value="confirm_empty_month"'));
-        $harness->assertTrue(str_contains($html, 'Confirm no activity'));
+        $harness->assertTrue(str_contains($html, 'Confirm No Activity'));
         $harness->assertTrue(str_contains($html, '<form class="month-card-form month-card-confirm-form" method="post" action="?page=transactions" data-ajax="true">'));
         $harness->assertSame(1, substr_count($html, 'name="month_start" value="2026-03-01"'));
-        $harness->assertSame(1, preg_match('/<div class="month-card month-card-bad">.*name="month_start" value="2026-03-01".*<button class="button" type="submit">Confirm no activity<\/button>/s', $html));
+        $harness->assertSame(1, preg_match('/<div class="month-card month-card-bad">.*name="month_start" value="2026-03-01".*<button class="button" type="submit">Confirm No Activity<\/button>/s', $html));
         $harness->assertSame(false, str_contains($html, '<button class="month-card month-card-bad"'));
         $harness->assertSame(false, str_contains($html, '<button class="month-card month-card-bad" type="submit" data-page-card-switch-tab="Categorise"><form'));
     });

@@ -177,7 +177,7 @@ final class _application_settingsCard extends CardBaseFramework
             $isOrphan = empty($row['exists']);
             $orphanBadge = $isOrphan ? '<span class="badge warning">Orphan</span>' : '';
             $removeButton = $isOrphan
-                ? '<button class="button button-inline danger" type="submit" name="navigation_order_action" value="remove:' . \eel_accounts\Support\Utf8::html($pageKey) . '">Remove orphan</button>'
+                ? '<button class="button button-inline danger" type="submit" name="navigation_order_action" value="remove:' . \eel_accounts\Support\Utf8::html($pageKey) . '">Remove Orphan</button>'
                 : '';
             $topbarChecked = isset($topbarDisabledLookup[$pageKey]) ? '' : ' checked';
 

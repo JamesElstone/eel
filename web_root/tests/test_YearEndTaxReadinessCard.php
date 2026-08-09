@@ -268,10 +268,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(false, str_contains($html, '?page=corporation_tax&amp;company_id=33'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="tax_readiness_acknowledgement"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(true, str_contains($html, 'Revoke Approval'));
         $harness->assertSame(true, str_contains(
             $html,
-            '<button class="button" type="submit">Revoke approval</button>'
+            '<button class="button" type="submit">Revoke Approval</button>'
         ));
         $harness->assertSame(false, str_contains($html, 'checked required'));
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));

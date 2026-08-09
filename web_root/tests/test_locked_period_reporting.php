@@ -73,7 +73,7 @@ $harness->check('LockedPeriodReporting', 'locked workflow cards render read-only
             'approveFields' => ['check_code' => 'test'],
             'revokeFields' => ['check_code' => 'test'],
         ]);
-        $harness->assertFalse(str_contains($approvalHtml, 'Revoke approval'));
+        $harness->assertFalse(str_contains($approvalHtml, 'Revoke Approval'));
 
         $notesHtml = (new _year_end_notesCard())->render([
             'company' => ['id' => $companyId, 'accounting_period_id' => $accountingPeriodId],

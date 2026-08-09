@@ -140,7 +140,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
         $periodId = (int)($context['company']['accounting_period_id'] ?? 0);
         if ($type === 'transaction' && $id > 0) {
             $date = (string)($row['source_date'] ?? '');
-            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('transactions', 'Open transaction', [
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('transactions', 'Open Transaction', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $periodId,
                 'show_card' => 'transactions_imported',
@@ -150,7 +150,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ], 'button button-inline');
         }
         if ($type === 'expense_claim' && $id > 0) {
-            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('expense_claims', 'Open claim', [
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('expense_claims', 'Open Claim', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $periodId,
                 'show_card' => 'expense_claim_editor',
@@ -158,7 +158,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ], 'button button-inline');
         }
         if ($type === 'asset' || $type === 'depreciation') {
-            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('assets', 'Open asset', [
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('assets', 'Open Asset', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $periodId,
                 'show_card' => 'asset_register',
@@ -166,7 +166,7 @@ final class _tax_audit_detailCard extends CardBaseFramework
             ], 'button button-inline');
         }
         if ($type === 'journal' && $id > 0) {
-            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('journal', 'Open journal', [
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('journal', 'Open Journal', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $periodId,
                 'journal_id' => $id,

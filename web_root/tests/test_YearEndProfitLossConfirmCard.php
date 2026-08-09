@@ -34,7 +34,7 @@ $harness->run(_year_end_profit_loss_confirmCard::class, static function (Generat
 
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="retained_earnings_close_confirmation"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(true, str_contains($html, 'Revoke Approval'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
     });
 

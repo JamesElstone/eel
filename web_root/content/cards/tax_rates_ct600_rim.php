@@ -189,7 +189,7 @@ final class _tax_rates_ct600_rimCard extends CardBaseFramework
     private function refreshForm(): string
     {
         return '<form method="post" action="?page=artefacts" data-ajax="true">' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_artifacts_refresh"><button class="button primary" type="submit">Refresh and install HMRC filing artefacts</button></form>';
+            . '<input type="hidden" name="card_action" value="TaxRates"><input type="hidden" name="intent" value="hmrc_ct_artifacts_refresh"><button class="button primary" type="submit">Refresh and Install HMRC Filing Artefacts</button></form>';
     }
 
     private function stateBadge(string $state): string

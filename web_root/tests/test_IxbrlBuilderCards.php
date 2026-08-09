@@ -1128,15 +1128,15 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'Companies House action' => str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'),
                 'missing-run synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'),
                 'missing-run synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'),
-                'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
+                'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise Missing iXBRL Files</button>'),
                 'missing-run backup explanation' => str_contains($readyHtml, 'a full database backup is created immediately before and after the command'),
                 'both synchronisation backup explanations' => substr_count($readyHtml, 'a full database backup is created immediately before and after the command') >= 2,
                 'missing-XML synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ct600_xml_artifacts"'),
                 'missing-XML synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing XML files"'),
-                'missing-XML synchronisation button' => str_contains($readyHtml, '>Synchronise missing XML files</button>'),
+                'missing-XML synchronisation button' => str_contains($readyHtml, '>Synchronise Missing XML Files</button>'),
                 'complete-filing action order' => preg_match(
                     '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                        . 'Generate All Filing Artefacts.*Synchronise missing iXBRL files.*<\/div>/s',
+                        . 'Generate All Filing Artefacts.*Synchronise Missing iXBRL Files.*<\/div>/s',
                     $readyHtml
                 ) === 1,
                 'retention explanation' => str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'),
@@ -1157,14 +1157,14 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
             $harness->assertTrue(str_contains($readyHtml, 'name="card_action" value="CompaniesHouseAccounts"'));
             $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'));
             $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'));
-            $harness->assertTrue(str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'));
+            $harness->assertTrue(str_contains($readyHtml, '>Synchronise Missing iXBRL Files</button>'));
             $harness->assertTrue(str_contains($readyHtml, 'name="intent" value="sync_missing_ct600_xml_artifacts"'));
             $harness->assertTrue(str_contains($readyHtml, 'data-chicken-title="Synchronise missing XML files"'));
-            $harness->assertTrue(str_contains($readyHtml, '>Synchronise missing XML files</button>'));
+            $harness->assertTrue(str_contains($readyHtml, '>Synchronise Missing XML Files</button>'));
             $harness->assertFalse(str_contains($readyHtml, 'Synchronise missing iXBRL runs'));
             $harness->assertTrue(preg_match(
                 '/<div class="actions-row ixbrl-complete-filing-actions">.*'
-                    . 'Generate All Filing Artefacts.*Synchronise missing iXBRL files.*<\/div>/s',
+                    . 'Generate All Filing Artefacts.*Synchronise Missing iXBRL Files.*<\/div>/s',
                 $readyHtml
             ) === 1);
             $harness->assertTrue(str_contains($readyHtml, 'Filing approvals, evidence bundles, and runs used by transmitted or in-flight Companies House filings are retained.'));

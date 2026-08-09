@@ -153,7 +153,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="month_start" value="' . \eel_accounts\Support\Utf8::html($monthKey) . '">
-            <button class="button" type="submit">Confirm no activity</button>
+            <button class="button" type="submit">Confirm No Activity</button>
         </form>';
     }
 

@@ -102,7 +102,7 @@ final class _add_userCard extends CardBaseFramework
                     <input class="input" id="add-user-password" name="new_password" type="password" autocomplete="new-password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{12,}" title="' . $passwordPolicy . '" required>
                 </div>
                 <div class="form-row full">
-                    <button class="button primary" type="submit">Add user</button>
+                    <button class="button primary" type="submit">Add User</button>
                 </div>
             </form>
         ';
@@ -150,7 +150,7 @@ final class _add_userCard extends CardBaseFramework
                     </select>
                 </div>
                 <div class="form-row full">
-                    <button class="button primary" type="submit">Create invitation</button>
+                    <button class="button primary" type="submit">Create Invitation</button>
                 </div>
             </form>
         ';

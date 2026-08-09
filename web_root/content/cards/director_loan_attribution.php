@@ -86,7 +86,7 @@ final class _director_loan_attributionCard extends CardBaseFramework
         if (empty($statement['success'])) {
             if (!empty($statement['missing_control_nominals'])) {
                 return '<div class="panel-soft warn"><div class="helper">Configure both Participator Loan control nominals in Company Nominals.</div>'
-                    . '<div class="actions-row"><a class="button" href="?page=companies&amp;show_card=companies_nominals">Configure Participator Loan nominals</a></div></div>';
+                    . '<div class="actions-row"><a class="button" href="?page=companies&amp;show_card=companies_nominals">Configure Participator Loan Nominals</a></div></div>';
             }
             return $this->errors((array)($statement['errors'] ?? ['Director loan statement is unavailable.']));
         }

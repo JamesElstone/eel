@@ -92,7 +92,7 @@ final class _incorporation_ownership_partiesCard extends CardBaseFramework
             . '<td data-ownership-first-middle-names-cell hidden><input class="input" name="first_middle_names" autocomplete="given-name" data-ownership-first-middle-names required disabled></td>'
             . '<td><input type="hidden" name="party_type" value="individual" data-ownership-director-party-type><select class="select" name="party_type" data-ownership-party-type data-no-submit-on-change="true" disabled><option value="individual" selected>Individual</option><option value="company">Company</option><option value="trust">Trust</option><option value="partnership">Partnership</option><option value="other">Other</option></select></td>'
             . '<td><input class="input" name="source_note"></td>'
-            . '<td class="cell-fit"><button class="button primary" type="submit">Add company party</button></td>'
+            . '<td class="cell-fit"><button class="button primary" type="submit">Add Company Party</button></td>'
             . '</tr></tbody></table></form>';
     }
 

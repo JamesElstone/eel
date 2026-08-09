@@ -40,7 +40,7 @@ final class _filing_evidence_calculation_detailCard extends CardBaseFramework
     {
         $journalId = (int)($row['journal_id'] ?? ((string)($row['source_type'] ?? '') === 'journal' ? ($row['source_id'] ?? 0) : 0));
         if ($journalId <= 0) { return '<span class="helper">Calculated source</span>'; }
-        return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('journal', 'Current journal', [
+        return \eel_accounts\Renderer\WorkflowHandoffRenderer::button('journal', 'Current Journal', [
             'company_id' => (int)($context['company']['id'] ?? 0),
             'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
             'journal_id' => $journalId,

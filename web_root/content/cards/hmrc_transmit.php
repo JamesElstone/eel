@@ -292,7 +292,7 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $html .= '<div class="helper">Check the Sender ID and password for HMRC / XML / CT600_XML / '
                 . \eel_accounts\Support\Utf8::html($credentialEnvironment) . '.</div>'
                 . '<div class="actions-row actions-row-right"><a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
-                . 'Configure HMRC XML credentials</a></div>';
+                . 'Configure HMRC XML Credentials</a></div>';
         }
         if (!$developerOptions) {
             $html .= '<div class="helper">Ordinary resubmission is blocked. Enable Developer Options to expose the audited Retry Transmission action.</div>';
@@ -429,7 +429,7 @@ final class _hmrc_transmitCard extends CardBaseFramework
         return '<div class="summary-card danger hmrc-credential-summary-card"><div class="summary-label">Credentials</div>'
             . '<div class="helper">HMRC / XML / CT600_XML / '
             . \eel_accounts\Support\Utf8::html($environment) . ' Credentials Missing</div>'
-            . '<div class="actions-row actions-row-right hmrc-credential-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML credentials</a></div></div>';
+            . '<div class="actions-row actions-row-right hmrc-credential-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML Credentials</a></div></div>';
     }
 
     private function environmentMetric(string $environment, string $class): string
@@ -445,7 +445,7 @@ final class _hmrc_transmitCard extends CardBaseFramework
             . ' hmrc-connection-summary-card hmrc-transmit-status-board">'
             . '<div class="status-head"><h3 class="card-title">Environment</h3>'
             . '<span class="badge ' . $badgeClass . '">' . \eel_accounts\Support\Utf8::html($environment) . '</span></div>'
-            . '<div class="actions-row actions-row-right hmrc-connection-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML environment</a></div></section>';
+            . '<div class="actions-row actions-row-right hmrc-connection-summary-actions"><a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML Environment</a></div></section>';
     }
 
     private function metric(string $label, string $value, string $class = '', bool $helper = false): string

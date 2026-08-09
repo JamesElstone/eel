@@ -166,7 +166,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'data-table-key="govtalk_xml_exchange_history"'
                     ));
                     $harness->assertTrue(str_contains($html, 'Apply Filters'));
-                    $harness->assertTrue(str_contains($html, 'Clear filters'));
+                    $harness->assertTrue(str_contains($html, 'Clear Filters'));
                     $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Apply Filters</button>'));
                     $harness->assertTrue(str_contains($html, '<form method="post" action="?page=transmit" data-ajax="true">'));
                     $harness->assertTrue(str_contains($html, 'name="history_conversation_authority" value="companies_house"'));
@@ -199,7 +199,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, '502 — Authorisation Failure'));
                     $harness->assertTrue(str_contains($html, 'Raised by CompanyDataRequest'));
                     $harness->assertFalse(str_contains($html, 'Rejected · HTTP'));
-                    $harness->assertTrue(str_contains($html, 'View conversation'));
+                    $harness->assertTrue(str_contains($html, 'View Conversation'));
                     $harness->assertTrue(str_contains($html, 'name="_card_refresh" value="1"'));
                     $harness->assertTrue(str_contains(
                         $html,

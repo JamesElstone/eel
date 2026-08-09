@@ -258,7 +258,7 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             $sourceUrl = trim((string)($smallCompanies['threshold_source'] ?? ''));
             $source = $sourceUrl === ''
                 ? 'Not recorded'
-                : '<a class="button" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '" target="_blank" rel="noopener noreferrer">GOV.UK guidance</a>';
+                : '<a class="button" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '" target="_blank" rel="noopener noreferrer">GOV.UK Guidance</a>';
             $thresholdStart = trim((string)($thresholdPeriod['start'] ?? ''));
             $thresholdEnd = trim((string)($thresholdPeriod['end'] ?? ''));
             $thresholdDates = $formatCompanyDate($thresholdStart) . ' to '

@@ -108,7 +108,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <input type="hidden" name="card_action" value="Nominals">
                             <input type="hidden" name="intent" value="apply_nominal_suggestions">
                             <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)($context['company']['id'] ?? 0)) . '">
-                            <button class="button primary" type="submit"' . ($suggestionItemsHtml === '' ? ' disabled' : '') . '>Assign system defaults</button>
+                            <button class="button primary" type="submit"' . ($suggestionItemsHtml === '' ? ' disabled' : '') . '>Assign System Defaults</button>
                         </form>
                     </div>
                 </div>

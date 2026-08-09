@@ -23,7 +23,7 @@ $harness->run(_tax_audit_areasCard::class, static function (GeneratedServiceClas
     $harness->check(_tax_audit_areasCard::class, 'renders source-card selection without a mutation action', static function () use ($harness, $card): void {
         $html = $card->render(taxAuditCardContext());
         $harness->assertTrue(str_contains($html, 'select-tax-audit-area'));
-        $harness->assertTrue(str_contains($html, 'View details'));
+        $harness->assertTrue(str_contains($html, 'View Details'));
         $harness->assertTrue(str_contains($html, 'On demand'));
         $harness->assertTrue(str_contains($html, 'HMRC computation line'));
         $harness->assertTrue(str_contains($html, 'Tax audit area'));

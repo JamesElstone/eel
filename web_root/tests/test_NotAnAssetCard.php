@@ -318,6 +318,6 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         ];
         $approvedHtml = $card->render($context);
         $harness->assertTrue(str_contains($approvedHtml, 'This accounting period is locked, so this approval cannot be revoked.'));
-        $harness->assertFalse(str_contains($approvedHtml, '>Revoke approval</button>'));
+        $harness->assertFalse(str_contains($approvedHtml, '>Revoke Approval</button>'));
     });
 });

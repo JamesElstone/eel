@@ -76,7 +76,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
         $harness->assertSame(true, str_contains($html, 'Evidence reviewed.'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 12:00:00 by unit_test.'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(true, str_contains($html, 'Revoke Approval'));
         $harness->assertSame(true, str_contains($html, '<table class="table-condensed">'));
         $harness->assertSame(true, str_contains($html, '<th>Question</th><th>Answer</th>'));
         $harness->assertSame(true, str_contains($html, '<td>Is the position in scope?</td><td>Yes</td>'));
@@ -101,7 +101,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
         $harness->assertSame(true, str_contains($html, 'Original note: Original evidence note.'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 12:00:00 by unit_test.'));
         $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
-        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(false, str_contains($html, 'Revoke Approval'));
     });
 
     $harness->check(\eel_accounts\Renderer\YearEndApprovalRenderer::class, 'marks approval questions for neutral question styling', static function () use ($harness): void {

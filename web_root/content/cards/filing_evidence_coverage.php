@@ -28,7 +28,7 @@ final class _filing_evidence_coverageCard extends CardBaseFramework
                     . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                     . '<input type="hidden" name="action" value="select-filing-evidence-section"><input type="hidden" name="evidence_reference" value="' . \eel_accounts\Support\Utf8::html((string)($state['reference'] ?? '')) . '">'
                     . '<input type="hidden" name="evidence_bundle_id" value="' . (int)($state['bundle_id'] ?? 0) . '"><input type="hidden" name="evidence_section_code" value="' . \eel_accounts\Support\Utf8::html((string)$section['section_code']) . '">'
-                    . '<button class="button button-inline" type="submit">Show frozen records</button></form>';
+                    . '<button class="button button-inline" type="submit">Show Frozen Records</button></form>';
             } else { $rows .= '<span class="helper">Not captured for this historic bundle.</span>'; }
             $rows .= '</td></tr>';
         }

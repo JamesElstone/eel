@@ -139,7 +139,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html((string)$definition['page']) . '</td>'
                 . '<td>' . \eel_accounts\Support\Utf8::html((string)$definition['label']) . '</td>'
                 . '<td>' . \eel_accounts\Support\Utf8::html((string)$definition['question']) . '</td>'
-                . '<td class="year-end-tax-scope-guidance"><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$definition['url']) . '">HMRC guidance</a></td>'
+                . '<td class="year-end-tax-scope-guidance"><a class="button button-inline" target="_blank" rel="noopener noreferrer" href="' . \eel_accounts\Support\Utf8::html((string)$definition['url']) . '">HMRC Guidance</a></td>'
                 . '<td><form method="post" action="?page=corporation_tax" data-ajax="true">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="card_action" value="Ixbrl"><input type="hidden" name="intent" value="save_ct_filing_scope_answer">'

@@ -303,7 +303,7 @@ final class _year_end_loan_confirmationCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="repair_legacy_director_loan_offset">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button primary" type="submit">Repair legacy offset</button>
+                <button class="button primary" type="submit">Repair Legacy Offset</button>
             </form>
         </section>';
     }

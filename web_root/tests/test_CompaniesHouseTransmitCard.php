@@ -171,14 +171,14 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertTrue(str_contains($html, 'summary-grid companies-house-connection-summary-grid'));
             $harness->assertTrue(str_contains($html, 'summary-grid companies-house-prepared-transmission-summary-grid'));
             $harness->assertTrue(str_contains($html, '>Test<'));
-            $harness->assertTrue(str_contains($html, 'Configure Companies House XML environment'));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML Environment'));
             $harness->assertTrue(str_contains(
                 $html,
                 '<div class="status-head"><h3 class="card-title">Credentials</h3>'
                 . '<span class="badge success">Configured</span></div>'
             ));
             $harness->assertTrue(str_contains($html, 'panel-soft summary-card success hmrc-credential-summary-card'));
-            $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML Credentials'));
             $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
             $harness->assertFalse(str_contains($html, 'XML Input'));
             $harness->assertFalse(str_contains($html, 'CompanyData XML Output'));
@@ -260,7 +260,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $html,
                 'Companies House XML accounts filing credentials are missing for the TEST environment.'
             ));
-            $harness->assertTrue(str_contains($html, 'Configure Companies House XML credentials'));
+            $harness->assertTrue(str_contains($html, 'Configure Companies House XML Credentials'));
             $harness->assertTrue(str_contains($html, 'show_card=api_keys_editor'));
             $harness->assertTrue(str_contains(
                 $html,

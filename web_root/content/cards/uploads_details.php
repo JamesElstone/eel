@@ -326,7 +326,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
                     <input type="hidden" name="filter" value="' . \eel_accounts\Support\Utf8::html($filter) . '">
                     <input type="hidden" name="page" value="' . $page . '">
-                    <button class="button danger" type="submit">Backfill mappings from original JSON</button>
+                    <button class="button danger" type="submit">Backfill Mappings from Original JSON</button>
                 </form>
             </div>';
     }

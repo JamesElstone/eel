@@ -50,7 +50,7 @@ $harness->run(_incorporation_relationshipsCard::class, static function (
         $harness->assertTrue(str_contains($html, 'Shareholder (calculated)'));
         $harness->assertTrue(str_contains($html, '<th>Manage</th>'));
         $harness->assertTrue(str_contains($html, 'aria-label="Last effective date"'));
-        $harness->assertTrue(str_contains($html, '>End role</button>'));
+        $harness->assertTrue(str_contains($html, '>End Role</button>'));
         $harness->assertFalse(str_contains($html, 'End an ownership role'));
         $harness->assertTrue(str_contains($html, '<th>Relationship</th>'));
         $harness->assertTrue(str_contains($html, '<label>Relationship</label><select'));

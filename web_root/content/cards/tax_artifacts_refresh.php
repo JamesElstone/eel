@@ -34,7 +34,7 @@ final class _tax_artifacts_refreshCard extends CardBaseFramework
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="TaxArtifactsRefresh">'
             . '<input type="hidden" name="intent" value="refresh_all_tax_artifacts">'
-            . '<button class="button primary" type="submit">Refresh all tax artefacts</button>'
+            . '<button class="button primary" type="submit">Refresh All Tax Artefacts</button>'
             . '</form></div></div>';
     }
 }

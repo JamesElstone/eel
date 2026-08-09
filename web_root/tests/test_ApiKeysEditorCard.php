@@ -62,8 +62,8 @@ $harness->check(_api_keys_editorCard::class, 'offers file repair only for the un
         $disabledHtml = (new _api_keys_editorCard())->render($context);
 
         $harness->assertTrue(str_contains($enabledHtml, 'name="api_keys_editor_operation" value="repair_file"'));
-        $harness->assertTrue(str_contains($enabledHtml, '>Fix error</button>'));
-        $harness->assertSame(false, str_contains($disabledHtml, '>Fix error</button>'));
+        $harness->assertTrue(str_contains($enabledHtml, '>Fix Error</button>'));
+        $harness->assertSame(false, str_contains($disabledHtml, '>Fix Error</button>'));
     } finally {
         file_put_contents($path, $original, LOCK_EX);
         AppConfigurationStore::config(true);

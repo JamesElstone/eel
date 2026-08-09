@@ -232,7 +232,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             <div class="form-row"><label>Reassessed amount</label><input class="input" type="number" step="0.01" min="0.01" name="replacement_amount_due"></div>
             <div class="form-row"><label>Replacement HMRC reference</label><input class="input" name="replacement_source_reference"></div>
             <div class="helper full">Replacement fields are required only for a reassessment. The original notice and journal remain in the audit trail.</div>
-            <div class="actions-row full"><button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Record this HMRC correction and post an auditable reversing journal?" data-chicken-confirm-text="Record correction">Record correction</button></div>
+            <div class="actions-row full"><button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Record this HMRC correction and post an auditable reversing journal?" data-chicken-confirm-text="Record correction">Record Correction</button></div>
         </form></details>';
     }
 

@@ -64,7 +64,7 @@ final class _loan_reviewCard extends CardBaseFramework
         foreach ($movements as $movement) {
             $sourceUrl = (string)($movement['source_url'] ?? '');
             $source = $sourceUrl !== ''
-                ? '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '">' . \eel_accounts\Support\Utf8::html((string)($movement['source_label'] ?? 'Source transaction')) . '</a>'
+                ? '<a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($sourceUrl) . '">' . \eel_accounts\Support\Utf8::html((string)($movement['source_label'] ?? 'Source Transaction')) . '</a>'
                 : \eel_accounts\Support\Utf8::html((string)($movement['source_label'] ?? ''));
             $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(HelperFramework::displayDate((string)($movement['txn_date'] ?? ''))) . '</td><td>'
                 . $source . '</td><td>' . \eel_accounts\Support\Utf8::html(ucfirst((string)($movement['cash_direction'] ?? 'movement'))) . '</td></tr>';
@@ -77,7 +77,7 @@ final class _loan_reviewCard extends CardBaseFramework
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="LoanReview"><input type="hidden" name="intent" value="acknowledge_future_loan_attribution_warning">
                 <input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button" type="submit">Ignore - I don\'t want to claim S464 Tax Relief</button>
+                <button class="button" type="submit">Ignore - I Don\'t Want to Claim S464 Tax Relief</button>
             </form>
         </section>';
     }

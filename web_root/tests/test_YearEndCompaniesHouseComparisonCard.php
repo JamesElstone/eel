@@ -51,7 +51,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
 
         $harness->assertSame(true, str_contains($html, 'Corrective filing needed.'));
         $harness->assertSame(true, str_contains($html, 'The filed fixed assets value was incomplete.'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(true, str_contains($html, 'Revoke Approval'));
         $harness->assertSame(false, str_contains($html, 'Save Variance Explanation'));
     });
 

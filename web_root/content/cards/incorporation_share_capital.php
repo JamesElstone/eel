@@ -296,7 +296,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             return '';
         }
 
-        return '<a class="button secondary" href="?page=incorporation&amp;show_card=incorporation_payment_matching">Review payment</a>';
+        return '<a class="button secondary" href="?page=incorporation&amp;show_card=incorporation_payment_matching">Review Payment</a>';
     }
 
     private function decimalValue(mixed $value): string

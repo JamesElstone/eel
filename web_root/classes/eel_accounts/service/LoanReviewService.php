@@ -39,9 +39,9 @@ final class LoanReviewService
                 'state' => 'requires_action',
                 'title' => 'Participator loan terms are required',
                 'detail' => $partyName . ' has a movement or balance in this accounting period but has no saved entity terms.',
-                'source_label' => 'Entity terms',
+                'source_label' => 'Entity Terms',
                 'source_url' => '?page=loans&show_card=director_loan_terms',
-                'action_label' => 'Record terms',
+                'action_label' => 'Record Terms',
                 'action_url' => '?page=loans&show_card=director_loan_terms',
                 'party_id' => $partyId,
                 'party_name' => $partyName,
@@ -58,9 +58,9 @@ final class LoanReviewService
                 'state' => 'requires_action',
                 'title' => 'Company-to-participator advance terms are required',
                 'detail' => $partyName . ' has a reportable company advance, but its repayment condition has not been confirmed independently of creditor terms.',
-                'source_label' => 'Advance terms',
+                'source_label' => 'Advance Terms',
                 'source_url' => '?page=loans&show_card=director_loan_terms',
-                'action_label' => 'Record advance terms',
+                'action_label' => 'Record Advance Terms',
                 'action_url' => '?page=loans&show_card=director_loan_terms',
                 'party_id' => (int)($row['party_id'] ?? 0),
                 'party_name' => $partyName,
@@ -77,7 +77,7 @@ final class LoanReviewService
                 'detail' => trim((string)($entry['description'] ?? 'Loan movement')) . ' on ' . (string)($entry['journal_date'] ?? ''),
                 'source_label' => (string)($entry['source_label'] ?? ('Journal #' . (int)($entry['journal_id'] ?? 0))),
                 'source_url' => (string)($entry['source_url'] ?? ''),
-                'action_label' => 'Assign participant',
+                'action_label' => 'Assign Participant',
                 'action_url' => '?page=loans&show_card=director_loan_attribution&director_loan_attribution_filter=requires_assignment',
             ]);
         }
@@ -92,9 +92,9 @@ final class LoanReviewService
                 'title' => 's455 evidence requires review',
                 'detail' => (string)(($s455['errors'] ?? [])[0]
                     ?? 'No Corporation Tax period is available for the participator-loan exposure.'),
-                'source_label' => 'Loans tax evidence',
+                'source_label' => 'Loans Tax Evidence',
                 'source_url' => '?page=loans&show_card=director_loan_s455',
-                'action_label' => 'Review loan tax evidence',
+                'action_label' => 'Review Loan Tax Evidence',
                 'action_url' => '?page=loans&show_card=director_loan_s455',
             ]);
         }
@@ -112,9 +112,9 @@ final class LoanReviewService
                     'title' => 'Close-company status requires review',
                     'detail' => 'The close-company conclusion has not been calculated for CT period '
                         . (int)($period['sequence_no'] ?? 0) . '.',
-                    'source_label' => 's455 review',
+                    'source_label' => 's455 Review',
                     'source_url' => '?page=loans&show_card=director_loan_s455',
-                    'action_label' => 'Review s455 evidence',
+                    'action_label' => 'Review s455 Evidence',
                     'action_url' => '?page=loans&show_card=director_loan_s455',
                 ]);
             }
@@ -129,7 +129,7 @@ final class LoanReviewService
                     'detail' => 'Transaction #' . (int)($movement['transaction_id'] ?? 0) . ' on ' . (string)($movement['txn_date'] ?? '') . ' is part of the s455 evidence window but has no confirmed ownership party.',
                     'source_label' => (string)($movement['source_label'] ?? ''),
                     'source_url' => (string)($movement['source_url'] ?? ''),
-                    'action_label' => 'Assign participant',
+                    'action_label' => 'Assign Participant',
                     'action_url' => (string)($movement['action_url'] ?? $movement['source_url'] ?? ''),
                 ]);
             }
@@ -149,7 +149,7 @@ final class LoanReviewService
                     'detail' => trim((string)($movement['description'] ?? 'Manual loan-control movement')) . ' on ' . (string)($movement['journal_date'] ?? '') . ' is not transaction-backed cash evidence.',
                     'source_label' => (string)($movement['source_label'] ?? ''),
                     'source_url' => (string)($movement['source_url'] ?? ''),
-                    'action_label' => 'Open source journal',
+                    'action_label' => 'Open Source Journal',
                     'action_url' => (string)($movement['source_url'] ?? ''),
                 ]);
             }
@@ -171,9 +171,9 @@ final class LoanReviewService
                         ? 'Unsupported participator-loan journal movement'
                         : 's455 evidence requires review',
                     'detail' => $message,
-                    'source_label' => 'Loans tax evidence',
+                    'source_label' => 'Loans Tax Evidence',
                     'source_url' => '?page=loans&show_card=director_loan_s455',
-                    'action_label' => 'Review loan tax evidence',
+                    'action_label' => 'Review Loan Tax Evidence',
                     'action_url' => '?page=loans&show_card=director_loan_s455',
                 ]);
             }
@@ -206,9 +206,9 @@ final class LoanReviewService
                     'state' => 'requires_action',
                     'title' => 'CT600A evidence requires review',
                     'detail' => $message,
-                    'source_label' => 'CT600A review',
+                    'source_label' => 'CT600A Review',
                     'source_url' => '?page=loans&show_card=director_loan_ct600a',
-                    'action_label' => 'Review CT600A evidence',
+                    'action_label' => 'Review CT600A Evidence',
                     'action_url' => '?page=loans&show_card=director_loan_ct600a',
                 ]);
             }
@@ -235,7 +235,7 @@ final class LoanReviewService
                 'detail' => $reviewErrors === []
                     ? 'Complete the Section 464A and 464C declaration for the current participator-loan evidence.'
                     : implode(' ', $reviewErrors),
-                'source_label' => 'CT600A evidence',
+                'source_label' => 'CT600A Evidence',
                 'source_url' => '?page=loans&show_card=director_loan_ct600a',
                 'action_label' => 'Complete Year End Confirmation',
                 'action_url' => '?page=loans&show_card=year_end_loan_confirmation',

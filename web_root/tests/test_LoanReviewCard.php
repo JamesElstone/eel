@@ -28,7 +28,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     $html = $card->render($context);
     $h->assertTrue(str_contains($html, 'Optional future repayment attribution'));
     $h->assertTrue(str_contains($html, 'Not a blocker'));
-    $h->assertTrue(str_contains($html, "Ignore - I don't want to claim S464 Tax Relief"));
+    $h->assertTrue(str_contains($html, "Ignore - I Don't Want to Claim S464 Tax Relief"));
     $h->assertSame(false, str_contains($html, 'Assign Participant'));
     $h->assertSame(false, str_contains($html, 'accounting_period_id=81'));
 

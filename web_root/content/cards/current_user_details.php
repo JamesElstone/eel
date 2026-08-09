@@ -80,7 +80,7 @@ final class _current_user_detailsCard extends CardBaseFramework
                 </div>
                 <div class="form-row full">
                     <div class="actions-row">
-                        <button class="button primary" type="submit">Save current user details</button>
+                        <button class="button primary" type="submit">Save Current User Details</button>
                     </div>
                 </div>
             </form>

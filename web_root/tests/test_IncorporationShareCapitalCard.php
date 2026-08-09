@@ -49,7 +49,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Paid-Up'));
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
-        $harness->assertSame(true, str_contains($html, 'Review payment'));
+        $harness->assertSame(true, str_contains($html, 'Review Payment'));
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-new-row"'));
         $harness->assertSame(true, str_contains($html, 'name="issued_at"'));
         $harness->assertSame(true, str_contains($html, 'type="date"'));
@@ -57,7 +57,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value"'));
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid"'));
         $harness->assertSame(true, str_contains($html, 'Add Share Class'));
-        $harness->assertSame(true, strrpos($html, 'incorporation-share-new-row') > strpos($html, 'Review payment'));
+        $harness->assertSame(true, strrpos($html, 'incorporation-share-new-row') > strpos($html, 'Review Payment'));
         $harness->assertSame(true, str_contains($html, 'name="quantity"'));
         $harness->assertSame(false, str_contains($html, 'name="nominal_value_per_share"'));
         $harness->assertSame(true, str_contains($html, '<textarea'));

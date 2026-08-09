@@ -82,7 +82,7 @@ final class _set_new_otp_secretCard extends CardBaseFramework
                     </div>
                     <div class="form-row full">
                         <div class="actions-row">
-                            <button class="button primary" type="submit">Confirm new OTP secret</button>
+                            <button class="button primary" type="submit">Confirm New OTP Secret</button>
                         </div>
                     </div>
                 </form>';
@@ -92,7 +92,7 @@ final class _set_new_otp_secretCard extends CardBaseFramework
                 <input type="hidden" name="action" value="users-begin-otp-rotation">
                 <input type="hidden" name="csrf_token" value="' . \eel_accounts\Support\Utf8::html($csrfToken) . '">
                 <div class="actions-row">
-                    <button class="button primary" type="submit">Set new OTP secret</button>
+                    <button class="button primary" type="submit">Set New OTP Secret</button>
                 </div>
             </form>';
         }

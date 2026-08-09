@@ -765,7 +765,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     <input type="hidden" name="category_filter" value="' . \eel_accounts\Support\Utf8::html($selectedTransactionFilter) . '">
                     ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                     <input type="hidden" name="global_action" value="retry_receipt_download">
-                    <button class="button button-inline" type="submit">Retry receipt</button>
+                    <button class="button button-inline" type="submit">Retry Receipt</button>
                 </form>';
         }
 
@@ -866,7 +866,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     </select>
                     <input class="input" name="charity_registration_number" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" placeholder="Charity registration number" autocomplete="off">
                     <input type="hidden" name="charity_entity_suffix" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" value="">
-                    <button class="button primary" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="verify_charitable_donation">Verify and categorise</button>
+                    <button class="button primary" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="verify_charitable_donation">Verify and Categorise</button>
                     ' . $verificationHtml . '
                 </div>'
             : '';
@@ -890,7 +890,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $buttonAttributes = $isPeriodLocked
                 ? ' type="button" disabled title="Period locked"'
                 : ' type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="cancel_inter_ac_transaction" data-chicken-check="true" data-chicken-title="Cancel inter-account match" data-chicken-message="This will remove the inter-account link and its bank-derived journals.<br><br>Continue?" data-chicken-confirm-text="Cancel match" data-chicken-button-class="button primary"';
-            $cancelButtonHtml = '<button class="button button-inline"' . $buttonAttributes . '>cancel</button>';
+            $cancelButtonHtml = '<button class="button button-inline"' . $buttonAttributes . '>Cancel</button>';
 
             return '<div class="transactions-imported-inter-ac-summary">
                     <span class="badge info">' . \eel_accounts\Support\Utf8::html($roleLabel) . '</span>

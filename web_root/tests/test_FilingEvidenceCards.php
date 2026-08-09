@@ -50,7 +50,7 @@ $h->run(_filing_evidence_coverageCard::class, static function (GeneratedServiceC
                 ['section_code' => 'assets', 'captured' => false, 'lock_snapshot' => null],
             ],
         ]]]);
-        $h->assertTrue(str_contains($html, 'Show frozen records'));
+        $h->assertTrue(str_contains($html, 'Show Frozen Records'));
         $h->assertTrue(str_contains($html, 'Not captured for this historic bundle.'));
         $h->assertTrue(str_contains($html, 'select-filing-evidence-section'));
     });

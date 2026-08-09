@@ -117,7 +117,7 @@ final class _asset_relationshipsCard extends CardBaseFramework
             . '<input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">'
             . '<input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">'
             . '<div class="form-row"><label for="asset-relationship-parent">Operational asset</label><select class="select" id="asset-relationship-parent" name="asset_relationship_parent_id" required>' . $options . '</select></div>'
-            . '<div class="form-row"><label>&nbsp;</label><button class="button" type="submit">Edit relationship</button></div></form>';
+            . '<div class="form-row"><label>&nbsp;</label><button class="button" type="submit">Edit Relationship</button></div></form>';
     }
 
     private function editor(array $context, array $data, array $settings, bool $isLocked): string
@@ -155,7 +155,7 @@ final class _asset_relationshipsCard extends CardBaseFramework
             . '<div class="form-row"><label for="asset-relationship-evidence">Evidence</label><input class="input" id="asset-relationship-evidence" type="text" name="available_for_use_evidence" value="' . \eel_accounts\Support\Utf8::html((string)($parent['available_for_use_evidence'] ?? '')) . '" required' . $disabled . '></div></div>'
             . '<p class="helper">Tick directly attributable costs incurred before the asset was available for use. For a currently linked item that is unticked, record its standalone operational date.</p>'
             . '<div class="table-scroll"><table><thead><tr><th>Source asset</th><th>Purchase date</th><th>Cost</th><th>Correction if removed</th></tr></thead><tbody>' . $componentRows . '</tbody></table></div>'
-            . '<button class="button primary" type="submit"' . ($isLocked ? ' disabled' : '') . '>Save relationship</button></form>';
+            . '<button class="button primary" type="submit"' . ($isLocked ? ' disabled' : '') . '>Save Relationship</button></form>';
     }
 
     private function relationshipsTable(array $context, array $data, array $settings, bool $isLocked): string

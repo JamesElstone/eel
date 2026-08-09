@@ -21,7 +21,7 @@ $required = [
     'hmrc_ct_artifacts_refresh',
     'hmrc_ct_rim_delete',
     'hmrc_ct_computation_delete',
-    'Refresh and install HMRC filing artefacts',
+    'Refresh and Install HMRC Filing Artefacts',
     'Filing Mappings',
     'Unsupported',
     'Install required',

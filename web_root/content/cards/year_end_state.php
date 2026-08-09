@@ -123,7 +123,7 @@ final class _year_end_stateCard extends CardBaseFramework
                         $isLocked ? $unlockDisabled : $lockDisabled,
                         $isLocked && $unlockDisabled ? $unlockDisabledTitle : ($lockDisabled ? $lockDisabledTitle : $lockTitle)
                     ) . '
-                    <button class="button" type="button" disabled>Export checklist</button>
+                    <button class="button" type="button" disabled>Export Checklist</button>
                 </div>
             </section>';
     }

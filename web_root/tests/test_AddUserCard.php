@@ -66,7 +66,7 @@ $harness->check(_add_userCard::class, 'renders invite mode when live delivery is
     $harness->assertTrue(str_contains($html, 'name="invite_mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true"'));
     $harness->assertTrue(str_contains($html, 'name="invite_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel" maxlength="16" data-invite-contact-field="mobile"'));
     $harness->assertTrue(str_contains($html, 'name="invite_role_id" data-no-submit-on-change="true"'));
-    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Create invitation</button>'));
+    $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Create Invitation</button>'));
 });
 
 $harness->check(_add_userCard::class, 'renders only live invite contact channels', function () use ($harness, $context): void {

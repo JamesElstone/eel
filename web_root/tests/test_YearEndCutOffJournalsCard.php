@@ -74,7 +74,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
         $harness->assertSame(false, str_contains($html, 'Mark cut-off journals review complete'));
         $harness->assertSame(false, str_contains($html, 'Post Cut-off Journal'));
-        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(false, str_contains($html, 'Revoke Approval'));
     });
 
     $harness->check(_journal_cut_off_confirmationCard::class, 'renders local cut-off review reopen action after acknowledgement', static function () use ($harness, $card): void {
@@ -90,7 +90,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, '<section class="panel-soft success settings-stack">'));
         $harness->assertSame(true, str_contains($html, 'Reviewed the year-end cut-off position.'));
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
-        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(true, str_contains($html, 'Revoke Approval'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="approve_section_review"'));
         $harness->assertSame(false, str_contains($html, 'Mark cut-off journals review complete'));
     });
@@ -107,7 +107,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $html = $card->render($context);
 
         $harness->assertSame(true, str_contains($html, 'This accounting period is locked, so this approval cannot be revoked.'));
-        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
+        $harness->assertSame(false, str_contains($html, 'Revoke Approval'));
     });
 
 });

@@ -24,7 +24,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     $h->assertTrue(str_contains($html, 'Allowable'));
     $h->assertTrue(str_contains($html, 'Disallowable'));
     $h->assertTrue(str_contains($html, 'Capital'));
-    $h->assertTrue(str_contains($html, 'BIM guidance'));
+    $h->assertTrue(str_contains($html, 'BIM Guidance'));
     $h->assertTrue(str_contains($html, 'Transaction #12'));
     $h->assertSame(false, str_contains($html, 'Decision history'));
     $h->assertSame(false, str_contains($html, '>OK<'));

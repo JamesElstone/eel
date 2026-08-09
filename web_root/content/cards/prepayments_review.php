@@ -144,7 +144,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="recalculate_schedule">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button" type="submit">Recalculate schedule</button>
+                <button class="button" type="submit">Recalculate Schedule</button>
             </form>';
         return '<div class="panel-soft warn" id="prepayment-schedule-repair"><h4 class="card-title">Saved prepayments missing automated schedules</h4>
             <p class="helper">This read-only preview reconstructs the schedule from the posted source and saved service dates. Recalculation creates append-only schedule snapshots only; it does not post journals.</p>
@@ -328,7 +328,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="review_id" value="' . (int)($review['id'] ?? 0) . '">
-                <button class="button" type="submit">Reopen schedule</button>
+                <button class="button" type="submit">Reopen Schedule</button>
                </form>'
             : '';
 

@@ -27,7 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $source,
                 '<form method="post" action="?page=transmit" data-ajax="true">'
             ));
-            $harness->assertTrue(str_contains($source, '>Clear filters</button></form></div>'));
+            $harness->assertTrue(str_contains($source, '>Clear Filters</button></form></div>'));
         });
     }
 );

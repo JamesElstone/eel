@@ -58,7 +58,7 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . \eel_accounts\Support\Utf8::html((string)$companyId) . '">
                 ' . $cardsHtml . '
                 <div class="actions-row">
-                    <button class="button primary" type="submit">Test anti-fraud headers</button>
+                    <button class="button primary" type="submit">Test Anti-Fraud Headers</button>
                 </div>
             </form>
             <div class="pill-row">

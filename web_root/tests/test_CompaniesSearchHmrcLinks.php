@@ -10,9 +10,9 @@ if (!is_string($source)) {
 }
 
 foreach ([
-    'HMRC - Corporation Tax accounting periods',
-    'HMRC - First company accounts and return',
-    'HMRC - Company Tax Return obligations',
+    'HMRC - Corporation Tax Accounting Periods',
+    'HMRC - First Company Accounts and Return',
+    'HMRC - Company Tax Return Obligations',
     'https://www.gov.uk/corporation-tax-accounting-period',
     'https://www.gov.uk/first-company-accounts-and-return/overview',
     'https://www.gov.uk/guidance/company-tax-return-obligations',

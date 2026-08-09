@@ -129,7 +129,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
             . '<div class="status-head"><h3 class="card-title">Environment</h3>'
             . '<span class="badge warning">Live</span></div>'
         ));
-        $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML environment</a>'));
+        $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_mode">Configure HMRC XML Environment</a>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card success"><div class="summary-label">Credentials</div><div class="summary-value">Configured</div>'));
         $harness->assertFalse(str_contains($html, 'Test path'));
         $harness->assertFalse(str_contains($html, 'Live path'));
@@ -253,7 +253,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, '<section class="panel-soft summary-card success hmrc-connection-summary-card hmrc-transmit-status-board"><div class="status-head"><h3 class="card-title">Environment</h3><span class="badge success">Test</span></div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-card danger hmrc-credential-summary-card"><div class="summary-label">Credentials</div><div class="helper">HMRC / XML / CT600_XML / TEST Credentials Missing</div>'));
         $harness->assertTrue(str_contains($html, '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'));
-        $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML credentials</a>'));
+        $harness->assertTrue(str_contains($html, '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">Configure HMRC XML Credentials</a>'));
         $harness->assertFalse(str_contains($html, 'HMRC TEST does not file the return.'));
     });
 
@@ -300,7 +300,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
             $harness->assertTrue(str_contains($standard, 'HMRC Gateway rejection'));
             $harness->assertTrue(str_contains($standard, '1046: Authentication Failure'));
             $harness->assertTrue(str_contains($standard, 'HMRC / XML / CT600_XML / TEST'));
-            $harness->assertTrue(str_contains($standard, 'Configure HMRC XML credentials'));
+            $harness->assertTrue(str_contains($standard, 'Configure HMRC XML Credentials'));
             $harness->assertFalse(str_contains($standard, 'name="intent" value="hmrc_retry_test"'));
 
             AppConfigurationStore::set('developer_options', true);

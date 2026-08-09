@@ -69,7 +69,7 @@ final class _api_keys_editorCard extends CardBaseFramework
             . HelperFramework::csrfHiddenInput($csrf)
             . '<input type="hidden" name="card_action" value="ApiKeysEditor">'
             . '<input type="hidden" name="api_keys_editor_operation" value="repair_file">'
-            . '<div class="api-credential-actions"><button class="button primary" type="submit">Fix error</button></div>'
+            . '<div class="api-credential-actions"><button class="button primary" type="submit">Fix Error</button></div>'
             . '</form>';
     }
 

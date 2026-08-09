@@ -25,7 +25,7 @@ final class _filing_evidence_calculationsCard extends CardBaseFramework
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
                 . '<input type="hidden" name="action" value="select-filing-evidence-area"><input type="hidden" name="evidence_bundle_id" value="' . (int)$state['bundle_id'] . '">'
                 . '<input type="hidden" name="evidence_reference" value="' . \eel_accounts\Support\Utf8::html((string)$state['reference']) . '"><input type="hidden" name="evidence_snapshot_id" value="' . (int)$area['snapshot_id'] . '">'
-                . '<input type="hidden" name="evidence_area_code" value="' . \eel_accounts\Support\Utf8::html((string)$area['area_code']) . '"><button class="button button-inline" type="submit">Show frozen sources</button></form></td></tr>';
+                . '<input type="hidden" name="evidence_area_code" value="' . \eel_accounts\Support\Utf8::html((string)$area['area_code']) . '"><button class="button button-inline" type="submit">Show Frozen Sources</button></form></td></tr>';
         }
         return '<div class="table-scroll"><table><thead><tr><th>CT period</th><th>Calculation</th><th>Result</th><th>Sources</th><th>Action</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
     }

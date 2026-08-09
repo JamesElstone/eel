@@ -481,7 +481,7 @@ final class CorporationTaxLineTreatmentService
             ? \InterfaceDB::fetchOne('SELECT id, claim_reference_code FROM expense_claims WHERE posted_journal_id = :journal_id LIMIT 1', ['journal_id' => $journalId])
             : null;
         if (is_array($claim)) {
-            return ['label' => 'Expense claim ' . (string)($claim['claim_reference_code'] ?? ('#' . $claim['id'])), 'url' => '?page=expense_claims&show_card=expense_claim_editor&claim_id=' . (int)$claim['id']];
+            return ['label' => 'Expense Claim ' . (string)($claim['claim_reference_code'] ?? ('#' . $claim['id'])), 'url' => '?page=expense_claims&show_card=expense_claim_editor&claim_id=' . (int)$claim['id']];
         }
         return ['label' => 'Journal #' . $journalId, 'url' => '?page=journal&show_card=journal_entries&journal_id=' . $journalId];
     }

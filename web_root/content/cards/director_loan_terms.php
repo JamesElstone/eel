@@ -53,7 +53,7 @@ final class _director_loan_termsCard extends CardBaseFramework
             .'<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"'.$disabled.'><option value="independently"'.$option('settlement_intention','independently').'>Independently</option><option value="net"'.$option('settlement_intention','net').'>Net</option><option value="simultaneous"'.$option('settlement_intention','simultaneous').'>Simultaneous</option></select></label></div>'
             .'<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"'.$checked('set_off_right_confirmed').$disabled.'><span>A legally enforceable right of set-off exists.</span></label>'
             .$this->advanceTermsFields((array)($terms['advance_terms']??[]),$disabled)
-            .($locked?'':'<div><button class="button primary" type="submit">Save terms</button></div>').'</form>';
+            .($locked?'':'<div><button class="button primary" type="submit">Save Terms</button></div>').'</form>';
     }
     private function addForm(int $companyId, int $periodId, array $entries): string
     {
@@ -81,7 +81,7 @@ final class _director_loan_termsCard extends CardBaseFramework
             . '<label><span class="helper">Settlement intention</span><select class="select" name="settlement_intention" data-no-submit-on-change="true"><option value="independently">Independently</option><option value="net">Net</option><option value="simultaneous">Simultaneous</option></select></label></div>'
             . '<label class="checkbox-row"><input type="checkbox" name="set_off_right_confirmed" value="1"><span>A legally enforceable right of set-off exists.</span></label>'
             . $this->advanceTermsFields([], '')
-            . '<div><button class="button primary" type="submit">Save terms</button></div></form>';
+            . '<div><button class="button primary" type="submit">Save Terms</button></div></form>';
     }
     private function errors(array $errors): string { return implode('',array_map(static fn($e)=>'<div class="helper">'.\eel_accounts\Support\Utf8::html((string)$e).'</div>',$errors)); }
 

@@ -145,7 +145,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     $companyId,
                     $accountingPeriodId,
                     (int)$submission['id'],
-                    'Continue and retrieve accepted document'
+                    'Continue and Retrieve Accepted Document'
                 );
                 if ($developerOptions) {
                     $html .= $this->simpleProtocolForm(
@@ -153,7 +153,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                         $accountingPeriodId,
                         (int)$submission['id'],
                         'retrieve_accounts_document',
-                        'Get filed document'
+                        'Get Filed Document'
                     );
                 }
             }
@@ -259,7 +259,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         int $submissionId,
-        string $label = 'Send / continue Companies House filing'
+        string $label = 'Send / Continue Companies House Filing'
     ): string
     {
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
@@ -372,7 +372,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<span class="badge ' . $badgeClass . '">' . $label . '</span></div>'
             . '<div class="actions-row actions-row-right hmrc-connection-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_mode">'
-            . 'Configure Companies House XML environment</a></div></section>';
+            . 'Configure Companies House XML Environment</a></div></section>';
     }
 
     private function credentialMetric(string $environment, bool $configured): string
@@ -383,7 +383,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . '<span class="badge success">Configured</span></div>'
                 . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
                 . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
-                . 'Configure Companies House XML credentials</a></div></section>';
+                . 'Configure Companies House XML Credentials</a></div></section>';
         }
 
         $environment = strtoupper(trim($environment));
@@ -396,7 +396,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . \eel_accounts\Support\Utf8::html($environment) . ' environment.</div>'
             . '<div class="actions-row actions-row-right hmrc-credential-summary-actions">'
             . '<a class="button" href="?page=settings&amp;show_card=api_keys_editor">'
-            . 'Configure Companies House XML credentials</a></div></section>';
+            . 'Configure Companies House XML Credentials</a></div></section>';
     }
 
     /** @param list<string> $messages */

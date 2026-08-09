@@ -99,7 +99,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
             . '<div class="form-grid"><div class="form-row"><label>Party</label><select class="select" name="party_id" required><option value="">Select</option>' . $partyOptions . '</select></div>'
             . '<div class="form-row"><label>Relationship</label><select class="select" name="role_type">' . $roleOptions . '</select></div>'
             . '<div class="form-row"><label>Effective from</label><input class="input" type="date" name="effective_from" required></div></div>'
-            . '<div class="actions-row"><button class="button primary" type="submit">Add role</button></div></form>';
+            . '<div class="actions-row"><button class="button primary" type="submit">Add Role</button></div></form>';
     }
 
     private function manageRoleForm(int $companyId, array $role): string
@@ -113,7 +113,7 @@ final class _incorporation_relationshipsCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="end_ownership_role">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="role_id" value="' . (int)$role['id'] . '">'
             . '<input class="input" type="date" name="effective_to" aria-label="Last effective date" required>'
-            . '<button class="button" type="submit">End role</button></form>';
+            . '<button class="button" type="submit">End Role</button></form>';
     }
 
     private function calculatedShareholderFrom(array $party): ?string

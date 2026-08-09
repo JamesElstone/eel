@@ -42,7 +42,7 @@ final class _tax_ct_period_factsCard extends CardBaseFramework
                 . '</div>'
                 . $this->closeCompanyStatement((array)($period['close_company'] ?? []))
                 . '<div class="form-grid"><div class="form-row"><label>Associated companies excluding this company</label><input class="input" type="number" min="0" name="associated_company_count" value="' . max(0, (int)($period['associated_company_count'] ?? 0)) . '" required></div></div>'
-                . '<div class="actions-row"><button class="button primary" type="submit">Save CT-period fact</button></div></form>';
+                . '<div class="actions-row"><button class="button primary" type="submit">Save CT-Period Fact</button></div></form>';
         }
         return $html . '</section>';
     }
@@ -62,6 +62,6 @@ final class _tax_ct_period_factsCard extends CardBaseFramework
         return '<div class="panel-soft ' . $class . '"><strong>' . \eel_accounts\Support\Utf8::html($label) . '</strong><div class="helper">'
             . \eel_accounts\Support\Utf8::html((string)($closeCompany['detail'] ?? 'Close-company status is unavailable.'))
             . ' ' . \eel_accounts\Support\Utf8::html($counts)
-            . ' <a class="button compact" href="?page=incorporation&amp;show_card=incorporation_relationships">Review ownership and relationships</a></div></div>';
+            . ' <a class="button compact" href="?page=incorporation&amp;show_card=incorporation_relationships">Review Ownership and Relationships</a></div></div>';
     }
 }

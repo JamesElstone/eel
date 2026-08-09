@@ -85,7 +85,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         if (empty($statement['success'])) {
             if (!empty($statement['missing_control_nominals'])) {
                 return '<div class="panel-soft warn"><div class="helper">Configure both Participator Loan control nominals in Company Nominals.</div>'
-                    . '<div class="actions-row"><a class="button" href="?page=companies&amp;show_card=companies_nominals">Configure Participator Loan nominals</a></div></div>';
+                    . '<div class="actions-row"><a class="button" href="?page=companies&amp;show_card=companies_nominals">Configure Participator Loan Nominals</a></div></div>';
             }
             return $this->errors((array)($statement['errors'] ?? ['Director loan statement is unavailable.']));
         }
@@ -110,7 +110,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                     'Unattributed entries',
                     (string)($unattributedCount + $invalidCount),
                     ($unattributedCount + $invalidCount) > 0 ? 'danger' : '',
-                    '<a class="button button-inline" href="?page=loans&amp;show_card=director_loan_attribution">Review entries</a>'
+                    '<a class="button button-inline" href="?page=loans&amp;show_card=director_loan_attribution">Review Entries</a>'
                 ) . '
             </div>
             <section class="panel-soft settings-stack director-loan-per-party-position">

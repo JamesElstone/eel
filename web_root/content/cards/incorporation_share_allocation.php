@@ -91,7 +91,7 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
             . '<input type="hidden" name="card_action" value="Incorporation"><input type="hidden" name="intent" value="end_shareholding">'
             . '<input type="hidden" name="company_id" value="' . $companyId . '"><input type="hidden" name="holding_id" value="' . (int)$holding['id'] . '">'
             . '<input class="input" type="date" name="effective_to" aria-label="Last effective date" required>'
-            . '<button class="button" type="submit">End holding</button></form>';
+            . '<button class="button" type="submit">End Holding</button></form>';
     }
 
     private function holdingForm(int $companyId, int $accountingPeriodId, string $partyOptions, string $shareClassOptions): string
@@ -103,7 +103,7 @@ final class _incorporation_share_allocationCard extends CardBaseFramework
             . '<div class="share-allocation-fields"><div class="form-row"><label>Entity</label><select class="select" name="party_id" data-no-submit-on-change="true" required><option value="">Select</option>' . $partyOptions . '</select></div>'
             . '<div class="form-row"><label>Issued Shares</label><select class="select" name="share_class_id" data-share-allocation-issued-shares data-no-submit-on-change="true" required><option value="">Select</option>' . $shareClassOptions . '</select></div>'
             . '<div class="form-row"><label>Quantity</label><input class="input" type="number" min="1" name="quantity" data-share-allocation-quantity required></div>'
-            . '<div class="share-allocation-actions"><button class="button primary" type="submit">Add holding</button></div></div></form>';
+            . '<div class="share-allocation-actions"><button class="button primary" type="submit">Add Holding</button></div></div></form>';
     }
 
     private function partyOptions(array $parties): string

@@ -190,7 +190,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
 
         $row = $rules[0];
         $url = trim((string)($context[$this->key()]['source_url'] ?? ($row['source_url'] ?? '')));
-        $link = $url === '' ? '' : '. <a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">HMRC - Rates and allowances</a>';
+        $link = $url === '' ? '' : '. <a class="button button-inline" href="' . \eel_accounts\Support\Utf8::html($url) . '" target="_blank" rel="noopener noreferrer">HMRC - Rates and Allowances</a>';
 
         return '<div class="helper">Source updated: ' . \eel_accounts\Support\Utf8::html((string)($row['source_updated_at'] ?? 'Unknown'))
             . '. Checked: ' . \eel_accounts\Support\Utf8::html((string)($row['source_checked_at'] ?? 'Unknown'))

@@ -55,7 +55,7 @@ final class YearEndApprovalRenderer
                     <form method="post" data-ajax="true">
                         ' . self::commonFields($companyId, $accountingPeriodId, $revokeIntent) . '
                         ' . self::hiddenFields((array)($options['revokeFields'] ?? [])) . '
-                        <button class="button" type="submit">Revoke approval</button>
+                        <button class="button" type="submit">Revoke Approval</button>
                     </form>
                 </div>
             </div>') . '

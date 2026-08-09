@@ -61,7 +61,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
                     A company needs to be added before company settings can be configured.
                 </div>
                 <div class="actions-row">
-                    <button class="button primary" type="button" data-page-card-switch-tab="Add">Add company</button>
+                    <button class="button primary" type="button" data-page-card-switch-tab="Add">Add Company</button>
                 </div>
             ';
         }

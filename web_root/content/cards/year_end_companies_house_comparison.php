@@ -283,7 +283,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     <input type="checkbox" name="original_software_filing_confirmed" value="1" required' . $disabled . '>
                     <span>I confirm that the recorded Companies House response applies to this exact original filing and accounting period.</span>
                 </label>
-                <button class="button primary" type="submit"' . $disabled . '>Prepare revised accounts</button>
+                <button class="button primary" type="submit"' . $disabled . '>Prepare Revised Accounts</button>
             </form>';
     }
 
@@ -311,7 +311,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     <input type="password" name="company_auth_code" minlength="6" maxlength="8" pattern="[A-Za-z0-9]{6,8}" required autocomplete="off"' . $disabled . '>
                 </label>'
             . $liveConfirmation
-            . '<button class="button danger" type="submit"' . $disabled . '>Submit ' . \eel_accounts\Support\Utf8::html($mode) . ' revised accounts</button>
+            . '<button class="button danger" type="submit"' . $disabled . '>Submit ' . \eel_accounts\Support\Utf8::html($mode) . ' Revised Accounts</button>
             </form>';
     }
 
@@ -325,7 +325,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<form method="post" action="?page=companies_house" data-ajax="true" class="actions-row">'
             . $this->actionHiddenFields($companyId, $accountingPeriodId, 'refresh_revised_accounts_status')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">
-                <button class="button" type="submit"' . $disabled . '>Refresh submission status</button>
+                <button class="button" type="submit"' . $disabled . '>Refresh Submission Status</button>
             </form>';
     }
 
@@ -341,7 +341,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     private function transmitLink(): string
     {
         return '<div class="actions-row"><a class="button" href="?page=transmit">'
-            . 'Open Transmit page</a></div>';
+            . 'Open Transmit Page</a></div>';
     }
 
     private function filingPanel(string $status, string $badgeClass, string $body): string

@@ -209,7 +209,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertTrue(str_contains($html, 'Saved prepayments missing automated schedules'));
             $harness->assertTrue(str_contains($html, 'id="prepayment-schedule-repair"'));
-            $harness->assertTrue(str_contains($html, 'Recalculate schedule'));
+            $harness->assertTrue(str_contains($html, 'Recalculate Schedule'));
             $harness->assertTrue(str_contains($html, 'Recalculation creates append-only schedule snapshots only'));
             $harness->assertSame(false, str_contains($html, 'Filed-period'));
             $harness->assertSame(false, str_contains($html, 'Companies House'));

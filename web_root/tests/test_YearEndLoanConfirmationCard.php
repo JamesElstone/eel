@@ -36,7 +36,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $context['services']['sectionReview']['answers'] = ['ct600a.missing_parties' => 'no'];
         $html = $card->render($context);
         $harness->assertTrue(str_contains($html, 'Are any participators missing?'));
-        $harness->assertTrue(str_contains($html, 'Revoke approval'));
+        $harness->assertTrue(str_contains($html, 'Revoke Approval'));
         $harness->assertSame(false, str_contains($html, 'save_ct600a_review'));
     });
 
@@ -98,7 +98,7 @@ $harness->run(_year_end_loan_confirmationCard::class, static function (Generated
         $context['services']['sectionReview']['display']['legacy_unresolved_reclassification_amount'] = 125;
         $context['services']['sectionReview']['display']['has_activity'] = true;
         $html = $card->render($context);
-        $harness->assertTrue(str_contains($html, 'Repair legacy offset'));
+        $harness->assertTrue(str_contains($html, 'Repair Legacy Offset'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="repair_legacy_director_loan_offset"'));
     });
 });

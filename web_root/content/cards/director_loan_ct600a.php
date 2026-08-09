@@ -47,9 +47,9 @@ final class _director_loan_ct600aCard extends CardBaseFramework
         }
         $company = (array)($context['company'] ?? []);
         $html = '<div class="settings-stack"><div class="actions-row">
-            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/guidance/supplementary-pages-ct600a-2015-version-3-close-company-loans-and-arrangements-to-confer-benefits-on-participators">HMRC: CT600A guidance</a>
-            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61570">HMRC: section 464A</a>
-            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.legislation.gov.uk/ukpga/2010/4/section/464C">Legislation: section 464C</a>
+            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/guidance/supplementary-pages-ct600a-2015-version-3-close-company-loans-and-arrangements-to-confer-benefits-on-participators">HMRC: CT600A Guidance</a>
+            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm61570">HMRC: Section 464A</a>
+            <a class="button button-inline" target="_blank" rel="noopener noreferrer" href="https://www.legislation.gov.uk/ukpga/2010/4/section/464C">Legislation: Section 464C</a>
         </div>';
         $html .= $this->reviewEvidenceStatus((array)($data['review'] ?? []));
         foreach ((array)$data['periods'] as $ct) {

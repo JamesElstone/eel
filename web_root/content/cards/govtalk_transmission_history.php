@@ -196,7 +196,7 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 . '<input type="hidden" name="history_conversation_authority" value="'
                 . \eel_accounts\Support\Utf8::html($authority) . '">'
                 . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
-                . '<button class="button primary" type="submit">View conversation</button></form>'
+                . '<button class="button primary" type="submit">View Conversation</button></form>'
                 . $statusAction . $reprocessAction . '</td></tr>';
         }
 
@@ -292,7 +292,7 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         $heading = '<div class="status-head">'
             . ($selectedConversationId > 0
                 ? '<a class="button button-inline" href="?page=transmit&amp;show_card='
-                . $this->key() . '#govtalk-xml-exchanges">Show all conversations</a>'
+                . $this->key() . '#govtalk-xml-exchanges">Show All Conversations</a>'
                 : '')
             . '</div>';
         $warning = '';
@@ -489,7 +489,7 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<input type="hidden" name="_card_refresh" value="1">'
             . '<input type="hidden" name="_invalidate_fact" value="govtalk.exchanges.selection">'
             . '<input type="hidden" name="cards[]" value="' . $this->key() . '">'
-            . '<button class="button primary" type="submit">Clear filters</button></form></div>';
+            . '<button class="button primary" type="submit">Clear Filters</button></form></div>';
     }
 
     protected function govTalkErrors(array $errors): string

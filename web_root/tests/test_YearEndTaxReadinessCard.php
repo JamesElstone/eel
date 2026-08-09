@@ -44,6 +44,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             $harness->assertTrue(str_contains($html, 'name="intent" value="cleanup_unsubmitted_tax_history"'));
             $harness->assertTrue(str_contains($html, '>Remove Unsubmitted Tax History</button>'));
             $harness->assertTrue(str_contains($html, 'The newest approval and newest audit snapshot for each CT period are retained.'));
+            $harness->assertTrue(str_contains($html, 'a full database backup is created immediately before and after cleanup'));
         } finally {
             AppConfigurationStore::set('developer_options', $developerOptions);
         }

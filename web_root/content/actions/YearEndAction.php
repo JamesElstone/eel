@@ -90,8 +90,11 @@ final class YearEndAction implements ActionInterfaceFramework
                 ),
                 'cleanup_unused_historic_filing_evidence' => (new \eel_accounts\Service\FilingEvidenceService())
                     ->cleanupUnusedHistoricForAccountingPeriod($companyId, $accountingPeriodId, $actor),
-                'cleanup_unsubmitted_tax_history' => (new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService())
-                    ->clean($companyId, $accountingPeriodId, null, $actor),
+                'cleanup_unsubmitted_tax_history' => $this->cleanupUnsubmittedTaxHistoryWithBackups(
+                    $companyId,
+                    $accountingPeriodId,
+                    $actor
+                ),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
                     $companyId,
@@ -246,6 +249,66 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         return 'web_app';
+    }
+
+    private function cleanupUnsubmittedTaxHistoryWithBackups(
+        int $companyId,
+        int $accountingPeriodId,
+        string $actor
+    ): array {
+        $cleanup = new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService();
+        if (!$cleanup->hasRemovableHistory($companyId, $accountingPeriodId)) {
+            return ['success' => true, 'history_found' => false];
+        }
+
+        if (!$this->canCreateBackups()) {
+            throw new RuntimeException(
+                'You do not have permission to create the automatic pre-cleanup and post-cleanup database backups.'
+            );
+        }
+
+        @set_time_limit(0);
+        $backupService = new \eel_accounts\Service\DatabaseBackupService();
+        $beforeBackup = $backupService->createBackup(
+            $companyId,
+            \eel_accounts\Service\DatabaseBackupService::TRIGGER_TAX_HISTORY_PRE_CLEANUP
+        );
+        $this->assertVerifiedBackup($beforeBackup, 'pre-cleanup');
+
+        $result = $cleanup->clean($companyId, $accountingPeriodId, null, $actor);
+
+        try {
+            $afterBackup = $backupService->createBackup(
+                $companyId,
+                \eel_accounts\Service\DatabaseBackupService::TRIGGER_TAX_HISTORY_POST_CLEANUP
+            );
+            $this->assertVerifiedBackup($afterBackup, 'post-cleanup');
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'The unsubmitted Corporation Tax history was removed, but the automatic post-cleanup database backup failed: '
+                . $exception->getMessage(),
+                0,
+                $exception
+            );
+        }
+
+        return $result + [
+            'history_found' => true,
+            'before_backup' => $beforeBackup,
+            'after_backup' => $afterBackup,
+        ];
+    }
+
+    /** @param array<string,mixed> $backup */
+    private function assertVerifiedBackup(array $backup, string $stage): void
+    {
+        if (trim((string)($backup['filename'] ?? '')) === ''
+            || (int)($backup['size_bytes'] ?? 0) <= 0
+            || (int)($backup['table_count'] ?? 0) <= 0) {
+            throw new RuntimeException(
+                'The automatic ' . $stage . ' backup service did not return a verified, non-empty full database backup.'
+            );
+        }
     }
 
     private function lockPeriodWithProgress(
@@ -459,12 +522,15 @@ final class YearEndAction implements ActionInterfaceFramework
             'cleanup_unused_historic_filing_evidence' => ((int)($result['deleted_count'] ?? 0) > 0)
                 ? (int)$result['deleted_count'] . ' unused historic evidence bundle(s) removed. Artifact files were not deleted.'
                 : 'No unused historic evidence bundles were eligible for removal.',
-            'cleanup_unsubmitted_tax_history' => (int)($result['deleted_tax_audit_snapshots'] ?? 0)
-                . ' obsolete Corporation Tax audit snapshot(s), '
-                . (int)($result['deleted_tax_audit_areas'] ?? 0) . ' audit-area record(s), '
-                . (int)($result['deleted_approvals'] ?? 0) . ' old approval(s), and '
-                . (int)($result['deleted_bundles'] ?? 0) . ' unused evidence bundle(s) removed. '
-                . 'Generated files were not deleted.',
+            'cleanup_unsubmitted_tax_history' => empty($result['history_found'])
+                ? 'No unsubmitted Corporation Tax history was eligible for removal; no backups were needed.'
+                : (int)($result['deleted_tax_audit_snapshots'] ?? 0)
+                    . ' obsolete Corporation Tax audit snapshot(s), '
+                    . (int)($result['deleted_tax_audit_areas'] ?? 0) . ' audit-area record(s), '
+                    . (int)($result['deleted_approvals'] ?? 0) . ' old approval(s), and '
+                    . (int)($result['deleted_bundles'] ?? 0) . ' unused evidence bundle(s) removed. '
+                    . 'Full database backups were created immediately before and after cleanup. '
+                    . 'Generated files were not deleted.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
             'confirm_empty_months' => 'Empty month confirmations saved.',

@@ -80,6 +80,26 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertTrue(str_contains($sectionApprovals, 'Rebuilding Year End review cache:'));
     });
 
+    $harness->check(YearEndAction::class, 'backs up before and after eligible unsubmitted Tax history cleanup', static function () use ($harness): void {
+        $action = (string)file_get_contents(
+            dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'
+        );
+        $methodStart = strpos($action, 'private function cleanupUnsubmittedTaxHistoryWithBackups(');
+        $methodEnd = strpos($action, 'private function assertVerifiedBackup(', $methodStart !== false ? $methodStart : 0);
+        $harness->assertTrue($methodStart !== false && $methodEnd !== false);
+        $method = substr($action, (int)$methodStart, (int)$methodEnd - (int)$methodStart);
+
+        $eligibility = strpos($method, '->hasRemovableHistory(');
+        $before = strpos($method, 'TRIGGER_TAX_HISTORY_PRE_CLEANUP');
+        $cleanup = strpos($method, '->clean(');
+        $after = strpos($method, 'TRIGGER_TAX_HISTORY_POST_CLEANUP');
+        $harness->assertTrue($eligibility !== false && $before !== false && $cleanup !== false && $after !== false);
+        $harness->assertTrue($eligibility < $before && $before < $cleanup && $cleanup < $after);
+        $harness->assertTrue(str_contains($method, 'if (!$this->canCreateBackups())'));
+        $harness->assertTrue(str_contains($method, "['success' => true, 'history_found' => false]"));
+        $harness->assertTrue(str_contains($method, "'history_found' => true"));
+    });
+
     $harness->check(YearEndAction::class, 'streams standard action progress while approving Corporation Tax for Year End', static function () use ($harness): void {
         $action = (string)file_get_contents(
             dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'YearEndAction.php'

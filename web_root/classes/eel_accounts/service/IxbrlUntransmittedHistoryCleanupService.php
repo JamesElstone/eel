@@ -11,6 +11,122 @@ namespace eel_accounts\Service;
 
 final class IxbrlUntransmittedHistoryCleanupService
 {
+    public function hasRemovableHistory(
+        int $companyId,
+        int $accountingPeriodId,
+        ?int $retainApprovalId = null
+    ): bool {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            throw new \RuntimeException('Select a valid company and accounting period.');
+        }
+
+        $retainApprovalId = $retainApprovalId !== null && $retainApprovalId > 0
+            ? $retainApprovalId
+            : $this->latestApprovalId($companyId, $accountingPeriodId);
+        $params = [
+            'company_id' => $companyId,
+            'period_id' => $accountingPeriodId,
+            'retain_approval_id' => $retainApprovalId,
+        ];
+
+        if ((int)\InterfaceDB::fetchColumn(
+            "SELECT COUNT(*)
+             FROM companies_house_accounts_submissions submission
+             WHERE submission.company_id = :company_id
+               AND submission.accounting_period_id = :period_id
+               AND submission.lifecycle = 'prepared'
+               AND submission.submitted_at IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM ixbrl_generation_runs retained_run
+                   WHERE retained_run.id = submission.ixbrl_generation_run_id
+                     AND retained_run.filing_approval_id = :retain_approval_id
+               )",
+            $params
+        ) > 0) {
+            return true;
+        }
+
+        if ((int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM hmrc_ct600_submissions submission
+             WHERE submission.company_id = :company_id
+               AND submission.accounting_period_id = :period_id
+               AND submission.submitted_at IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM ixbrl_generation_runs retained_run
+                   WHERE retained_run.id = submission.accounts_run_id
+                     AND retained_run.filing_approval_id = :retain_approval_id
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM ct_period_filing_bases retained_basis
+                   WHERE retained_basis.computation_run_id = submission.computation_run_id
+                     AND retained_basis.filing_approval_id = :retain_approval_id
+               )',
+            $params
+        ) > 0) {
+            return true;
+        }
+
+        $authorityArtifactRetention = \InterfaceDB::tableExists('ixbrl_accounts_artifacts')
+            ? "\n                   AND NOT EXISTS (\n                       SELECT 1\n                       FROM ixbrl_accounts_artifacts authority_artifact\n                       WHERE authority_artifact.filing_approval_id = approval.id\n                   )"
+            : '';
+        $hmrcApprovalRetention = \InterfaceDB::tableExists('hmrc_ct_filing_approvals')
+            ? "\n                   AND NOT EXISTS (\n                       SELECT 1\n                       FROM hmrc_ct_filing_approvals hmrc_approval\n                       WHERE hmrc_approval.accounts_filing_approval_id = approval.id\n                          OR hmrc_approval.legacy_combined_approval_id = approval.id\n                   )"
+            : '';
+        if ($this->removableApprovals(
+            $companyId,
+            $accountingPeriodId,
+            $retainApprovalId,
+            $authorityArtifactRetention,
+            $hmrcApprovalRetention
+        ) !== []) {
+            return true;
+        }
+
+        if ((int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM ixbrl_generation_runs run
+             WHERE run.company_id = :company_id
+               AND run.accounting_period_id = :period_id
+               AND run.filing_approval_id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM companies_house_accounts_submissions submission
+                   WHERE submission.ixbrl_generation_run_id = run.id
+               )',
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        ) > 0) {
+            return true;
+        }
+
+        if ((int)\InterfaceDB::fetchColumn(
+            "SELECT COUNT(*)
+             FROM corporation_tax_computation_runs run
+             WHERE run.company_id = :company_id
+               AND run.accounting_period_id = :period_id
+               AND (run.ixbrl_status <> 'not_generated'
+                    OR run.generated_filename IS NOT NULL
+                    OR run.generated_path IS NOT NULL)
+               AND NOT EXISTS (
+                   SELECT 1 FROM ct_period_filing_bases basis
+                   WHERE basis.computation_run_id = run.id
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM hmrc_ct600_submissions submission
+                   WHERE submission.computation_run_id = run.id
+               )",
+            ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
+        ) > 0) {
+            return true;
+        }
+
+        $evidence = (new FilingEvidenceService())->listForAccountingPeriod($companyId, $accountingPeriodId);
+        if ((int)($evidence['eligible_count'] ?? 0) > 0) {
+            return true;
+        }
+
+        return $this->obsoleteTaxAuditSnapshotCandidates($companyId, $accountingPeriodId) !== [];
+    }
+
     /**
      * Removes local filing records that have never been transmitted.
      *
@@ -88,44 +204,13 @@ final class IxbrlUntransmittedHistoryCleanupService
                 ]
             );
 
-            $approvals = \InterfaceDB::fetchAll(
-                "SELECT approval.id
-                 FROM ixbrl_accounts_filing_approvals approval
-                 WHERE approval.company_id = :company_id
-                   AND approval.accounting_period_id = :period_id
-                   AND approval.id <> :retain_approval_id
-                   {$authorityArtifactRetention}
-                   {$hmrcApprovalRetention}
-                   AND NOT EXISTS (
-                       SELECT 1
-                       FROM companies_house_accounts_submissions submission
-                       INNER JOIN ixbrl_generation_runs accounts_run
-                               ON accounts_run.id = submission.ixbrl_generation_run_id
-                       WHERE accounts_run.filing_approval_id = approval.id
-                         AND submission.submitted_at IS NOT NULL
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1
-                       FROM hmrc_ct600_submissions submission
-                       INNER JOIN ixbrl_generation_runs accounts_run
-                               ON accounts_run.id = submission.accounts_run_id
-                       WHERE accounts_run.filing_approval_id = approval.id
-                         AND submission.submitted_at IS NOT NULL
-                   )
-                   AND NOT EXISTS (
-                       SELECT 1
-                       FROM hmrc_ct600_submissions submission
-                       INNER JOIN ct_period_filing_bases basis
-                               ON basis.computation_run_id = submission.computation_run_id
-                       WHERE basis.filing_approval_id = approval.id
-                         AND submission.submitted_at IS NOT NULL
-                   )",
-                [
-                    'company_id' => $companyId,
-                    'period_id' => $accountingPeriodId,
-                    'retain_approval_id' => $retainApprovalId,
-                ]
-            ) ?: [];
+            $approvals = $this->removableApprovals(
+                $companyId,
+                $accountingPeriodId,
+                $retainApprovalId,
+                $authorityArtifactRetention,
+                $hmrcApprovalRetention
+            );
 
             $deletedApprovals = 0;
             foreach ($approvals as $approval) {
@@ -234,6 +319,54 @@ final class IxbrlUntransmittedHistoryCleanupService
         });
     }
 
+    /** @return list<array<string,mixed>> */
+    private function removableApprovals(
+        int $companyId,
+        int $accountingPeriodId,
+        int $retainApprovalId,
+        string $authorityArtifactRetention,
+        string $hmrcApprovalRetention
+    ): array {
+        return \InterfaceDB::fetchAll(
+                "SELECT approval.id
+                 FROM ixbrl_accounts_filing_approvals approval
+                 WHERE approval.company_id = :company_id
+                   AND approval.accounting_period_id = :period_id
+                   AND approval.id <> :retain_approval_id
+                   {$authorityArtifactRetention}
+                   {$hmrcApprovalRetention}
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM companies_house_accounts_submissions submission
+                       INNER JOIN ixbrl_generation_runs accounts_run
+                               ON accounts_run.id = submission.ixbrl_generation_run_id
+                       WHERE accounts_run.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM hmrc_ct600_submissions submission
+                       INNER JOIN ixbrl_generation_runs accounts_run
+                               ON accounts_run.id = submission.accounts_run_id
+                       WHERE accounts_run.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM hmrc_ct600_submissions submission
+                       INNER JOIN ct_period_filing_bases basis
+                               ON basis.computation_run_id = submission.computation_run_id
+                       WHERE basis.filing_approval_id = approval.id
+                         AND submission.submitted_at IS NOT NULL
+                   )",
+                [
+                    'company_id' => $companyId,
+                    'period_id' => $accountingPeriodId,
+                    'retain_approval_id' => $retainApprovalId,
+                ]
+            ) ?: [];
+    }
+
     private function latestApprovalId(int $companyId, int $accountingPeriodId): int
     {
         return max(0, (int)\InterfaceDB::fetchColumn(
@@ -288,8 +421,52 @@ final class IxbrlUntransmittedHistoryCleanupService
             return ['deleted_snapshots' => 0, 'deleted_areas' => 0, 'payload_bytes' => 0];
         }
 
+        $candidates = $this->obsoleteTaxAuditSnapshotCandidates($companyId, $accountingPeriodId);
+
+        $deletedSnapshots = 0;
+        $deletedAreas = 0;
+        $payloadBytes = 0;
+        foreach ($candidates as $candidate) {
+            $snapshotId = (int)($candidate['id'] ?? 0);
+            if ($snapshotId <= 0) {
+                continue;
+            }
+            $deletedAreas += \InterfaceDB::execute(
+                'DELETE FROM corporation_tax_audit_areas WHERE snapshot_id = :snapshot_id',
+                ['snapshot_id' => $snapshotId]
+            );
+            $deleted = \InterfaceDB::execute(
+                'DELETE FROM corporation_tax_audit_snapshots
+                 WHERE id = :snapshot_id
+                   AND NOT EXISTS (
+                       SELECT 1 FROM filing_evidence_ct_snapshots evidence
+                       WHERE evidence.tax_audit_snapshot_id = corporation_tax_audit_snapshots.id
+                   )',
+                ['snapshot_id' => $snapshotId]
+            );
+            if ($deleted === 1) {
+                $deletedSnapshots++;
+                $payloadBytes += (int)($candidate['payload_bytes'] ?? 0);
+            }
+        }
+
+        return [
+            'deleted_snapshots' => $deletedSnapshots,
+            'deleted_areas' => $deletedAreas,
+            'payload_bytes' => $payloadBytes,
+        ];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function obsoleteTaxAuditSnapshotCandidates(int $companyId, int $accountingPeriodId): array
+    {
+        if (!\InterfaceDB::tableExists('corporation_tax_audit_snapshots')
+            || !\InterfaceDB::tableExists('corporation_tax_audit_areas')) {
+            return [];
+        }
+
         $lengthFunction = \InterfaceDB::driverName() === 'sqlite' ? 'LENGTH' : 'OCTET_LENGTH';
-        $candidates = \InterfaceDB::fetchAll(
+        return \InterfaceDB::fetchAll(
             'SELECT snapshot.id,
                     COALESCE(' . $lengthFunction . '(snapshot.calculation_trace_json), 0)
                     + COALESCE((
@@ -325,39 +502,6 @@ final class IxbrlUntransmittedHistoryCleanupService
              ORDER BY snapshot.id',
             ['company_id' => $companyId, 'period_id' => $accountingPeriodId]
         ) ?: [];
-
-        $deletedSnapshots = 0;
-        $deletedAreas = 0;
-        $payloadBytes = 0;
-        foreach ($candidates as $candidate) {
-            $snapshotId = (int)($candidate['id'] ?? 0);
-            if ($snapshotId <= 0) {
-                continue;
-            }
-            $deletedAreas += \InterfaceDB::execute(
-                'DELETE FROM corporation_tax_audit_areas WHERE snapshot_id = :snapshot_id',
-                ['snapshot_id' => $snapshotId]
-            );
-            $deleted = \InterfaceDB::execute(
-                'DELETE FROM corporation_tax_audit_snapshots
-                 WHERE id = :snapshot_id
-                   AND NOT EXISTS (
-                       SELECT 1 FROM filing_evidence_ct_snapshots evidence
-                       WHERE evidence.tax_audit_snapshot_id = corporation_tax_audit_snapshots.id
-                   )',
-                ['snapshot_id' => $snapshotId]
-            );
-            if ($deleted === 1) {
-                $deletedSnapshots++;
-                $payloadBytes += (int)($candidate['payload_bytes'] ?? 0);
-            }
-        }
-
-        return [
-            'deleted_snapshots' => $deletedSnapshots,
-            'deleted_areas' => $deletedAreas,
-            'payload_bytes' => $payloadBytes,
-        ];
     }
 
 }

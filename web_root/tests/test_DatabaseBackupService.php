@@ -93,6 +93,14 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $harness->assertTrue(array_key_exists('directory', $status));
     $harness->assertTrue(array_key_exists('zip_available', $status));
     $harness->assertTrue(array_key_exists('recent_backups', $status));
+    $harness->assertSame(
+        'Automatic - Tax history pre-cleanup',
+        \eel_accounts\Service\DatabaseBackupService::TRIGGER_TAX_HISTORY_PRE_CLEANUP
+    );
+    $harness->assertSame(
+        'Automatic - Tax history post-cleanup',
+        \eel_accounts\Service\DatabaseBackupService::TRIGGER_TAX_HISTORY_POST_CLEANUP
+    );
 
     $method = new ReflectionMethod($service, 'sqlLiteral');
     $method->setAccessible(true);

@@ -21,6 +21,8 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
     public const TRIGGER_MANUAL = 'Manual';
     public const TRIGGER_YEAR_END_PRE_LOCK = 'Automatic - Year End pre-lock';
     public const TRIGGER_YEAR_END_PRE_UNLOCK = 'Automatic - Year End pre-unlock';
+    public const TRIGGER_TAX_HISTORY_PRE_CLEANUP = 'Automatic - Tax history pre-cleanup';
+    public const TRIGGER_TAX_HISTORY_POST_CLEANUP = 'Automatic - Tax history post-cleanup';
     public const TRIGGER_UNKNOWN = 'Unknown';
 
     private array $dbConfig;

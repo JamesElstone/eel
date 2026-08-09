@@ -32,6 +32,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($historySource, "SET ixbrl_status = 'not_generated'"));
             $harness->assertTrue(str_contains($historySource, 'FROM ct_period_filing_bases basis'));
             $harness->assertTrue(str_contains($historySource, 'FROM hmrc_ct600_submissions submission'));
+            $harness->assertTrue(str_contains($historySource, 'public function hasRemovableHistory('));
+            $harness->assertTrue(str_contains($historySource, "submission.lifecycle = 'prepared'"));
+            $harness->assertTrue(str_contains($historySource, "run.ixbrl_status <> 'not_generated'"));
+            $harness->assertTrue(str_contains($historySource, "['eligible_count']"));
+            $harness->assertTrue(str_contains($historySource, 'obsoleteTaxAuditSnapshotCandidates'));
         });
     }
 );

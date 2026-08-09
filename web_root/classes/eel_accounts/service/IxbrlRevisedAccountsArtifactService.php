@@ -1180,8 +1180,13 @@ final class IxbrlRevisedAccountsArtifactService
             throw new \RuntimeException('A Companies House number is required to store the revised iXBRL artifact.');
         }
 
-        return rtrim((string)PROJECT_ROOT, '\\/')
-            . DIRECTORY_SEPARATOR . 'files'
+        $uploads = \eel_accounts\Store\AccountingConfigurationStore::uploads();
+        $uploadRoot = trim((string)($uploads['upload_base_dir'] ?? ''));
+        if ($uploadRoot === '') {
+            $uploadRoot = rtrim((string)PROJECT_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'files';
+        }
+
+        return rtrim($uploadRoot, '\\/')
             . DIRECTORY_SEPARATOR . $companyNumber
             . DIRECTORY_SEPARATOR . 'ixbrl';
     }

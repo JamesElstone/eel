@@ -332,12 +332,17 @@ final class Ct600BuilderService
         // The CT600 schema defines ChargeableProfits as a whole-pound value.
         // The frozen computation remains in pence for reconciliation elsewhere,
         // but the return must always use the schema's .00 representation.
-        $this->element($document, $calculation, 'ChargeableProfits', $this->wholePounds(
+        $serializedChargeableProfits = $this->wholePounds(
             $this->mapped($values, 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'),
             'CompanyTaxCalculation/ChargeableProfits'
-        ));
+        );
+        $this->element($document, $calculation, 'ChargeableProfits', $serializedChargeableProfits);
         $calculationModel = (array)($model['calculation'] ?? []);
-        $taxBands = array_values((array)($calculationModel['tax_bands'] ?? []));
+        $taxBands = $this->serializeTaxBands(
+            array_values((array)($calculationModel['tax_bands'] ?? [])),
+            $serializedChargeableProfits,
+            (array)($model['period'] ?? [])
+        );
         $serializedGrossTax = 0.0;
         if ($taxBands !== []) {
             $taxChargeable = $this->element($document, $calculation, 'CorporationTaxChargeable');
@@ -366,17 +371,9 @@ final class Ct600BuilderService
                 );
                 $this->element($document, $financialYear, 'Year', (string)$band['financial_year']);
                 $details = $this->element($document, $financialYear, 'Details');
-                $displayProfit = $this->wholePounds(
-                    $band['profit'] ?? null,
-                    'CompanyTaxCalculation/CorporationTaxChargeable/FinancialYear/Details/Profit'
-                );
+                $displayProfit = (string)$band['serialized_profit'];
                 $displayRate = $this->taxRate($band['tax_rate_percent'] ?? null);
-                // HMRC's financial-year profit field is whole pounds, while the
-                // frozen CT calculation is apportionable to pence.  Preserve the
-                // approved band tax rather than recalculating it from a rounded
-                // display value; otherwise a split period can alter the return
-                // by several pence during serialization.
-                $displayTax = round((float)($band['gross_tax'] ?? 0), 2);
+                $displayTax = (float)$band['serialized_tax'];
                 $serializedGrossTax += $displayTax;
                 $this->element($document, $details, 'Profit', $displayProfit);
                 $this->element($document, $details, 'TaxRate', $displayRate);
@@ -387,35 +384,42 @@ final class Ct600BuilderService
             }
         }
         $serializedGrossTax = round($serializedGrossTax, 2);
-        if (abs($serializedGrossTax - (float)($calculationModel['gross_corporation_tax'] ?? 0)) > 0.009) {
-            throw new \RuntimeException(
-                'The frozen CT600 financial-year tax bands do not reconcile to the gross Corporation Tax.'
+        $marginalRelief = round((float)($calculationModel['marginal_relief'] ?? 0), 2);
+        $netCorporationTax = $taxBands !== []
+            ? round($serializedGrossTax - $marginalRelief, 2)
+            : (float)$this->mapped(
+                $values,
+                'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'
             );
+        if ($netCorporationTax < 0.0) {
+            throw new \RuntimeException('The serialized CT600 marginal relief exceeds the gross Corporation Tax.');
         }
-        $netCorporationTax = $this->mapped(
-            $values,
-            'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'
-        );
         if ($serializedGrossTax > 0.0) {
             $this->element($document, $calculation, 'CorporationTax', $this->poundPence(
                 $serializedGrossTax,
                 'CompanyTaxCalculation/CorporationTax'
             ));
         }
-        if ((float)($calculationModel['marginal_relief'] ?? 0) > 0.0) {
+        if ($marginalRelief > 0.0) {
             $this->element($document, $calculation, 'MarginalReliefForRingFenceTrades', $this->poundPence(
-                $calculationModel['marginal_relief'],
+                $marginalRelief,
                 'CompanyTaxCalculation/MarginalReliefForRingFenceTrades'
             ));
         }
-        $this->element($document, $calculation, 'NetCorporationTaxChargeable', $netCorporationTax);
+        $this->element($document, $calculation, 'NetCorporationTaxChargeable', $this->poundPence(
+            $netCorporationTax,
+            'CompanyTaxCalculation/NetCorporationTaxChargeable'
+        ));
 
         $outstanding = $this->element($document, $companyReturn, 'CalculationOfTaxOutstandingOrOverpaid');
         $netLiabilityPath = 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/NetCorporationTaxLiability';
-        if ($this->positive($values, $netLiabilityPath)) {
-            $this->element($document, $outstanding, 'NetCorporationTaxLiability', $values[$netLiabilityPath]);
+        if ($netCorporationTax > 0.0 || $this->positive($values, $netLiabilityPath)) {
+            $this->element($document, $outstanding, 'NetCorporationTaxLiability', $taxBands !== []
+                ? $this->poundPence($netCorporationTax, 'CalculationOfTaxOutstandingOrOverpaid/NetCorporationTaxLiability')
+                : $values[$netLiabilityPath]);
         }
         $loansPath = 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/LoansToParticipators';
+        $loansTax = $this->positive($values, $loansPath) ? (float)$values[$loansPath] : 0.0;
         if ($this->positive($values, $loansPath)) {
             $this->element($document, $outstanding, 'LoansToParticipators', $values[$loansPath]);
         }
@@ -423,13 +427,18 @@ final class Ct600BuilderService
             $this->element($document, $outstanding, 'CT600AreliefDue', 'yes');
         }
         $taxChargeablePath = 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxChargeable';
-        if ($this->positive($values, $taxChargeablePath)) {
+        $serializedTaxPayable = round($netCorporationTax + $loansTax, 2);
+        if ($taxBands !== [] && $serializedTaxPayable > 0.0) {
+            $this->element($document, $outstanding, 'TaxChargeable', $this->poundPence(
+                $serializedTaxPayable,
+                'CalculationOfTaxOutstandingOrOverpaid/TaxChargeable'
+            ));
+        } elseif ($this->positive($values, $taxChargeablePath)) {
             $this->element($document, $outstanding, 'TaxChargeable', $values[$taxChargeablePath]);
         }
-        $this->element($document, $outstanding, 'TaxPayable', $this->mapped(
-            $values,
-            'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'
-        ));
+        $this->element($document, $outstanding, 'TaxPayable', $taxBands !== []
+            ? $this->poundPence($serializedTaxPayable, 'CalculationOfTaxOutstandingOrOverpaid/TaxPayable')
+            : $this->mapped($values, 'IRenvelope/CompanyTaxReturn/CalculationOfTaxOutstandingOrOverpaid/TaxPayable'));
 
         $aiaPath = 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/AIACapitalAllowancesInc';
         $specialAllowancePath = 'IRenvelope/CompanyTaxReturn/AllowancesAndCharges/'
@@ -614,6 +623,59 @@ final class Ct600BuilderService
             throw new \RuntimeException('A frozen CT600 tax rate is invalid.');
         }
         return number_format((float)$value, 2, '.', '');
+    }
+
+    /**
+     * HMRC boxes 315, 335 and 385 are whole-pound values. The official
+     * Schematron apportions Box 315 by inclusive days at 31 March and derives
+     * each tax line from that displayed profit, so frozen penny allocations
+     * cannot be copied into those display fields directly.
+     *
+     * @param list<array<string,mixed>> $bands
+     * @param array<string,mixed> $period
+     * @return list<array<string,mixed>>
+     */
+    private function serializeTaxBands(array $bands, string $chargeableProfits, array $period): array
+    {
+        if ($bands === []) {
+            return [];
+        }
+        if (count($bands) > 2) {
+            throw new \RuntimeException('The frozen CT600 tax bands are outside the one/two financial-year MVP.');
+        }
+        $totalProfit = (int)round((float)$chargeableProfits, 0, PHP_ROUND_HALF_UP);
+        $profits = [$totalProfit];
+        if (count($bands) === 2) {
+            $start = new \DateTimeImmutable((string)($period['start_date'] ?? ''));
+            $end = new \DateTimeImmutable((string)($period['end_date'] ?? ''));
+            $firstYear = (string)($bands[0]['financial_year'] ?? '');
+            if (preg_match('/^[0-9]{4}$/D', $firstYear) !== 1 || $end < $start) {
+                throw new \RuntimeException('The frozen CT600 financial-year apportionment is invalid.');
+            }
+            $firstYearEnd = new \DateTimeImmutable(((int)$firstYear + 1) . '-03-31');
+            if ($firstYearEnd < $start || $firstYearEnd >= $end) {
+                throw new \RuntimeException('The frozen CT600 bands do not match the return period financial years.');
+            }
+            $totalDays = (int)$start->diff($end)->days + 1;
+            $firstDays = (int)$start->diff($firstYearEnd)->days + 1;
+            $firstProfit = (int)round(
+                $totalProfit * $firstDays / $totalDays,
+                0,
+                PHP_ROUND_HALF_UP
+            );
+            $firstProfit = min($totalProfit, max(0, $firstProfit));
+            $profits = [$firstProfit, $totalProfit - $firstProfit];
+        }
+        foreach ($bands as $index => &$band) {
+            $rate = (float)($band['tax_rate_percent'] ?? -1);
+            if ($rate < 0.0 || $rate > 100.0) {
+                throw new \RuntimeException('A frozen CT600 tax rate is invalid.');
+            }
+            $band['serialized_profit'] = number_format($profits[$index], 2, '.', '');
+            $band['serialized_tax'] = round($profits[$index] * $rate / 100, 2, PHP_ROUND_HALF_UP);
+        }
+        unset($band);
+        return $bands;
     }
 
     private function element(

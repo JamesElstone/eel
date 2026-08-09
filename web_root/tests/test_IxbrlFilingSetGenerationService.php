@@ -408,6 +408,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (string)$result['stages']['companies_house_accounts']['outcome']
                 );
                 $harness->assertSame(
+                    'hmrc_accounts_ixbrl',
+                    (string)$result['stages']['hmrc_accounts']['artifact']['kind']
+                );
+                $harness->assertSame(
+                    71,
+                    (int)$result['stages']['hmrc_computations'][71]['artifact']['ct_period_id']
+                );
+                $harness->assertSame(
+                    'ct600_xml',
+                    (string)$result['stages']['hmrc_ct600'][71]['artifact']['kind']
+                );
+                $harness->assertSame(
+                    'COMPANIES_HOUSE',
+                    (string)$result['stages']['companies_house_accounts']['artifact']['authority']
+                );
+                $harness->assertSame(
                     'The authority-specific filing iXBRL set is complete.',
                     (string)end($messages)
                 );

@@ -579,7 +579,7 @@ function ct600_builder_test_assert_official_business_rules(
                         . 'ct:CorporationTaxChargeable/*[self::ct:FinancialYearOne or self::ct:FinancialYearTwo]')?->length
                 );
                 $harness->assertSame(
-                    '6900.00',
+                    '7056.18',
                     $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
                         . 'ct:CompanyTaxCalculation/ct:CorporationTax)')
                 );
@@ -622,7 +622,7 @@ function ct600_builder_test_assert_official_business_rules(
 
         $harness->check(
             \eel_accounts\Service\Ct600BuilderService::class,
-            'preserves frozen split-period tax when whole-pound profit display rounds differently',
+            'uses HMRC whole-pound day apportionment and recalculates each displayed tax line',
             static function () use ($harness): void {
                 $return = ct600_builder_test_return(
                     [
@@ -647,14 +647,19 @@ function ct600_builder_test_assert_official_business_rules(
                 $harness->assertSame(true, (bool)($result['ok'] ?? false));
                 $xpath = ct600_builder_test_xpath((string)$result['xml']);
                 $harness->assertSame(
-                    '4434.14',
+                    '4434.22',
                     $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
                         . 'ct:CompanyTaxCalculation/ct:CorporationTax)')
                 );
                 $harness->assertSame(
-                    '2526.85',
+                    '1093.45',
                     $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/'
                         . 'ct:CorporationTaxChargeable/ct:FinancialYearOne/ct:Details/ct:Tax)')
+                );
+                $harness->assertSame(
+                    '5755.00',
+                    $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/'
+                        . 'ct:CorporationTaxChargeable/ct:FinancialYearOne/ct:Details/ct:Profit)')
                 );
                 ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
             }

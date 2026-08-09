@@ -14,6 +14,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenComparisonReporter.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'IxbrlTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenFilingArtifactReviewPack.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenFilingArtifactDependencyFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
@@ -446,7 +448,15 @@ $harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estim
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
     \eel_accounts\Support\RequestCache::clear();
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
-    $periods = [9111, 9112, 9113];
+    $artifactReview = $GLOBALS['eel_accounts_golden_artifact_review'] ?? null;
+    $periods = $artifactReview instanceof GoldenFilingArtifactReviewPack
+        ? [9111, 9112, 9113, 9114]
+        : [9111, 9112, 9113];
+    if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
+        \eel_accounts\Service\AssetService::setIntegrationTestToday('2026-10-01');
+        \eel_accounts\Service\IxbrlAccountsDisclosureService::setIntegrationTestToday('2026-10-01');
+    }
+    try {
     $initialFilingApprovalIds = [];
     $initialHmrcApprovalIds = [];
     $initialFreezeHashes = [];
@@ -481,13 +491,15 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
 
     foreach ($periods as $periodId) {
         goldenYearEndConfirmEligibleEmptyMonths($companyId, $periodId);
-        $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId];
+        $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId] ?? null;
         $depreciation = (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $periodId);
         if (empty($depreciation['success'])) {
             throw new RuntimeException('AP ' . $periodId . ' depreciation failed: ' . implode(' ', (array)($depreciation['errors'] ?? [])));
         }
         $harness->assertTrue(!empty($depreciation['success']));
-        $harness->assertSame((int)$expected['depreciation_entries'], (int)($depreciation['created'] ?? 0));
+        if (is_array($expected)) {
+            $harness->assertSame((int)$expected['depreciation_entries'], (int)($depreciation['created'] ?? 0));
+        }
         $postedDepreciation = (float)InterfaceDB::fetchColumn(
             'SELECT COALESCE(SUM(ade.amount), 0)
              FROM asset_depreciation_entries ade
@@ -495,7 +507,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
              WHERE ar.company_id = :company_id AND ade.accounting_period_id = :period_id',
             ['company_id' => $companyId, 'period_id' => $periodId]
         );
-        $harness->assertSame(number_format((float)$expected['depreciation'], 2, '.', ''), number_format($postedDepreciation, 2, '.', ''));
+        if (is_array($expected)) {
+            $harness->assertSame(number_format((float)$expected['depreciation'], 2, '.', ''), number_format($postedDepreciation, 2, '.', ''));
+        }
 
         $provision = (new \eel_accounts\Service\CorporationTaxProvisionService())
             ->postProvisionsForAccountingPeriod($companyId, $periodId, 'golden_year_end_test');
@@ -527,8 +541,10 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue(!empty($retainedEarnings['success']));
 
         $profitLoss = (new \eel_accounts\Service\ProfitLossService())->getProfitLossSummary($companyId, $periodId);
-        $harness->assertSame(number_format((float)$expected['depreciation'], 2, '.', ''), number_format((float)($profitLoss['depreciation_expense'] ?? 0), 2, '.', ''));
-        $harness->assertSame(number_format((float)$expected['profit_before_tax'], 2, '.', ''), number_format((float)($profitLoss['profit_before_tax'] ?? 0), 2, '.', ''));
+        if (is_array($expected)) {
+            $harness->assertSame(number_format((float)$expected['depreciation'], 2, '.', ''), number_format((float)($profitLoss['depreciation_expense'] ?? 0), 2, '.', ''));
+            $harness->assertSame(number_format((float)$expected['profit_before_tax'], 2, '.', ''), number_format((float)($profitLoss['profit_before_tax'] ?? 0), 2, '.', ''));
+        }
 
         $ctTax = 0.0;
         $ctTaxableProfit = 0.0;
@@ -552,10 +568,12 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 $summary['accounting_allocation_basis']['apportionment_rounding_adjustment'] ?? 0
             );
         }
-        $hmrcFacts = GoldenLedgerSpecification::hmrcTaxFacts()[$periodId];
-        $harness->assertSame(number_format((float)$hmrcFacts['accounting_profit'], 2, '.', ''), number_format($ctAccountingProfit, 2, '.', ''));
-        $harness->assertSame(number_format((float)$hmrcFacts['disallowable_add_backs'], 2, '.', ''), number_format($ctDisallowableAddBacks, 2, '.', ''));
-        $harness->assertSame(number_format((float)$hmrcFacts['depreciation_add_back'], 2, '.', ''), number_format($ctDepreciationAddBack, 2, '.', ''));
+        if (is_array($expected)) {
+            $hmrcFacts = GoldenLedgerSpecification::hmrcTaxFacts()[$periodId];
+            $harness->assertSame(number_format((float)$hmrcFacts['accounting_profit'], 2, '.', ''), number_format($ctAccountingProfit, 2, '.', ''));
+            $harness->assertSame(number_format((float)$hmrcFacts['disallowable_add_backs'], 2, '.', ''), number_format($ctDisallowableAddBacks, 2, '.', ''));
+            $harness->assertSame(number_format((float)$hmrcFacts['depreciation_add_back'], 2, '.', ''), number_format($ctDepreciationAddBack, 2, '.', ''));
+        }
         if ($periodId === 9111) {
             $harness->assertSame(2, count($ctPeriods));
             $harness->assertTrue(!empty($ctAllocationBasis[0]['time_apportioned']));
@@ -586,12 +604,14 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 number_format(array_sum($ctAllocationAdjustments), 2, '.', '')
             );
         }
-        $harness->assertSame(number_format((float)$expected['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
-        $harness->assertSame(number_format((float)$expected['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
-        $harness->assertSame(number_format((float)$expected['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
-        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
-        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
-        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
+        if (is_array($expected)) {
+            $harness->assertSame(number_format((float)$expected['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
+            $harness->assertSame(number_format((float)$expected['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
+            $harness->assertSame(number_format((float)$expected['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
+            $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
+            $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
+            $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
+        }
 
         $scopeService = new \eel_accounts\Service\CorporationTaxFilingScopeService();
         foreach (array_keys($scopeService->definitions()) as $scopeField) {
@@ -675,6 +695,21 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 ->build($companyId, $periodId, (int)$ctPeriod['id']);
             $harness->assertTrue(!empty($filingModel['available']));
             $harness->assertTrue(preg_match('/^[a-f0-9]{64}$/', (string)($filingModel['basis_hash'] ?? '')) === 1);
+        }
+        if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
+            GoldenFilingArtifactDependencyFixture::ensure(true);
+            $filingSet = new \eel_accounts\Service\IxbrlFilingSetGenerationService();
+            $preflight = $filingSet->plan($companyId, $periodId);
+            $generatedSet = $filingSet->generate(
+                $companyId,
+                $periodId,
+                'golden_artifact_review',
+                static function (string $message, int $percent): void {
+                    // The focused runner must remain quiet while a test file is loaded.
+                }
+            );
+            $generatedSet['preflight'] = $preflight;
+            $artifactReview->captureForIds($companyId, $periodId, $generatedSet);
         }
         $afterLock = goldenYearEndReportingSnapshot($companyId, $periodId);
 
@@ -784,6 +819,12 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             true
         );
         $harness->assertTrue(!empty($cleanup['success']));
+    }
+    } finally {
+        if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
+            \eel_accounts\Service\IxbrlAccountsDisclosureService::setIntegrationTestToday(null);
+            \eel_accounts\Service\AssetService::setIntegrationTestToday(null);
+        }
     }
 });
 

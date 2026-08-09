@@ -183,6 +183,18 @@ final class IxbrlBalanceSheetMetricsService
                             ? 'prepayments_accrued_income'
                             : 'current_assets'));
                 $amount = $balance;
+                if ($bucket === 'current_assets' && $amount < -0.004) {
+                    $creditorAmount = round(abs($amount), 2);
+                    $buckets['creditors_within_one_year'] += $creditorAmount;
+                    $this->addSource(
+                        $sources,
+                        'creditors_within_one_year',
+                        $label,
+                        $creditorAmount,
+                        ['source_type' => 'overdrawn_current_asset_reclassification']
+                    );
+                    continue;
+                }
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
                 continue;

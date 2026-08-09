@@ -11,6 +11,7 @@ namespace eel_accounts\Service;
 
 final class IxbrlAccountsDisclosureService
 {
+    private static ?string $integrationTestToday = null;
     public const ACCOUNTING_STANDARD_FRS_105 = 'FRS_105';
 
     private const TABLE = 'ixbrl_accounts_disclosures';
@@ -59,6 +60,24 @@ final class IxbrlAccountsDisclosureService
         'profit_loss_not_delivered_section_444' => 'section 444 profit and loss filing election',
         'companies_house_revised_accounts_public_register_confirmed' => 'Companies House revised accounts public-register confirmation',
     ];
+
+    /** Restricts deterministic future-period lifecycle testing to SQLite. */
+    public static function setIntegrationTestToday(?string $today): void
+    {
+        if ($today !== null) {
+            if (strtolower((string)\InterfaceDB::driverName()) !== 'sqlite') {
+                throw new \RuntimeException('The disclosure date override is restricted to SQLite integration tests.');
+            }
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $today);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if (!$parsed instanceof \DateTimeImmutable
+                || $parsed->format('Y-m-d') !== $today
+                || (is_array($errors) && ((int)$errors['warning_count'] > 0 || (int)$errors['error_count'] > 0))) {
+                throw new \InvalidArgumentException('The disclosure integration-test date must use YYYY-MM-DD.');
+            }
+        }
+        self::$integrationTestToday = $today;
+    }
 
     public function get(int $companyId, int $accountingPeriodId): ?array
     {
@@ -837,7 +856,7 @@ final class IxbrlAccountsDisclosureService
             $errors[] = 'Enter a valid accounts approval date.';
         } else {
             $periodEnd = (string)($period['period_end'] ?? '');
-            $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+            $today = self::$integrationTestToday ?? (new \DateTimeImmutable('today'))->format('Y-m-d');
             if ($periodEnd !== '' && $approvalDate < $periodEnd) {
                 $errors[] = 'The accounts approval date cannot be before the accounting period end.';
             }

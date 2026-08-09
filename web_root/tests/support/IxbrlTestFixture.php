@@ -13,10 +13,13 @@ function ixbrl_test_ensure_frs105_thresholds(): void
 {
     (new \eel_accounts\Service\TaxRateRuleService())->ensureSchema();
     foreach ([
-        ['turnover', 632000.0],
-        ['balance_sheet_total', 316000.0],
-        ['employees', 10.0],
-    ] as [$key, $amount]) {
+        ['turnover', 632000.0, '1900-01-01', '2025-04-05'],
+        ['balance_sheet_total', 316000.0, '1900-01-01', '2025-04-05'],
+        ['employees', 10.0, '1900-01-01', '2025-04-05'],
+        ['turnover', 1000000.0, '2025-04-06', '9999-12-31'],
+        ['balance_sheet_total', 500000.0, '2025-04-06', '9999-12-31'],
+        ['employees', 10.0, '2025-04-06', '9999-12-31'],
+    ] as [$key, $amount, $periodStart, $periodEnd]) {
         if ((int)InterfaceDB::fetchColumn(
             'SELECT COUNT(*) FROM tax_rate_rules
              WHERE tax_domain = :domain AND regime = :regime
@@ -25,7 +28,7 @@ function ixbrl_test_ensure_frs105_thresholds(): void
                 'domain' => 'company_size',
                 'regime' => 'frs105_micro_entity',
                 'rule_key' => $key,
-                'period_start' => '1900-01-01',
+                'period_start' => $periodStart,
             ]
         ) > 0) {
             continue;
@@ -44,13 +47,13 @@ function ixbrl_test_ensure_frs105_thresholds(): void
                 'regime' => 'frs105_micro_entity',
                 'rule_key' => $key,
                 'label' => 'FRS 105 ' . $key,
-                'period_start' => '1900-01-01',
-                'period_end' => '2025-04-05',
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
                 'value_type' => 'amount',
                 'amount' => $amount,
                 'source_url' => 'https://www.gov.uk/annual-accounts/microentities-small-and-dormant-companies',
                 'checked_at' => '2026-07-17',
-                'version' => 'fixture-frs105-' . $key,
+                'version' => 'fixture-frs105-' . $periodStart . '-' . $key,
                 'notes' => 'Test fixture.',
             ]
         );
@@ -251,6 +254,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
             companies_house_type = COALESCE(NULLIF(companies_house_type, \'\'), :company_type),
             companies_house_jurisdiction = COALESCE(NULLIF(companies_house_jurisdiction, \'\'), :jurisdiction),
             registered_office_address_line_1 = COALESCE(NULLIF(registered_office_address_line_1, \'\'), :address_line_1),
+            registered_office_address_line_2 = COALESCE(NULLIF(registered_office_address_line_2, \'\'), :address_line_2),
             registered_office_locality = COALESCE(NULLIF(registered_office_locality, \'\'), :locality),
             registered_office_postal_code = COALESCE(NULLIF(registered_office_postal_code, \'\'), :postal_code),
             registered_office_country = COALESCE(NULLIF(registered_office_country, \'\'), :country)
@@ -260,6 +264,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
             'company_type' => 'ltd',
             'jurisdiction' => 'england-wales',
             'address_line_1' => '1 Test Street',
+            'address_line_2' => 'Test Industrial Estate',
             'locality' => 'Test Town',
             'postal_code' => 'TE1 1ST',
             'country' => 'United Kingdom',

@@ -356,6 +356,10 @@ final class GoldenAccountsFixture
             'id' => 9200, 'company_id' => self::GOLDEN_COMPANY_ID,
             'setting' => 'default_sales_nominal_id', 'type' => 'int', 'value' => (string)self::nominalId(91002),
         ]);
+        self::insert('company_settings', [
+            'id' => 9201, 'company_id' => self::GOLDEN_COMPANY_ID,
+            'setting' => 'utr', 'type' => 'char', 'value' => '1234567890',
+        ]);
 
         foreach (self::PERIODS as $index => $period) {
             self::insertPeriod(self::GOLDEN_COMPANY_ID, $period);

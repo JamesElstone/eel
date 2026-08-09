@@ -1327,6 +1327,7 @@ final class CompaniesHouseAccountsSubmissionService
             'warnings' => (array)($artifact['warnings'] ?? []),
             'messages' => ['Revised accounts prepared and validated for ' . $environment . '.'],
             'submission' => is_array($submission) ? $this->normaliseSubmission($submission) : null,
+            'artifact' => $this->preparedArtifactResult($artifact),
             'changed' => true,
         ];
     }
@@ -1536,6 +1537,7 @@ final class CompaniesHouseAccountsSubmissionService
             'warnings' => (array)($artifact['warnings'] ?? []),
             'messages' => ['Original Companies House accounts prepared and validated.'],
             'submission' => $this->normaliseSubmission($row),
+            'artifact' => $this->preparedArtifactResult($artifact),
             'changed' => true,
         ];
     }
@@ -4143,6 +4145,20 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         return $row;
+    }
+
+    /** @return array<string,mixed> */
+    private function preparedArtifactResult(array $artifact): array
+    {
+        $validation = (array)($artifact['validation'] ?? []);
+        return [
+            'filename' => (string)($artifact['filename'] ?? ''),
+            'path' => (string)($artifact['path'] ?? ''),
+            'sha256' => strtolower((string)($artifact['sha256'] ?? '')),
+            'validation_status' => (string)($validation['status'] ?? ''),
+            'validation_log_path' => (string)($validation['log_path'] ?? ''),
+            'validation' => $validation,
+        ];
     }
 
     private function testAccepted(int $companyId, int $accountingPeriodId, string $filingKind): bool

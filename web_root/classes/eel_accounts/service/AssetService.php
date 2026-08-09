@@ -12,6 +12,7 @@ namespace eel_accounts\Service;
 
 final class AssetService
 {
+    private static ?string $integrationTestToday = null;
     private const MANUAL_ASSET_OFFSET_SUBTYPE_CODES = [
         'bank',
         'director_loan_asset',
@@ -54,6 +55,33 @@ final class AssetService
             'van' => 'Van',
             'car' => 'Car',
         ];
+    }
+
+    /**
+     * Provides a deterministic date for SQLite integration tests that exercise
+     * a completed-period workflow whose fixture period ends after wall-clock today.
+     */
+    public static function setIntegrationTestToday(?string $today): void
+    {
+        if ($today !== null) {
+            if (strtolower((string)\InterfaceDB::driverName()) !== 'sqlite') {
+                throw new \RuntimeException('The AssetService date override is restricted to SQLite integration tests.');
+            }
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $today);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if (!$parsed instanceof \DateTimeImmutable
+                || $parsed->format('Y-m-d') !== $today
+                || (is_array($errors) && ((int)$errors['warning_count'] > 0 || (int)$errors['error_count'] > 0))) {
+                throw new \InvalidArgumentException('The AssetService integration-test date must use YYYY-MM-DD.');
+            }
+        }
+        self::$integrationTestToday = $today;
+        \eel_accounts\Support\RequestCache::clear();
+    }
+
+    private function today(): string
+    {
+        return self::$integrationTestToday ?? (new \DateTimeImmutable('today'))->format('Y-m-d');
     }
 
     public static function assetCreateCategoryOptions(): array {
@@ -370,7 +398,7 @@ final class AssetService
 
     private function registerCutoffDate(int $companyId, int $accountingPeriodId): string
     {
-        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $today = $this->today();
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
 
@@ -1325,7 +1353,7 @@ final class AssetService
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
-        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $today = $this->today();
         if ($periodEnd === '' || $today <= $periodEnd) {
             return [
                 'success' => false,
@@ -1430,7 +1458,7 @@ final class AssetService
         }
 
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
-        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $today = $this->today();
         if ($periodEnd === '' || $today <= $periodEnd) {
             return [
                 'success' => false,
@@ -3168,7 +3196,7 @@ final class AssetService
     }
 
     private function periodDepreciationReferenceEnd(string $periodEnd): string {
-        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $today = $this->today();
 
         return $periodEnd < $today ? $periodEnd : $today;
     }

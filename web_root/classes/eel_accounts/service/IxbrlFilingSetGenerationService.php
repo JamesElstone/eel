@@ -106,7 +106,15 @@ final class IxbrlFilingSetGenerationService
                     ] + $this->stage('blocked', ['A projected CT period has no valid identifier.']);
                     continue;
                 }
-                $status = $this->computationStatus($companyId, $accountingPeriodId, $ctPeriodId);
+                try {
+                    $status = $this->computationStatus($companyId, $accountingPeriodId, $ctPeriodId);
+                } catch (\Throwable $exception) {
+                    $status = [
+                        'ready' => false,
+                        'fileable' => false,
+                        'errors' => [$exception->getMessage()],
+                    ];
+                }
                 $stage = !empty($status['fileable'])
                     ? $this->stage('current')
                     : (!empty($status['ready'])
@@ -229,11 +237,29 @@ final class IxbrlFilingSetGenerationService
                     $stageResults['hmrc_accounts'] = $this->executionStage(
                         'failed',
                         (array)($generated['errors'] ?? ['HMRC accounts iXBRL generation failed.']),
-                        (array)($generated['warnings'] ?? [])
+                        (array)($generated['warnings'] ?? []),
+                        [],
+                        ['artifact' => $this->artifactDescriptor(
+                            'hmrc_accounts_ixbrl',
+                            'HMRC',
+                            $companyId,
+                            $accountingPeriodId,
+                            null,
+                            $generated
+                        )]
                     );
                 } else {
                     $this->report($progress, 'Running HMRC-profile Arelle validation for the accounts iXBRL…', 13);
                     $validated = $this->validateAccounts($companyId, $accountingPeriodId);
+                    $accountsArtifact = $this->artifactDescriptor(
+                        'hmrc_accounts_ixbrl',
+                        'HMRC',
+                        $companyId,
+                        $accountingPeriodId,
+                        null,
+                        $generated,
+                        $validated
+                    );
                     $warnings = array_merge($warnings, (array)($validated['warnings'] ?? []));
                     if ((string)($validated['status'] ?? '') !== 'passed') {
                         $stageResults['hmrc_accounts'] = $this->executionStage(
@@ -242,7 +268,8 @@ final class IxbrlFilingSetGenerationService
                                 'The HMRC accounts iXBRL did not pass its authority validation profile.',
                             ]),
                             (array)($validated['warnings'] ?? []),
-                            ['The HMRC accounts artifact was generated but is not filing-ready.']
+                            ['The HMRC accounts artifact was generated but is not filing-ready.'],
+                            ['artifact' => $accountsArtifact]
                         );
                     } else {
                         \eel_accounts\Support\RequestCache::clear();
@@ -252,7 +279,10 @@ final class IxbrlFilingSetGenerationService
                                 'failed',
                                 (array)($readiness['filing_errors'] ?? [
                                     'The generated HMRC accounts iXBRL is not filing-ready.',
-                                ])
+                                ]),
+                                [],
+                                [],
+                                ['artifact' => $accountsArtifact]
                             );
                         } else {
                             $accountsReady = true;
@@ -264,7 +294,8 @@ final class IxbrlFilingSetGenerationService
                                     (array)($generated['warnings'] ?? []),
                                     (array)($validated['warnings'] ?? [])
                                 ),
-                                ['HMRC accounts iXBRL generated and validated.']
+                                ['HMRC accounts iXBRL generated and validated.'],
+                                ['artifact' => $accountsArtifact]
                             );
                         }
                     }
@@ -328,6 +359,15 @@ final class IxbrlFilingSetGenerationService
                         );
                     }
                 );
+                $computationArtifact = $this->artifactDescriptor(
+                    'hmrc_computation_ixbrl',
+                    'HMRC',
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    $computation,
+                    (array)($computation['validation'] ?? [])
+                );
                 $warnings = array_merge($warnings, (array)($computation['warnings'] ?? []));
                 if (empty($computation['success'])) {
                     $stageResults['hmrc_computations'][$ctPeriodId] = $this->executionStage(
@@ -335,7 +375,11 @@ final class IxbrlFilingSetGenerationService
                         (array)($computation['errors'] ?? ['Computations iXBRL generation failed.']),
                         (array)($computation['warnings'] ?? []),
                         [],
-                        ['ct_period_id' => $ctPeriodId, 'sequence_no' => $sequence]
+                        [
+                            'ct_period_id' => $ctPeriodId,
+                            'sequence_no' => $sequence,
+                            'artifact' => $computationArtifact,
+                        ]
                     );
                 } else {
                     $status = $this->computationStatus($companyId, $accountingPeriodId, $ctPeriodId);
@@ -347,7 +391,11 @@ final class IxbrlFilingSetGenerationService
                             ]),
                             (array)($computation['warnings'] ?? []),
                             ['The computation artifact was generated but is not filing-ready.'],
-                            ['ct_period_id' => $ctPeriodId, 'sequence_no' => $sequence]
+                            [
+                                'ct_period_id' => $ctPeriodId,
+                                'sequence_no' => $sequence,
+                                'artifact' => $computationArtifact,
+                            ]
                         );
                     } else {
                         $computationMessage = 'Corporation Tax period ' . $sequence
@@ -358,7 +406,11 @@ final class IxbrlFilingSetGenerationService
                             [],
                             (array)($computation['warnings'] ?? []),
                             [$computationMessage],
-                            ['ct_period_id' => $ctPeriodId, 'sequence_no' => $sequence]
+                            [
+                                'ct_period_id' => $ctPeriodId,
+                                'sequence_no' => $sequence,
+                                'artifact' => $computationArtifact,
+                            ]
                         );
                     }
                 }
@@ -418,6 +470,15 @@ final class IxbrlFilingSetGenerationService
                         $this->report($progress, $message, min(68, $mapped));
                     }
                 );
+                $ct600Source = (array)($ct600['artifact'] ?? $ct600);
+                $ct600Artifact = $this->artifactDescriptor(
+                    'ct600_xml',
+                    'HMRC',
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    $ct600Source
+                );
                 $warnings = array_merge($warnings, (array)($ct600['warnings'] ?? []));
                 if (empty($ct600['success'])) {
                     $stageResults['hmrc_ct600'][$ctPeriodId] = $this->executionStage(
@@ -425,7 +486,11 @@ final class IxbrlFilingSetGenerationService
                         (array)($ct600['errors'] ?? ['CT600 XML generation failed.']),
                         (array)($ct600['warnings'] ?? []),
                         [],
-                        ['ct_period_id' => $ctPeriodId, 'sequence_no' => $sequence]
+                        [
+                            'ct_period_id' => $ctPeriodId,
+                            'sequence_no' => $sequence,
+                            'artifact' => $ct600Artifact,
+                        ]
                     );
                 } else {
                     $ct600Message = 'Corporation Tax period ' . $sequence
@@ -436,7 +501,11 @@ final class IxbrlFilingSetGenerationService
                         [],
                         (array)($ct600['warnings'] ?? []),
                         [$ct600Message],
-                        ['ct_period_id' => $ctPeriodId, 'sequence_no' => $sequence]
+                        [
+                            'ct_period_id' => $ctPeriodId,
+                            'sequence_no' => $sequence,
+                            'artifact' => $ct600Artifact,
+                        ]
                     );
                 }
             } catch (\Throwable $exception) {
@@ -500,6 +569,20 @@ final class IxbrlFilingSetGenerationService
                     $actor,
                     $companiesHouseProgress
                 );
+                $companiesHouseSource = (array)($prepared['artifact'] ?? $prepared['submission'] ?? []);
+                if (!isset($companiesHouseSource['path']) && isset($companiesHouseSource['artifact_path'])) {
+                    $companiesHouseSource['path'] = $companiesHouseSource['artifact_path'];
+                    $companiesHouseSource['sha256'] = $companiesHouseSource['artifact_sha256'] ?? '';
+                }
+                $companiesHouseArtifact = $this->artifactDescriptor(
+                    'companies_house_accounts_ixbrl',
+                    'COMPANIES_HOUSE',
+                    $companyId,
+                    $accountingPeriodId,
+                    null,
+                    $companiesHouseSource,
+                    (array)($companiesHouseSource['validation'] ?? [])
+                );
                 $warnings = array_merge($warnings, (array)($prepared['warnings'] ?? []));
                 if (empty($prepared['success'])) {
                     $stageResults['companies_house_accounts'] = $this->executionStage(
@@ -509,7 +592,7 @@ final class IxbrlFilingSetGenerationService
                         ]),
                         (array)($prepared['warnings'] ?? []),
                         [],
-                        ['filing_kind' => $kind]
+                        ['filing_kind' => $kind, 'artifact' => $companiesHouseArtifact]
                     );
                 } else {
                     $message = 'Companies House ' . ucfirst($kind) . ' accounts iXBRL prepared.';
@@ -519,7 +602,7 @@ final class IxbrlFilingSetGenerationService
                         [],
                         (array)($prepared['warnings'] ?? []),
                         [$message],
-                        ['filing_kind' => $kind]
+                        ['filing_kind' => $kind, 'artifact' => $companiesHouseArtifact]
                     );
                 }
             }
@@ -583,6 +666,53 @@ final class IxbrlFilingSetGenerationService
             'errors' => $this->cleanMessages($errors),
             'warnings' => $this->cleanMessages($warnings),
             'messages' => $this->cleanMessages($messages),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function artifactDescriptor(
+        string $kind,
+        string $authority,
+        int $companyId,
+        int $accountingPeriodId,
+        ?int $ctPeriodId,
+        array $source,
+        array $validation = []
+    ): array {
+        $path = trim((string)($source['path'] ?? $source['output_path'] ?? ''));
+        $filename = trim((string)($source['filename'] ?? $source['output_filename'] ?? ''));
+        if ($filename === '' && $path !== '') {
+            $filename = basename($path);
+        }
+        $sha256 = strtolower(trim((string)(
+            $source['sha256'] ?? $source['output_sha256'] ?? ''
+        )));
+        $validationStatus = trim((string)(
+            $validation['status']
+                ?? $source['validation_status']
+                ?? (!empty($source['success']) ? 'passed' : '')
+        ));
+        $validationLogPath = trim((string)(
+            $validation['log_path']
+                ?? $source['validation_log_path']
+                ?? ''
+        ));
+
+        return [
+            'kind' => $kind,
+            'authority' => $authority,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'ct_period_id' => $ctPeriodId,
+            'filename' => $filename,
+            'path' => $path,
+            'sha256' => $sha256,
+            'validation_status' => $validationStatus,
+            'validation_log_path' => $validationLogPath,
+            'validation_json' => (string)($source['validation_json'] ?? ''),
+            'validation' => $validation !== []
+                ? $validation
+                : (array)($source['validation'] ?? []),
         ];
     }
 

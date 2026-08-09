@@ -133,15 +133,17 @@ final class GoldenAccountingOracle
         $fixedAssets = round((float)($closingAccounts['fixed_assets']['net'] ?? 0) - $cumulativeDepreciation, 2);
         $hmrcPayable = (float)($closingAccounts['hmrc_payable']['net'] ?? 0);
         $directorLoan = (float)($closingAccounts['director_loan']['net'] ?? 0);
+        $bank = (float)($closingAccounts['bank']['net'] ?? 0);
         $prepaymentsAccruedIncome = round((float)($closingAccounts['prepaid_expenses']['net'] ?? 0), 2);
         $currentAssets = round(
-            (float)($closingAccounts['bank']['net'] ?? 0)
+            max(0, $bank)
             + max(0, $hmrcPayable)
             + max(0, $directorLoan),
             2
         );
         $creditorsWithinOneYear = round(
-            max(0, -$directorLoan)
+            max(0, -$bank)
+                + max(0, -$directorLoan)
                 + max(0, -$hmrcPayable)
                 + $cumulativeCorporationTax,
             2

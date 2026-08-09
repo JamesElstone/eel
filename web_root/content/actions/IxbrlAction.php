@@ -283,8 +283,23 @@ final class IxbrlAction implements ActionInterfaceFramework
                         $changedFacts
                     );
                 }
-                $cleanup = (new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService())
-                    ->clean($companyId, $accountingPeriodId);
+                $cleanupService = new \eel_accounts\Service\IxbrlUntransmittedHistoryCleanupService();
+                if (!$cleanupService->hasRemovableHistory($companyId, $accountingPeriodId)) {
+                    return $this->result(
+                        true,
+                        [],
+                        $changedFacts,
+                        ['No untransmitted iXBRL history was eligible for cleanup; no backups were needed.'],
+                        []
+                    );
+                }
+                $cleanup = $this->runWithVerifiedBackups(
+                    $companyId,
+                    \eel_accounts\Service\DatabaseBackupService::TRIGGER_IXBRL_HISTORY_PRE_CLEANUP,
+                    \eel_accounts\Service\DatabaseBackupService::TRIGGER_IXBRL_HISTORY_POST_CLEANUP,
+                    fn(): array => $cleanupService->clean($companyId, $accountingPeriodId),
+                    'untransmitted iXBRL history cleanup'
+                );
                 return $this->result(
                     true,
                     [],
@@ -297,7 +312,7 @@ final class IxbrlAction implements ActionInterfaceFramework
                         . (int)($cleanup['cleared_ct600_outputs'] ?? 0) . ' untransmitted CT600 iXBRL output(s) cleared. '
                         . (int)($cleanup['deleted_bundles'] ?? 0) . ' unused evidence bundle(s) and '
                         . (int)($cleanup['deleted_tax_audit_snapshots'] ?? 0) . ' obsolete Tax Audit snapshot(s) removed. '
-                        . 'Generated files were retained.',
+                        . 'Full database backups were created immediately before and after cleanup. Generated files were retained.',
                     ],
                     []
                 );
@@ -314,8 +329,18 @@ final class IxbrlAction implements ActionInterfaceFramework
                 if (!(bool)AppConfigurationStore::get('developer_options', false)) {
                     return $this->result(false, ['Developer options must be enabled to synchronise iXBRL run records.'], $changedFacts);
                 }
-                $cleanup = (new \eel_accounts\Service\IxbrlGenerationRunCleanupService())
-                    ->removeMissingArtifacts($companyId, $accountingPeriodId);
+                $cleanupService = new \eel_accounts\Service\IxbrlGenerationRunCleanupService();
+                $inspection = $cleanupService->inspectMissingArtifacts($companyId, $accountingPeriodId);
+                $needsSync = !empty($inspection['deletable_run_ids']) || !empty($inspection['resettable_run_ids']);
+                $cleanup = $needsSync && !empty($inspection['success'])
+                    ? $this->runWithVerifiedBackups(
+                        $companyId,
+                        \eel_accounts\Service\DatabaseBackupService::TRIGGER_MISSING_IXBRL_PRE_SYNC,
+                        \eel_accounts\Service\DatabaseBackupService::TRIGGER_MISSING_IXBRL_POST_SYNC,
+                        fn(): array => $cleanupService->removeMissingArtifacts($companyId, $accountingPeriodId),
+                        'missing iXBRL file synchronisation'
+                    )
+                    : $inspection;
                 $result = [
                     'success' => !empty($cleanup['success']),
                     'errors' => (array)($cleanup['errors'] ?? []),
@@ -323,7 +348,10 @@ final class IxbrlAction implements ActionInterfaceFramework
                         (int)($cleanup['deleted_count'] ?? 0) . ' empty missing-file run record(s) removed; '
                         . (int)($cleanup['reset_count'] ?? 0) . ' approved fact snapshot(s) retained for regeneration; '
                         . (int)($cleanup['deleted_draft_count'] ?? 0) . ' unsent Companies House draft(s) removed; '
-                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed run(s) retained.',
+                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed run(s) retained. '
+                        . (!empty($cleanup['backups_created'])
+                            ? 'Full database backups were created immediately before and after synchronisation.'
+                            : 'No records required synchronisation, so no backups were needed.'),
                     ],
                     'warnings' => !empty($cleanup['skipped_count'])
                         ? [(int)$cleanup['skipped_count'] . ' missing-file run(s) retained because they are referenced by transmitted or in-flight Companies House filings.']
@@ -333,14 +361,27 @@ final class IxbrlAction implements ActionInterfaceFramework
                 if (!(bool)AppConfigurationStore::get('developer_options', false)) {
                     return $this->result(false, ['Developer options must be enabled to synchronise CT600 XML artifact records.'], $changedFacts);
                 }
-                $cleanup = (new \eel_accounts\Service\Ct600GenerationArtifactCleanupService())
-                    ->removeMissingArtifacts($companyId, $accountingPeriodId);
+                $cleanupService = new \eel_accounts\Service\Ct600GenerationArtifactCleanupService();
+                $inspection = $cleanupService->inspectMissingArtifacts($companyId, $accountingPeriodId);
+                $needsSync = !empty($inspection['deletable_artifact_ids']);
+                $cleanup = $needsSync && !empty($inspection['success'])
+                    ? $this->runWithVerifiedBackups(
+                        $companyId,
+                        \eel_accounts\Service\DatabaseBackupService::TRIGGER_MISSING_XML_PRE_SYNC,
+                        \eel_accounts\Service\DatabaseBackupService::TRIGGER_MISSING_XML_POST_SYNC,
+                        fn(): array => $cleanupService->removeMissingArtifacts($companyId, $accountingPeriodId),
+                        'missing XML file synchronisation'
+                    )
+                    : $inspection;
                 $result = [
                     'success' => !empty($cleanup['success']),
                     'errors' => (array)($cleanup['errors'] ?? []),
                     'messages' => [
                         (int)($cleanup['deleted_count'] ?? 0) . ' missing-file CT600 XML artifact record(s) removed; '
-                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed record(s) retained.',
+                        . (int)($cleanup['present_count'] ?? 0) . ' artifact-backed record(s) retained. '
+                        . (!empty($cleanup['backups_created'])
+                            ? 'Full database backups were created immediately before and after synchronisation.'
+                            : 'No records required synchronisation, so no backups were needed.'),
                     ],
                     'warnings' => !empty($cleanup['skipped_count'])
                         ? [(int)$cleanup['skipped_count'] . ' missing-file CT600 XML artifact record(s) retained because they are referenced by an in-flight or completed HMRC submission.']
@@ -824,6 +865,64 @@ final class IxbrlAction implements ActionInterfaceFramework
         }
 
         return new ActionResultFramework($success, $changedFacts, $flash, [], $context);
+    }
+
+    private function runWithVerifiedBackups(
+        int $companyId,
+        string $beforeTrigger,
+        string $afterTrigger,
+        callable $operation,
+        string $operationLabel
+    ): array {
+        if (!$this->canCreateBackups()) {
+            throw new RuntimeException(
+                'You do not have permission to create the automatic pre-operation and post-operation database backups.'
+            );
+        }
+
+        @set_time_limit(0);
+        $backupService = new \eel_accounts\Service\DatabaseBackupService();
+        $beforeBackup = $backupService->createBackup($companyId, $beforeTrigger);
+        $this->assertVerifiedBackup($beforeBackup, 'pre-operation');
+
+        $result = (array)$operation();
+
+        try {
+            $afterBackup = $backupService->createBackup($companyId, $afterTrigger);
+            $this->assertVerifiedBackup($afterBackup, 'post-operation');
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'The ' . $operationLabel . ' completed, but the automatic post-operation database backup failed: '
+                . $exception->getMessage(),
+                0,
+                $exception
+            );
+        }
+
+        return $result + [
+            'backups_created' => true,
+            'before_backup' => $beforeBackup,
+            'after_backup' => $afterBackup,
+        ];
+    }
+
+    /** @param array<string,mixed> $backup */
+    private function assertVerifiedBackup(array $backup, string $stage): void
+    {
+        if (trim((string)($backup['filename'] ?? '')) === ''
+            || (int)($backup['size_bytes'] ?? 0) <= 0
+            || (int)($backup['table_count'] ?? 0) <= 0) {
+            throw new RuntimeException(
+                'The automatic ' . $stage . ' backup service did not return a verified, non-empty full database backup.'
+            );
+        }
+    }
+
+    private function canCreateBackups(): bool
+    {
+        $session = new SessionAuthenticationService();
+        $session->startSession();
+        return (new \eel_accounts\Service\BackupAccessService())->canUseBackups($session);
     }
 
     private function withFilingLock(

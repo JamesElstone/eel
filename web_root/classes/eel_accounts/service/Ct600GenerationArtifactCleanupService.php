@@ -15,6 +15,30 @@ final class Ct600GenerationArtifactCleanupService
     /** @return array{success: bool, deleted_count: int, present_count: int, skipped_count: int, errors: list<string>} */
     public function removeMissingArtifacts(int $companyId, int $accountingPeriodId): array
     {
+        $inspection = $this->inspectMissingArtifacts($companyId, $accountingPeriodId);
+        if (empty($inspection['success'])) {
+            return $inspection;
+        }
+
+        $deletable = array_map('intval', (array)($inspection['deletable_artifact_ids'] ?? []));
+        if ($deletable !== []) {
+            \InterfaceDB::transaction(static function () use ($deletable): void {
+                foreach ($deletable as $artifactId) {
+                    \InterfaceDB::prepareExecute(
+                        'DELETE FROM ct600_generated_artifacts WHERE id = :id',
+                        ['id' => $artifactId]
+                    );
+                }
+            });
+            \eel_accounts\Support\RequestCache::clear();
+        }
+
+        return array_replace($inspection, ['deleted_count' => count($deletable)]);
+    }
+
+    /** @return array{success: bool, deleted_count: int, present_count: int, skipped_count: int, deletable_artifact_ids: list<int>, errors: list<string>} */
+    public function inspectMissingArtifacts(int $companyId, int $accountingPeriodId): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $this->failure('Select a valid company and accounting period.');
         }
@@ -63,28 +87,17 @@ final class Ct600GenerationArtifactCleanupService
             $deletable[] = (int)$artifact['id'];
         }
 
-        if ($deletable !== []) {
-            \InterfaceDB::transaction(static function () use ($deletable): void {
-                foreach ($deletable as $artifactId) {
-                    \InterfaceDB::prepareExecute(
-                        'DELETE FROM ct600_generated_artifacts WHERE id = :id',
-                        ['id' => $artifactId]
-                    );
-                }
-            });
-            \eel_accounts\Support\RequestCache::clear();
-        }
-
         return [
             'success' => true,
-            'deleted_count' => count($deletable),
+            'deleted_count' => 0,
             'present_count' => $presentCount,
             'skipped_count' => $skippedCount,
+            'deletable_artifact_ids' => $deletable,
             'errors' => [],
         ];
     }
 
-    /** @return array{success: false, deleted_count: 0, present_count: 0, skipped_count: 0, errors: list<string>} */
+    /** @return array{success: false, deleted_count: 0, present_count: 0, skipped_count: 0, deletable_artifact_ids: list<int>, errors: list<string>} */
     private function failure(string $error): array
     {
         return [
@@ -92,6 +105,7 @@ final class Ct600GenerationArtifactCleanupService
             'deleted_count' => 0,
             'present_count' => 0,
             'skipped_count' => 0,
+            'deletable_artifact_ids' => [],
             'errors' => [$error],
         ];
     }

@@ -23,6 +23,14 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
     public const TRIGGER_YEAR_END_PRE_UNLOCK = 'Automatic - Year End pre-unlock';
     public const TRIGGER_TAX_HISTORY_PRE_CLEANUP = 'Automatic - Tax history pre-cleanup';
     public const TRIGGER_TAX_HISTORY_POST_CLEANUP = 'Automatic - Tax history post-cleanup';
+    public const TRIGGER_EVIDENCE_PRE_CLEANUP = 'Automatic - Filing evidence pre-cleanup';
+    public const TRIGGER_EVIDENCE_POST_CLEANUP = 'Automatic - Filing evidence post-cleanup';
+    public const TRIGGER_IXBRL_HISTORY_PRE_CLEANUP = 'Automatic - iXBRL history pre-cleanup';
+    public const TRIGGER_IXBRL_HISTORY_POST_CLEANUP = 'Automatic - iXBRL history post-cleanup';
+    public const TRIGGER_MISSING_IXBRL_PRE_SYNC = 'Automatic - Missing iXBRL pre-sync';
+    public const TRIGGER_MISSING_IXBRL_POST_SYNC = 'Automatic - Missing iXBRL post-sync';
+    public const TRIGGER_MISSING_XML_PRE_SYNC = 'Automatic - Missing XML pre-sync';
+    public const TRIGGER_MISSING_XML_POST_SYNC = 'Automatic - Missing XML post-sync';
     public const TRIGGER_UNKNOWN = 'Unknown';
 
     private array $dbConfig;

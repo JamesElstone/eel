@@ -26,6 +26,7 @@ $h->run(_year_end_evidence_bundlesCard::class, static function (GeneratedService
         $h->assertFalse(str_contains($html, '8 artifacts'));
         $h->assertTrue(str_contains($html, 'Frozen Year End filing evidence'));
         $h->assertTrue(str_contains($html, 'local filing approvals or submissions'));
+        $h->assertTrue(str_contains($html, 'a full database backup is created immediately before and after cleanup'));
     });
 });
 $h->run(\eel_accounts\Service\FilingEvidenceService::class, static function (GeneratedServiceClassTestHarness $h): void {
@@ -58,5 +59,15 @@ $h->run(YearEndAction::class, static function (GeneratedServiceClassTestHarness 
         $h->assertTrue(str_contains($source, "AppConfigurationStore::get('developer_options', false)"));
         $h->assertTrue(str_contains($source, 'IxbrlUntransmittedHistoryCleanupService'));
         $h->assertTrue(str_contains($source, "'year.end.filing.evidence'"));
+        $cleanupStart = strpos($source, 'private function cleanupUnusedHistoricEvidenceWithBackups(');
+        $cleanupEnd = strpos($source, 'private function assertVerifiedBackup(', $cleanupStart !== false ? $cleanupStart : 0);
+        $h->assertTrue($cleanupStart !== false && $cleanupEnd !== false);
+        $cleanupMethod = substr($source, (int)$cleanupStart, (int)$cleanupEnd - (int)$cleanupStart);
+        $eligibility = strpos($cleanupMethod, "['eligible_count']");
+        $before = strpos($cleanupMethod, 'TRIGGER_EVIDENCE_PRE_CLEANUP');
+        $mutation = strpos($cleanupMethod, 'cleanupUnusedHistoricForAccountingPeriod(');
+        $after = strpos($cleanupMethod, 'TRIGGER_EVIDENCE_POST_CLEANUP');
+        $h->assertTrue($eligibility !== false && $before !== false && $mutation !== false && $after !== false);
+        $h->assertTrue($eligibility < $before && $before < $mutation && $mutation < $after);
     });
 });

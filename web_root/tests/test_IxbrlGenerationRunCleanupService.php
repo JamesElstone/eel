@@ -111,6 +111,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 };
                 $draftSubmissionId = $insertSubmission($draftRunId, 'prepared', null);
                 $submittedSubmissionId = $insertSubmission($submittedRunId, 'pending', '2026-01-01 00:00:00');
+                $inspection = $service->inspectMissingArtifacts($companyId, $periodId);
+                $harness->assertSame(true, (bool)$inspection['success']);
+                $harness->assertTrue(in_array($missingRunId, (array)$inspection['deletable_run_ids'], true));
+                $harness->assertTrue(in_array($draftRunId, (array)$inspection['deletable_run_ids'], true));
+                $harness->assertSame([$factRunId], (array)$inspection['resettable_run_ids']);
+                $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM ixbrl_generation_runs WHERE id = :id', ['id' => $missingRunId]));
+
                 $result = $service->removeMissingArtifacts($companyId, $periodId);
 
                 $harness->assertSame(true, (bool)$result['success']);

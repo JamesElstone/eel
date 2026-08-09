@@ -101,6 +101,21 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         'Automatic - Tax history post-cleanup',
         \eel_accounts\Service\DatabaseBackupService::TRIGGER_TAX_HISTORY_POST_CLEANUP
     );
+    foreach ([
+        'TRIGGER_EVIDENCE_PRE_CLEANUP' => 'Automatic - Filing evidence pre-cleanup',
+        'TRIGGER_EVIDENCE_POST_CLEANUP' => 'Automatic - Filing evidence post-cleanup',
+        'TRIGGER_IXBRL_HISTORY_PRE_CLEANUP' => 'Automatic - iXBRL history pre-cleanup',
+        'TRIGGER_IXBRL_HISTORY_POST_CLEANUP' => 'Automatic - iXBRL history post-cleanup',
+        'TRIGGER_MISSING_IXBRL_PRE_SYNC' => 'Automatic - Missing iXBRL pre-sync',
+        'TRIGGER_MISSING_IXBRL_POST_SYNC' => 'Automatic - Missing iXBRL post-sync',
+        'TRIGGER_MISSING_XML_PRE_SYNC' => 'Automatic - Missing XML pre-sync',
+        'TRIGGER_MISSING_XML_POST_SYNC' => 'Automatic - Missing XML post-sync',
+    ] as $constant => $expectedTrigger) {
+        $harness->assertSame(
+            $expectedTrigger,
+            constant(\eel_accounts\Service\DatabaseBackupService::class . '::' . $constant)
+        );
+    }
 
     $method = new ReflectionMethod($service, 'sqlLiteral');
     $method->setAccessible(true);

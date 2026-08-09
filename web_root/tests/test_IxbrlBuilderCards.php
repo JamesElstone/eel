@@ -1129,6 +1129,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                 'missing-run synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ixbrl_runs"'),
                 'missing-run synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing iXBRL files"'),
                 'missing-run synchronisation button' => str_contains($readyHtml, '>Synchronise missing iXBRL files</button>'),
+                'missing-run backup explanation' => str_contains($readyHtml, 'a full database backup is created immediately before and after the command'),
+                'both synchronisation backup explanations' => substr_count($readyHtml, 'a full database backup is created immediately before and after the command') >= 2,
                 'missing-XML synchronisation intent' => str_contains($readyHtml, 'name="intent" value="sync_missing_ct600_xml_artifacts"'),
                 'missing-XML synchronisation title' => str_contains($readyHtml, 'data-chicken-title="Synchronise missing XML files"'),
                 'missing-XML synchronisation button' => str_contains($readyHtml, '>Synchronise missing XML files</button>'),
@@ -1805,6 +1807,7 @@ $harness->run(_ixbrl_historyCard::class, static function (GeneratedServiceClassT
             $harness->assertTrue(str_contains($html, 'data-chicken-title="Clean untransmitted iXBRL history"'));
             $harness->assertTrue(str_contains($html, 'The newest approval and newest Tax Audit snapshot for each CT period are retained.'));
             $harness->assertTrue(str_contains($html, 'Transmitted or in-flight filings remain protected.'));
+            $harness->assertTrue(str_contains($html, 'a full database backup is created immediately before and after cleanup'));
         } finally {
             AppConfigurationStore::set('developer_options', $developerOptions);
         }
@@ -1862,6 +1865,20 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(str_contains($source, 'IxbrlGenerationRunCleanupService'));
         $harness->assertTrue(str_contains($source, '$intent === \'sync_missing_ct600_xml_artifacts\''));
         $harness->assertTrue(str_contains($source, 'Ct600GenerationArtifactCleanupService'));
+        $harness->assertTrue(str_contains($source, 'inspectMissingArtifacts'));
+        $harness->assertTrue(str_contains($source, 'TRIGGER_MISSING_IXBRL_PRE_SYNC'));
+        $harness->assertTrue(str_contains($source, 'TRIGGER_MISSING_IXBRL_POST_SYNC'));
+        $harness->assertTrue(str_contains($source, 'TRIGGER_MISSING_XML_PRE_SYNC'));
+        $harness->assertTrue(str_contains($source, 'TRIGGER_MISSING_XML_POST_SYNC'));
+        $helperStart = strpos($source, 'private function runWithVerifiedBackups(');
+        $helperEnd = strpos($source, 'private function assertVerifiedBackup(', $helperStart !== false ? $helperStart : 0);
+        $harness->assertTrue($helperStart !== false && $helperEnd !== false);
+        $helper = substr($source, (int)$helperStart, (int)$helperEnd - (int)$helperStart);
+        $beforeBackup = strpos($helper, '$beforeBackup =');
+        $operation = strpos($helper, '$result = (array)$operation()');
+        $afterBackup = strpos($helper, '$afterBackup =');
+        $harness->assertTrue($beforeBackup !== false && $operation !== false && $afterBackup !== false);
+        $harness->assertTrue($beforeBackup < $operation && $operation < $afterBackup);
     });
     $harness->check(IxbrlAction::class, 'guards fact recovery while permitting a verified legacy-report upgrade', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
@@ -1880,6 +1897,9 @@ $harness->run(IxbrlAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertTrue(is_string($cleanupAction));
         $harness->assertTrue(str_contains((string)$cleanupAction, 'developer_options'));
         $harness->assertTrue(str_contains((string)$cleanupAction, 'IxbrlUntransmittedHistoryCleanupService'));
+        $harness->assertTrue(str_contains((string)$cleanupAction, 'hasRemovableHistory'));
+        $harness->assertTrue(str_contains((string)$cleanupAction, 'TRIGGER_IXBRL_HISTORY_PRE_CLEANUP'));
+        $harness->assertTrue(str_contains((string)$cleanupAction, 'TRIGGER_IXBRL_HISTORY_POST_CLEANUP'));
     });
 
     $harness->check(IxbrlAction::class, 'avoids rebuilding the Year End tax review after each filing-scope answer', static function () use ($harness): void {

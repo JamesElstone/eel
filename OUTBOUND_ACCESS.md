@@ -2,15 +2,18 @@
 
 This is the allow-list of static outbound HTTP(S) base URLs used by the application source. URLs are reduced to their scheme and host; paths and individual API operations are intentionally omitted.
 
+- https://api.charitycommission.gov.uk/
 - https://api.ipify.org/
 - https://api.service.hmrc.gov.uk/
 - https://assets.publishing.service.gov.uk/
 - https://document-api.company-information.service.gov.uk/
 - https://media.frc.org.uk/
+- https://oscrapi.azurewebsites.net/
 - https://resources.companieshouse.gov.uk/
 - https://test-api.service.hmrc.gov.uk/
 - https://test-transaction-engine.tax.service.gov.uk/
 - https://transaction-engine.tax.service.gov.uk/
+- https://www.charitycommissionni.org.uk/
 - https://www.frc.org.uk/
 - https://www.gov.uk/
 - https://www.hmrc.gov.uk/

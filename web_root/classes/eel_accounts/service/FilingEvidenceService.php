@@ -591,7 +591,7 @@ final class FilingEvidenceService
     {
         $valid = $this->overview($companyId, $bundleId);
         if (empty($valid['available'])) { return $valid; }
-        $codes = ['transactions', 'expense_claims', 'loans', 'assets', 'prepayments', 'journals', 'profit_loss', 'corporation_tax', 'companies_house'];
+        $codes = ['transactions', 'charitable_donations', 'expense_claims', 'loans', 'assets', 'prepayments', 'journals', 'profit_loss', 'corporation_tax', 'companies_house'];
         $found = [];
         if (\InterfaceDB::tableExists('filing_evidence_section_snapshots')) {
             foreach (\InterfaceDB::fetchAll(

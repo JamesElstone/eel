@@ -9,9 +9,37 @@ $h->run(_filing_evidence::class, static function (GeneratedServiceClassTestHarne
     $h->check($page::class, 'registers coverage and frozen section cards beside specialist evidence', static function () use ($h, $page): void {
         $h->assertSame([
             'filing_evidence_lookup', 'filing_evidence_overview', 'filing_evidence_artifacts',
+            'filing_evidence_charitable_donations',
             'filing_evidence_coverage', 'filing_evidence_section_detail', 'filing_evidence_calculations',
             'filing_evidence_loans', 'filing_evidence_calculation_detail',
         ], $page->cards());
+    });
+});
+$h->run(_filing_evidence_charitable_donationsCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_charitable_donationsCard $card): void {
+    $h->check($card::class, 'renders frozen charity registrations and explains their Corporation Tax effect', static function () use ($h, $card): void {
+        $html = $card->render([
+            'company' => ['settings' => []],
+            'services' => ['filingEvidenceCharitableDonations' => [
+                'available' => true,
+                'section' => ['record_count' => 1, 'snapshot_hash' => str_repeat('d', 64)],
+                'payload' => [
+                    'totals' => ['verified_amount' => 250.00],
+                    'records' => [[
+                        'txn_date' => '2026-03-12',
+                        'registered_name' => 'Example Charity',
+                        'authority' => 'cc_ew',
+                        'registration_number' => '1234567',
+                        'entity_suffix' => '',
+                        'registry_status' => 'Registered',
+                        'amount' => 250.00,
+                    ]],
+                ],
+            ]],
+        ]);
+        $h->assertTrue(str_contains($html, 'Example Charity'));
+        $h->assertTrue(str_contains($html, '1234567'));
+        $h->assertTrue(str_contains($html, '£250.00'));
+        $h->assertTrue(str_contains($html, 'may reduce Corporation Tax owed'));
     });
 });
 $h->run(_filing_evidence_coverageCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_coverageCard $card): void {

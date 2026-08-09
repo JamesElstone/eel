@@ -4689,6 +4689,13 @@ INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT `role_id`, 'tax_charitable_donations'
 FROM `role_card_permissions`
 WHERE `card_key` = 'tax_disallowable_add_backs';
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT DISTINCT `role_id`, 'filing_evidence_charitable_donations'
+FROM `role_card_permissions`
+WHERE `card_key` = 'filing_evidence_calculations';
+INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
+  ('2026_08_09_001_registered_charitable_donations.sql'),
+  ('2026_08_09_002_filing_evidence_charitable_donations_card.sql');
 
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`

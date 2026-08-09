@@ -14,6 +14,7 @@ final class _filing_evidence extends PageContextFramework
             'filing_evidence_lookup',
             'filing_evidence_overview',
             'filing_evidence_artifacts',
+            'filing_evidence_charitable_donations',
             'filing_evidence_coverage',
             'filing_evidence_section_detail',
             'filing_evidence_calculations',

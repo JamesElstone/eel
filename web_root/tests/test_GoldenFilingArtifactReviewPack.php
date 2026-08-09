@@ -92,14 +92,43 @@ $harness->check('GoldenFilingArtifactReviewPack', 'publishes a complete 18-file 
     $harness->assertCount(18, (array)$manifest['stages']['successful']);
     $harness->assertCount(0, (array)$manifest['stages']['failed']);
     $harness->assertCount(0, (array)$manifest['stages']['missing']);
+    $companiesHouseArtifacts = [];
     foreach ((array)$manifest['artifacts'] as $artifact) {
         $path = dirname((string)$published['manifest_path']) . DIRECTORY_SEPARATOR
             . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string)$artifact['relative_path']);
         $harness->assertTrue(is_file($path));
         $harness->assertSame((string)$artifact['sha256'], (string)hash_file('sha256', $path));
+        if ((string)($artifact['kind'] ?? '') === 'companies_house_accounts_ixbrl') {
+            $companiesHouseArtifacts[] = (array)$artifact;
+        }
+    }
+    $harness->assertCount(4, $companiesHouseArtifacts);
+    $included = array_values(array_filter(
+        $companiesHouseArtifacts,
+        static fn(array $artifact): bool => (string)($artifact['profit_loss_delivery'] ?? '') === 'included'
+    ));
+    $omitted = array_values(array_filter(
+        $companiesHouseArtifacts,
+        static fn(array $artifact): bool => (string)($artifact['profit_loss_delivery'] ?? '') === 'omitted'
+    ));
+    $harness->assertCount(2, $included);
+    $harness->assertCount(2, $omitted);
+    foreach ($included as $artifact) {
+        $harness->assertTrue(str_ends_with(
+            str_replace('\\', '/', (string)$artifact['relative_path']),
+            '/companies-house-accounts-with-profit-and-loss.xhtml'
+        ));
+    }
+    foreach ($omitted as $artifact) {
+        $harness->assertTrue(str_ends_with(
+            str_replace('\\', '/', (string)$artifact['relative_path']),
+            '/companies-house-accounts-without-profit-and-loss.xhtml'
+        ));
     }
     $index = (string)file_get_contents((string)$published['index_path']);
     $harness->assertSame(18, substr_count($index, 'open artefact'));
+    $harness->assertSame(2, substr_count($index, '<td>included</td>'));
+    $harness->assertSame(2, substr_count($index, '<td>omitted</td>'));
 });
 
 $harness->check('GoldenFilingArtifactReviewPack', 'retains a safe diagnostic pack for missing and out-of-root files', static function () use ($harness): void {
@@ -180,6 +209,7 @@ function goldenArtifactReviewCaptureAllPeriods(GoldenFilingArtifactReviewPack $p
                 $ctId
             );
         }
+        $includeCompaniesHouseProfitLoss = in_array($periodId, [9112, 9114], true);
         $pack->capturePeriod(
             ['id' => 9100, 'company_name' => 'Golden Company', 'companies_house_number' => '00910000'],
             [
@@ -210,7 +240,8 @@ function goldenArtifactReviewCaptureAllPeriods(GoldenFilingArtifactReviewPack $p
                     'hmrc_computations' => $computationStages,
                     'hmrc_ct600' => $ct600Stages,
                 ],
-            ]
+            ],
+            $includeCompaniesHouseProfitLoss
         );
     }
 }

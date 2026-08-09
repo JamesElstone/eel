@@ -97,6 +97,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $h->check(
             \eel_accounts\Service\HmrcCt600ValidationService::class,
+            'applies a SQLite-only integration date to an in-memory Schematron stylesheet',
+            static function () use ($h, $service): void {
+                $stylesheet = new DOMDocument();
+                $h->assertTrue($stylesheet->loadXML(
+                    '<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">'
+                    . '<xsl:template match="/"><xsl:if test="date:date() = date:date()"/></xsl:template>'
+                    . '</xsl:stylesheet>'
+                ));
+                $method = new ReflectionMethod($service, 'applyIntegrationTestToday');
+                $method->setAccessible(true);
+                try {
+                    \eel_accounts\Service\HmrcCt600ValidationService::setIntegrationTestToday('2026-10-01');
+                    $method->invoke($service, $stylesheet);
+                } finally {
+                    \eel_accounts\Service\HmrcCt600ValidationService::setIntegrationTestToday(null);
+                }
+                $xpath = new DOMXPath($stylesheet);
+                $attribute = $xpath->query('//@test')->item(0);
+                $h->assertSame("'2026-10-01' = '2026-10-01'", (string)($attribute?->nodeValue ?? ''));
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\HmrcCt600ValidationService::class,
             'creates deterministic validation evidence from the same document and artifact hashes',
             static function () use ($h, $service): void {
                 $artifacts = [

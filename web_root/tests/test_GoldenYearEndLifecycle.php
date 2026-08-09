@@ -455,6 +455,7 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
         \eel_accounts\Service\AssetService::setIntegrationTestToday('2026-10-01');
         \eel_accounts\Service\IxbrlAccountsDisclosureService::setIntegrationTestToday('2026-10-01');
+        \eel_accounts\Service\HmrcCt600ValidationService::setIntegrationTestToday('2026-10-01');
     }
     try {
     $initialFilingApprovalIds = [];
@@ -665,7 +666,13 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(count($ctPeriods), count((array)(($lock['corporation_tax_filing_basis'] ?? [])['sealed_periods'] ?? [])));
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         $initialFreezeHashes[$periodId] = goldenYearEndPersistedFreezeHashes($companyId, $periodId);
-        ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        $includeCompaniesHouseProfitLoss = goldenCompaniesHouseIncludesProfitLoss($periodId);
+        ixbrl_test_complete_disclosures(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            $includeCompaniesHouseProfitLoss
+        );
         goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
         $filingApproval = goldenYearEndApproveFilingEvidence(
             $companyId,
@@ -677,6 +684,13 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue((int)($filingApproval['fact_run_id'] ?? 0) > 0);
         $harness->assertTrue((int)($filingApproval['hmrc_approval_id'] ?? 0) > 0);
         $harness->assertSame(count($ctPeriods), count((array)($filingApproval['ct_basis_ids'] ?? [])));
+        goldenAssertCompaniesHouseProfitLossBasis(
+            $harness,
+            $companyId,
+            $periodId,
+            (int)$filingApproval['fact_run_id'],
+            $includeCompaniesHouseProfitLoss
+        );
         $initialFilingApprovalIds[$periodId] = (int)$filingApproval['accounts_approval_id'];
         $initialHmrcApprovalIds[$periodId] = (int)$filingApproval['hmrc_approval_id'];
         $combinedStatus = (new \eel_accounts\Service\IxbrlFilingApprovalWorkflowService())
@@ -695,21 +709,6 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 ->build($companyId, $periodId, (int)$ctPeriod['id']);
             $harness->assertTrue(!empty($filingModel['available']));
             $harness->assertTrue(preg_match('/^[a-f0-9]{64}$/', (string)($filingModel['basis_hash'] ?? '')) === 1);
-        }
-        if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
-            GoldenFilingArtifactDependencyFixture::ensure(true);
-            $filingSet = new \eel_accounts\Service\IxbrlFilingSetGenerationService();
-            $preflight = $filingSet->plan($companyId, $periodId);
-            $generatedSet = $filingSet->generate(
-                $companyId,
-                $periodId,
-                'golden_artifact_review',
-                static function (string $message, int $percent): void {
-                    // The focused runner must remain quiet while a test file is loaded.
-                }
-            );
-            $generatedSet['preflight'] = $preflight;
-            $artifactReview->captureForIds($companyId, $periodId, $generatedSet);
         }
         $afterLock = goldenYearEndReportingSnapshot($companyId, $periodId);
 
@@ -738,6 +737,34 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 'calculated_outputs'
             );
             goldenAssertFirstPeriodLockBoundary($harness, $companyId);
+        }
+        if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
+            if (!InterfaceDB::inTransaction()) {
+                InterfaceDB::beginTransaction();
+            }
+            GoldenFilingArtifactDependencyFixture::ensure(true);
+            $filingSet = new \eel_accounts\Service\IxbrlFilingSetGenerationService();
+            $preflight = $filingSet->plan($companyId, $periodId);
+            $generatedSet = $filingSet->generate(
+                $companyId,
+                $periodId,
+                'golden_artifact_review',
+                static function (string $message, int $percent): void {
+                    // The focused runner must remain quiet while a test file is loaded.
+                }
+            );
+            $generatedSet['preflight'] = $preflight;
+            goldenAssertGeneratedCompaniesHouseProfitLoss(
+                $harness,
+                $generatedSet,
+                $includeCompaniesHouseProfitLoss
+            );
+            $artifactReview->captureForIds(
+                $companyId,
+                $periodId,
+                $generatedSet,
+                $includeCompaniesHouseProfitLoss
+            );
         }
     }
 
@@ -782,7 +809,13 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             (array)($initialFreezeHashes[$periodId] ?? []),
             goldenYearEndPersistedFreezeHashes($companyId, $periodId)
         );
-        ixbrl_test_complete_disclosures($companyId, $periodId, 'golden_year_end_test');
+        $includeCompaniesHouseProfitLoss = goldenCompaniesHouseIncludesProfitLoss($periodId);
+        ixbrl_test_complete_disclosures(
+            $companyId,
+            $periodId,
+            'golden_year_end_test',
+            $includeCompaniesHouseProfitLoss
+        );
         goldenYearEndSaveReturnAuthorisation($companyId, $periodId);
         $renewedApproval = goldenYearEndApproveFilingEvidence(
             $companyId,
@@ -793,6 +826,13 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue((int)($renewedApproval['accounts_approval_id'] ?? 0) > 0);
         $harness->assertTrue((int)($renewedApproval['fact_run_id'] ?? 0) > 0);
         $harness->assertTrue((int)($renewedApproval['hmrc_approval_id'] ?? 0) > 0);
+        goldenAssertCompaniesHouseProfitLossBasis(
+            $harness,
+            $companyId,
+            $periodId,
+            (int)$renewedApproval['fact_run_id'],
+            $includeCompaniesHouseProfitLoss
+        );
         $harness->assertTrue(
             (int)$renewedApproval['accounts_approval_id'] !== (int)($initialFilingApprovalIds[$periodId] ?? 0)
         );
@@ -822,11 +862,195 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     }
     } finally {
         if ($artifactReview instanceof GoldenFilingArtifactReviewPack) {
+            \eel_accounts\Service\HmrcCt600ValidationService::setIntegrationTestToday(null);
             \eel_accounts\Service\IxbrlAccountsDisclosureService::setIntegrationTestToday(null);
             \eel_accounts\Service\AssetService::setIntegrationTestToday(null);
         }
     }
 });
+
+function goldenCompaniesHouseIncludesProfitLoss(int $accountingPeriodId): bool
+{
+    return match ($accountingPeriodId) {
+        9111, 9113 => false,
+        9112, 9114 => true,
+        default => throw new InvalidArgumentException(
+            'No Golden Companies House Profit and Loss delivery choice is defined for AP '
+            . $accountingPeriodId . '.'
+        ),
+    };
+}
+
+function goldenAssertCompaniesHouseProfitLossBasis(
+    GeneratedServiceClassTestHarness $harness,
+    int $companyId,
+    int $accountingPeriodId,
+    int $factRunId,
+    bool $includeProfitLoss
+): void {
+    $disclosures = InterfaceDB::fetchOne(
+        'SELECT profit_loss_not_delivered_section_444
+         FROM ixbrl_accounts_disclosures
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+         LIMIT 1',
+        ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+    );
+    if (!is_array($disclosures)) {
+        throw new RuntimeException('The Golden Companies House disclosure row is unavailable.');
+    }
+    $harness->assertSame(
+        $includeProfitLoss ? 0 : 1,
+        (int)($disclosures['profit_loss_not_delivered_section_444'] ?? -1)
+    );
+
+    $electionFacts = InterfaceDB::fetchAll(
+        'SELECT taxonomy_concept
+         FROM ixbrl_generation_facts
+         WHERE run_id = :run_id AND fact_key = :fact_key',
+        ['run_id' => $factRunId, 'fact_key' => 'profit_loss_not_delivered_statement']
+    );
+    $harness->assertCount($includeProfitLoss ? 0 : 1, $electionFacts);
+    if (!$includeProfitLoss) {
+        $harness->assertSame(
+            'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
+            (string)($electionFacts[0]['taxonomy_concept'] ?? '')
+        );
+    }
+}
+
+/** @param array<string,mixed> $generatedSet */
+function goldenAssertGeneratedCompaniesHouseProfitLoss(
+    GeneratedServiceClassTestHarness $harness,
+    array $generatedSet,
+    bool $includeCompaniesHouseProfitLoss
+): void {
+    $stages = (array)($generatedSet['stages'] ?? []);
+    $hmrcStage = (array)($stages['hmrc_accounts'] ?? []);
+    $companiesHouseStage = (array)($stages['companies_house_accounts'] ?? []);
+    foreach (['HMRC' => $hmrcStage, 'Companies House' => $companiesHouseStage] as $label => $stage) {
+        if ((string)($stage['outcome'] ?? '') !== 'succeeded') {
+            throw new RuntimeException(
+                $label . ' Golden accounts iXBRL generation failed: '
+                . implode(' ', array_map('strval', (array)($stage['errors'] ?? [])))
+            );
+        }
+        if ((string)(($stage['artifact'] ?? [])['validation_status'] ?? '') !== 'passed') {
+            throw new RuntimeException(
+                $label . ' Golden accounts iXBRL validation did not pass.'
+            );
+        }
+    }
+
+    goldenAssertProfitLossXhtml(
+        $harness,
+        goldenIxbrlArtifactXpath($harness, $hmrcStage),
+        true,
+        false,
+        'HMRC'
+    );
+    goldenAssertProfitLossXhtml(
+        $harness,
+        goldenIxbrlArtifactXpath($harness, $companiesHouseStage),
+        $includeCompaniesHouseProfitLoss,
+        true,
+        'Companies House'
+    );
+}
+
+/** @param array<string,mixed> $stage */
+function goldenIxbrlArtifactXpath(
+    GeneratedServiceClassTestHarness $harness,
+    array $stage
+): DOMXPath {
+    $artifact = (array)($stage['artifact'] ?? []);
+    $path = (string)($artifact['path'] ?? '');
+    if ($path === '' || !is_file($path)) {
+        throw new RuntimeException('A generated Golden accounts iXBRL file is missing.');
+    }
+    $bytes = $path !== '' && is_file($path) ? (string)file_get_contents($path) : '';
+    if ($bytes === '') {
+        throw new RuntimeException('A generated Golden accounts iXBRL file is empty.');
+    }
+    if (!hash_equals((string)($artifact['sha256'] ?? ''), hash('sha256', $bytes))) {
+        throw new RuntimeException('A generated Golden accounts iXBRL file does not match its recorded SHA-256.');
+    }
+
+    $document = new DOMDocument();
+    $previousErrors = libxml_use_internal_errors(true);
+    $loaded = $document->loadXML($bytes, LIBXML_NONET);
+    $parseErrors = libxml_get_errors();
+    libxml_clear_errors();
+    libxml_use_internal_errors($previousErrors);
+    if (!$loaded) {
+        throw new RuntimeException(
+            'The generated Golden iXBRL could not be parsed: '
+            . implode(' ', array_map(
+                static fn(LibXMLError $error): string => trim($error->message),
+                $parseErrors
+            ))
+        );
+    }
+
+    return new DOMXPath($document);
+}
+
+function goldenAssertProfitLossXhtml(
+    GeneratedServiceClassTestHarness $harness,
+    DOMXPath $xpath,
+    bool $includeProfitLoss,
+    bool $companiesHouse,
+    string $label
+): void {
+    $profitLossConcepts = [
+        'core:TurnoverRevenue',
+        'core:OtherOperatingIncomeFormat2',
+        'core:RawMaterialsConsumablesUsed',
+        'core:GrossProfitLoss',
+        'core:StaffCostsEmployeeBenefitsExpense',
+        'core:DepreciationAmortisationImpairmentExpense',
+        'core:OtherExternalCharges',
+        'core:OperatingProfitLoss',
+        'core:TaxTaxCreditOnProfitOrLossOnOrdinaryActivities',
+        'core:ProfitLoss',
+    ];
+    $shouldIncludeProfitLoss = !$companiesHouse || $includeProfitLoss;
+    $profitLossPages = $xpath->query(
+        '//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " profit-loss-page ")]'
+    )->length;
+    $expectedPages = $shouldIncludeProfitLoss ? 1 : 0;
+    if ($profitLossPages !== $expectedPages) {
+        throw new RuntimeException(
+            $label . ' Golden accounts iXBRL expected ' . $expectedPages
+            . ' Profit and Loss page(s); found ' . $profitLossPages . '.'
+        );
+    }
+
+    foreach ($profitLossConcepts as $concept) {
+        $factCount = $xpath->query('//*[@name="' . $concept . '"]')->length;
+        if ($shouldIncludeProfitLoss && $factCount < 1) {
+            throw new RuntimeException(
+                $label . ' Golden accounts iXBRL is missing required Profit and Loss fact ' . $concept . '.'
+            );
+        }
+        if (!$shouldIncludeProfitLoss && $factCount !== 0) {
+            throw new RuntimeException(
+                $label . ' Golden accounts iXBRL omitted the Profit and Loss page but retained '
+                . $factCount . ' ' . $concept . ' fact(s).'
+            );
+        }
+    }
+
+    $electionFacts = $xpath->query(
+        '//*[@name="direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006"]'
+    )->length;
+    $expectedElectionFacts = $companiesHouse && !$includeProfitLoss ? 1 : 0;
+    if ($electionFacts !== $expectedElectionFacts) {
+        throw new RuntimeException(
+            $label . ' Golden accounts iXBRL expected ' . $expectedElectionFacts
+            . ' Section 444 election fact(s); found ' . $electionFacts . '.'
+        );
+    }
+}
 
 /** @return \eel_accounts\Contract\DatabaseBackupCreatorInterface */
 function goldenYearEndVerifiedBackupCreator(): \eel_accounts\Contract\DatabaseBackupCreatorInterface

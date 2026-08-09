@@ -133,6 +133,7 @@ final class GoldenAccountsFixture
                 'prepayments' => 91018,
                 'annual_subscriptions' => 91019,
                 'charitable_donations' => self::nominalId(91028),
+                'vat_control' => self::nominalId(91029),
             ],
             'privacy' => [
                 'live_rows_copied' => false,
@@ -229,6 +230,7 @@ final class GoldenAccountsFixture
             [91018, 'GOLDEN-TEST-91018', 'Golden Test Prepayments', 'asset', 'other', 'prepayments'],
             [91019, 'GOLDEN-TEST-91019', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
             [91028, '6160', 'Golden Test Charitable Donations', 'expense', 'other', 'charitable_donations'],
+            [91029, 'GOLDEN-TEST-91029', 'Golden Test VAT Control', 'liability', 'other', 'vat_control'],
         ];
         foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeCode]) {
             $existingId = (int)InterfaceDB::fetchColumn(
@@ -362,6 +364,14 @@ final class GoldenAccountsFixture
         self::insert('company_settings', [
             'id' => 9201, 'company_id' => self::GOLDEN_COMPANY_ID,
             'setting' => 'utr', 'type' => 'char', 'value' => '1234567890',
+        ]);
+        self::insert('company_settings', [
+            'id' => 9202, 'company_id' => self::GOLDEN_COMPANY_ID,
+            'setting' => 'default_bank_nominal_id', 'type' => 'int', 'value' => (string)self::nominalId(91001),
+        ]);
+        self::insert('company_settings', [
+            'id' => 9203, 'company_id' => self::GOLDEN_COMPANY_ID,
+            'setting' => 'vat_nominal_id', 'type' => 'int', 'value' => (string)self::nominalId(91029),
         ]);
 
         foreach (self::PERIODS as $index => $period) {

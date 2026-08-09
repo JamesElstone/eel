@@ -10,6 +10,25 @@ final class HmrcCt600ValidationService
     public const VALIDATOR_VERSION = 'hmrc-ct600-local-v1';
     private const ENVELOPE_NAMESPACE = 'http://www.govtalk.gov.uk/CM/envelope';
     private const ERROR_NAMESPACE = 'http://www.govtalk.gov.uk/CM/errorresponse';
+    private static ?string $integrationTestToday = null;
+
+    /** Restricts deterministic future-period Schematron validation to SQLite integration tests. */
+    public static function setIntegrationTestToday(?string $today): void
+    {
+        if ($today !== null) {
+            if (strtolower((string)\InterfaceDB::driverName()) !== 'sqlite') {
+                throw new \RuntimeException('The HMRC CT600 validation date override is restricted to SQLite integration tests.');
+            }
+            $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $today);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if (!$parsed instanceof \DateTimeImmutable
+                || $parsed->format('Y-m-d') !== $today
+                || (is_array($errors) && ((int)$errors['warning_count'] > 0 || (int)$errors['error_count'] > 0))) {
+                throw new \InvalidArgumentException('The HMRC CT600 integration-test date must use YYYY-MM-DD.');
+            }
+        }
+        self::$integrationTestToday = $today;
+    }
 
     /** @return array<string,mixed> */
     public function resolveArtifacts(array $rim): array
@@ -244,6 +263,7 @@ final class HmrcCt600ValidationService
             libxml_use_internal_errors($previous);
             return $diagnostics;
         }
+        $this->applyIntegrationTestToday($stylesheet);
         $processor = new \XSLTProcessor();
         if (method_exists($processor, 'setSecurityPrefs')) {
             $processor->setSecurityPrefs(
@@ -303,6 +323,24 @@ final class HmrcCt600ValidationService
             );
         }
         return $diagnostics;
+    }
+
+    private function applyIntegrationTestToday(\DOMDocument $stylesheet): void
+    {
+        $today = self::$integrationTestToday;
+        if ($today === null) {
+            return;
+        }
+        $xpath = new \DOMXPath($stylesheet);
+        $attributes = $xpath->query('//@*[contains(., "date:date()") ]');
+        if (!$attributes instanceof \DOMNodeList) {
+            return;
+        }
+        foreach ($attributes as $attribute) {
+            if ($attribute instanceof \DOMAttr) {
+                $attribute->value = str_replace('date:date()', "'" . $today . "'", $attribute->value);
+            }
+        }
     }
 
     /** @return array<string,mixed> */

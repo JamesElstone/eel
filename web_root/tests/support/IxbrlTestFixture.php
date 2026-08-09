@@ -233,7 +233,12 @@ function ixbrl_test_ensure_approving_director(int $companyId, string $approvalDa
     return $director;
 }
 
-function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId, string $actor = 'test-fixture'): array
+function ixbrl_test_complete_disclosures(
+    int $companyId,
+    int $accountingPeriodId,
+    string $actor = 'test-fixture',
+    bool $includeCompaniesHouseProfitLoss = false
+): array
 {
     ixbrl_test_ensure_frs105_thresholds();
     $period = InterfaceDB::fetchOne(
@@ -291,6 +296,7 @@ function ixbrl_test_complete_disclosures(int $companyId, int $accountingPeriodId
             'audit_exempt_section_477' => 1,
             'directors_acknowledge_responsibilities' => 1,
             'members_have_not_required_audit' => 1,
+            'profit_loss_not_delivered_section_444' => $includeCompaniesHouseProfitLoss ? 0 : 1,
         ],
         $actor
     );

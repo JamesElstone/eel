@@ -46,7 +46,12 @@ final class GoldenFilingArtifactReviewPack
     }
 
     /** @param array<string,mixed> $result */
-    public function captureForIds(int $companyId, int $accountingPeriodId, array $result): void
+    public function captureForIds(
+        int $companyId,
+        int $accountingPeriodId,
+        array $result,
+        bool $includeCompaniesHouseProfitLoss = false
+    ): void
     {
         $company = InterfaceDB::fetchOne(
             'SELECT id, company_name, company_number AS companies_house_number
@@ -76,7 +81,13 @@ final class GoldenFilingArtifactReviewPack
                 . ' could not be described for the review pack.';
             return;
         }
-        $this->capturePeriod($company, $period, $ctPeriods, $result);
+        $this->capturePeriod(
+            $company,
+            $period,
+            $ctPeriods,
+            $result,
+            $includeCompaniesHouseProfitLoss
+        );
     }
 
     /**
@@ -85,7 +96,13 @@ final class GoldenFilingArtifactReviewPack
      * @param list<array<string,mixed>> $ctPeriods
      * @param array<string,mixed> $result
      */
-    public function capturePeriod(array $company, array $period, array $ctPeriods, array $result): void
+    public function capturePeriod(
+        array $company,
+        array $period,
+        array $ctPeriods,
+        array $result,
+        bool $includeCompaniesHouseProfitLoss = false
+    ): void
     {
         $accountingPeriodId = (int)($period['id'] ?? 0);
         if ($accountingPeriodId <= 0 || isset($this->periods[$accountingPeriodId])) {
@@ -109,7 +126,9 @@ final class GoldenFilingArtifactReviewPack
         $this->captureStage(
             'companies_house_accounts_ixbrl',
             (array)($stages['companies_house_accounts'] ?? []),
-            $periodContext
+            $periodContext,
+            [],
+            $includeCompaniesHouseProfitLoss ? 'included' : 'omitted'
         );
 
         $computationStages = (array)($stages['hmrc_computations'] ?? []);
@@ -239,7 +258,13 @@ final class GoldenFilingArtifactReviewPack
     }
 
     /** @param array<string,mixed> $period @param array<string,mixed> $ctPeriod */
-    private function captureStage(string $kind, array $stage, array $period, array $ctPeriod = []): void
+    private function captureStage(
+        string $kind,
+        array $stage,
+        array $period,
+        array $ctPeriod = [],
+        string $profitLossDelivery = ''
+    ): void
     {
         $artifact = (array)($stage['artifact'] ?? []);
         $record = array_merge($period, $ctPeriod, [
@@ -257,6 +282,9 @@ final class GoldenFilingArtifactReviewPack
             'errors' => $this->messages((array)($stage['errors'] ?? [])),
             'warnings' => $this->messages((array)($stage['warnings'] ?? [])),
         ]);
+        if ($kind === 'companies_house_accounts_ixbrl') {
+            $record['profit_loss_delivery'] = $profitLossDelivery;
+        }
         try {
             $record['_bytes'] = $this->readVerifiedArtifact(
                 (string)$record['source_path'],
@@ -287,7 +315,7 @@ final class GoldenFilingArtifactReviewPack
     /** @param array<string,mixed> $record @return array<string,mixed> */
     private function stageSummary(array $record): array
     {
-        return [
+        $summary = [
             'accounting_period_id' => (int)($record['accounting_period_id'] ?? 0),
             'ct_period_id' => isset($record['ct_period_id']) ? (int)$record['ct_period_id'] : null,
             'authority' => (string)($record['authority'] ?? ''),
@@ -298,6 +326,10 @@ final class GoldenFilingArtifactReviewPack
             'errors' => array_values((array)($record['errors'] ?? [])),
             'warnings' => array_values((array)($record['warnings'] ?? [])),
         ];
+        if (isset($record['profit_loss_delivery'])) {
+            $summary['profit_loss_delivery'] = (string)$record['profit_loss_delivery'];
+        }
+        return $summary;
     }
 
     /** @param array<string,mixed> $record @return array<string,mixed> */
@@ -316,7 +348,11 @@ final class GoldenFilingArtifactReviewPack
         $this->ensureDirectory($directory);
         $filename = match ((string)$record['kind']) {
             'hmrc_accounts_ixbrl' => 'hmrc-accounts.xhtml',
-            'companies_house_accounts_ixbrl' => 'companies-house-accounts.xhtml',
+            'companies_house_accounts_ixbrl' => match ((string)($record['profit_loss_delivery'] ?? '')) {
+                'included' => 'companies-house-accounts-with-profit-and-loss.xhtml',
+                'omitted' => 'companies-house-accounts-without-profit-and-loss.xhtml',
+                default => 'companies-house-accounts.xhtml',
+            },
             'hmrc_computation_ixbrl' => 'hmrc-computation.xhtml',
             'ct600_xml' => 'ct600.xml',
             default => 'artifact-' . ($index + 1) . '.bin',
@@ -389,6 +425,7 @@ final class GoldenFilingArtifactReviewPack
             $rows .= '<tr><td>' . $this->escape((string)$artifact['accounting_period_id']) . '</td>'
                 . '<td>' . $this->escape((string)($artifact['ct_period_id'] ?? '—')) . '</td>'
                 . '<td>' . $this->escape((string)$artifact['kind']) . '</td>'
+                . '<td>' . $this->escape((string)($artifact['profit_loss_delivery'] ?? '—')) . '</td>'
                 . '<td>' . $this->escape((string)$artifact['status']) . '</td>'
                 . '<td>' . $link . '</td><td>' . $evidence . '</td>'
                 . '<td><code>' . $this->escape((string)$artifact['sha256']) . '</code></td>'
@@ -404,7 +441,7 @@ final class GoldenFilingArtifactReviewPack
             . '</style></head><body><h1>Golden filing artefact review</h1><p>Run <code>'
             . $this->escape((string)$manifest['run_id']) . '</code> — <strong class="' . $this->escape($status) . '">'
             . $this->escape($status) . '</strong></p><p><a href="manifest.json">Open manifest</a></p>'
-            . '<table><thead><tr><th>AP</th><th>CT period</th><th>Artefact</th><th>Validation</th>'
+            . '<table><thead><tr><th>AP</th><th>CT period</th><th>Artefact</th><th>P&amp;L delivery</th><th>Validation</th>'
             . '<th>File</th><th>Evidence</th><th>SHA-256</th><th>Errors</th></tr></thead><tbody>'
             . $rows . '</tbody></table></body></html>';
     }

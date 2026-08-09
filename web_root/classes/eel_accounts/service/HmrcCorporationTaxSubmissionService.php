@@ -1109,7 +1109,8 @@ final class HmrcCorporationTaxSubmissionService
         );
         if (in_array((string)$changes['business_outcome'], ['rejected', 'error'], true)
             || (string)$changes['outcome_code'] === 'submission_error') {
-            $result['warnings'][] = (string)$changes['hmrc_response_summary'];
+            $result['warnings'][] = 'Recorded result from the archived HMRC response '
+                . '(no request was sent): ' . (string)$changes['hmrc_response_summary'];
         }
 
         return $result;

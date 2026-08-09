@@ -1916,6 +1916,10 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         implode(' ', (array)$reprocessed['warnings']),
                         'View the GovTalk conversation'
                     ));
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$reprocessed['warnings']),
+                        'Recorded result from the archived HMRC response (no request was sent)'
+                    ));
                     $h->assertSame(3, $transport->archivedParseCalls);
                     $h->assertSame(
                         [

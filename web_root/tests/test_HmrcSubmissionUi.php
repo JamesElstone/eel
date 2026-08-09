@@ -510,6 +510,18 @@ $harness->run(HmrcSubmissionAction::class, static function (
         );
     });
 
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'states that archived response reprocessing applies a recorded result without transmission',
+        static function () use ($harness, $action): void {
+            $message = new ReflectionMethod($action, 'successMessage');
+            $message->setAccessible(true);
+            $reprocessed = (string)$message->invoke($action, 'hmrc_reprocess_response', []);
+            $harness->assertTrue(str_contains($reprocessed, 'recorded result was applied'));
+            $harness->assertTrue(str_contains($reprocessed, 'No request was sent to HMRC'));
+        }
+    );
+
     $harness->check(HmrcSubmissionAction::class, 'rejects GET and tokenless POST requests before dispatch', static function () use ($harness, $action): void {
         $get = new RequestFramework(
             [
@@ -790,6 +802,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
             'Checking the selected HMRC transmission and CT Period',
             'Preparing the approved return for LIVE HMRC transmission',
             'Preparing the exact HMRC GovTalk request without transmitting it',
+            'Local HMRC response reprocessing is complete; no request was sent to HMRC',
             'HMRC transmission processing is complete',
         ] as $progressMessage) {
             $harness->assertTrue(str_contains($source, $progressMessage));

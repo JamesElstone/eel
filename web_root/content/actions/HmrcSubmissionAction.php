@@ -150,12 +150,13 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 }
             }
             if (!empty($command['success'])) {
-                $progress->report(
-                    $intent === 'hmrc_generate_request'
-                        ? 'The HMRC GovTalk request file is ready; nothing was transmitted.'
-                        : 'HMRC transmission processing is complete.',
-                    100
-                );
+                $completionMessage = match ($intent) {
+                    'hmrc_generate_request' => 'The HMRC GovTalk request file is ready; nothing was transmitted.',
+                    'hmrc_reprocess_response' =>
+                        'Local HMRC response reprocessing is complete; no request was sent to HMRC.',
+                    default => 'HMRC transmission processing is complete.',
+                };
+                $progress->report($completionMessage, 100);
             }
         } catch (Throwable $exception) {
             $command = ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
@@ -249,7 +250,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 . ($path !== '' ? ': ' . $path : '.');
         }
         if ($intent === 'hmrc_reprocess_response') {
-            return 'The archived HMRC response was reprocessed locally. Nothing was sent to HMRC.';
+            return 'The archived HMRC response was reprocessed locally and its recorded result was applied. '
+                . 'No request was sent to HMRC.';
         }
         if (!empty($command['needs_poll'])) {
             return 'HMRC acknowledged the submission. Use Check Submission Status after the requested polling interval.';

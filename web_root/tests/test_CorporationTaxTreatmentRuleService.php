@@ -86,4 +86,57 @@ $harness->run(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, f
 
         $harness->assertSame(0, $activeCount);
     });
+
+    $harness->check(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, 'keeps exact nominal selectors narrower than account type selectors', function () use ($harness): void {
+        $exact = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([[
+            'id' => 1,
+            'priority' => 1,
+            'nominal_account_id' => 6160,
+            'nominal_code' => '6160',
+            'account_type' => 'expense',
+            'tax_treatment' => 'other',
+            'is_active' => 1,
+        ]]);
+        $donation = $exact->resolveTaxTreatment([
+            'id' => 6160,
+            'code' => '6160',
+            'name' => 'Charitable Donations',
+            'account_type' => 'expense',
+            'tax_treatment' => 'allowable',
+        ]);
+        $fuel = $exact->resolveTaxTreatment([
+            'id' => 6002,
+            'code' => '6002',
+            'name' => 'Fuel',
+            'account_type' => 'expense',
+            'tax_treatment' => 'allowable',
+        ]);
+        $harness->assertSame('other', (string)$donation['tax_treatment']);
+        $harness->assertSame('allowable', (string)$fuel['tax_treatment']);
+
+        $typeOnly = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([[
+            'id' => 2, 'priority' => 1, 'account_type' => 'expense',
+            'tax_treatment' => 'disallowable', 'is_active' => 1,
+        ]]);
+        $nameOnly = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([[
+            'id' => 3, 'priority' => 1, 'name_contains' => 'Legal',
+            'tax_treatment' => 'other', 'is_active' => 1,
+        ]]);
+        $combined = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([[
+            'id' => 4, 'priority' => 1, 'account_type' => 'expense', 'name_contains' => 'Professional',
+            'tax_treatment' => 'other', 'is_active' => 1,
+        ]]);
+        $harness->assertSame('disallowable', (string)$typeOnly->resolveTaxTreatment([
+            'code' => '6002', 'name' => 'Fuel', 'account_type' => 'expense', 'tax_treatment' => 'allowable',
+        ])['tax_treatment']);
+        $harness->assertSame('other', (string)$nameOnly->resolveTaxTreatment([
+            'code' => '7000', 'name' => 'Legal Costs', 'account_type' => 'expense', 'tax_treatment' => 'allowable',
+        ])['tax_treatment']);
+        $harness->assertSame('allowable', (string)$combined->resolveTaxTreatment([
+            'code' => '7001', 'name' => 'Professional Income', 'account_type' => 'income', 'tax_treatment' => 'allowable',
+        ])['tax_treatment']);
+        $harness->assertSame('other', (string)$combined->resolveTaxTreatment([
+            'code' => '7002', 'name' => 'Professional Fees', 'account_type' => 'expense', 'tax_treatment' => 'allowable',
+        ])['tax_treatment']);
+    });
 });

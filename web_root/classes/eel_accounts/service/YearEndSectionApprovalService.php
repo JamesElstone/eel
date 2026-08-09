@@ -53,6 +53,14 @@ final class YearEndSectionApprovalService
             $accountingPeriodId,
             $checkCode
         );
+        if ($checkCode === 'tax_readiness_acknowledgement'
+            && (empty($bundle['available'])
+                || (array_key_exists('can_approve', $bundle) && empty($bundle['can_approve'])))) {
+            // A lock preserves only a basis that was valid when frozen. A
+            // legacy frozen computation that itself records unresolved tax
+            // treatments must not receive the pre-close validity override.
+            $approvedPreClosePosition = false;
+        }
         $evaluation = $acknowledgements->evaluate(
             $acknowledgement,
             $basis,
@@ -822,7 +830,8 @@ final class YearEndSectionApprovalService
         int $companyId,
         int $accountingPeriodId,
         ?array $preparedTaxReadiness = null,
-        ?array $preparedScope = null
+        ?array $preparedScope = null,
+        ?array $preparedLineReview = null
     ): array
     {
         // Read the underlying tax calculation directly from the checklist
@@ -843,6 +852,8 @@ final class YearEndSectionApprovalService
         if (empty($scope['available'])) {
             return ['available' => false, 'errors' => (array)($scope['errors'] ?? ['The Corporation Tax filing-scope review is unavailable.']), 'check_code' => 'tax_readiness_acknowledgement'];
         }
+        $lineReview = $preparedLineReview
+            ?? $this->taxLineReviewContext($companyId, $accountingPeriodId);
 
         $questions = [];
         $currentAnswers = [];
@@ -875,6 +886,9 @@ final class YearEndSectionApprovalService
             ];
         $facts['filing_scope_revision'] = (int)($scope['revision'] ?? 0);
         $facts['filing_scope_basis_hash'] = (string)($scope['basis_hash'] ?? '');
+        $facts['line_treatment_review_basis_hash'] = (string)($lineReview['review_basis_hash'] ?? '');
+        $facts['line_treatment_review_basis_source'] = (string)($lineReview['basis_source'] ?? 'unavailable');
+        $facts['line_treatment_unresolved_count'] = (int)($lineReview['unresolved_count'] ?? 0);
         $display = [
             'freeze_status' => (string)($taxReadiness['freeze_status'] ?? ''),
             'freeze_manifest_hash' => (string)($taxReadiness['freeze_manifest_hash'] ?? ''),
@@ -883,6 +897,10 @@ final class YearEndSectionApprovalService
             'estimated_corporation_tax' => $taxReadiness['estimated_corporation_tax'] ?? 0,
             'filing_scope_revision' => (int)($scope['revision'] ?? 0),
             'filing_scope_basis_hash' => (string)($scope['basis_hash'] ?? ''),
+            'line_treatment_review_available' => !empty($lineReview['available']),
+            'line_treatment_review_basis_source' => (string)($lineReview['basis_source'] ?? 'unavailable'),
+            'line_treatment_review_basis_hash' => (string)($lineReview['review_basis_hash'] ?? ''),
+            'line_treatment_unresolved_count' => (int)($lineReview['unresolved_count'] ?? 0),
         ];
         $bundle = $this->bundle('tax_readiness_acknowledgement', $facts, $questions, $display);
         $bundle['answer_source'] = 'persisted_filing_scope';
@@ -901,6 +919,17 @@ final class YearEndSectionApprovalService
             $bundle['approval_errors'] = [
                 (string)(($taxReadiness['blocking_diagnostics'][0] ?? [])['message']
                     ?? 'Resolve the blocking Year End tax checks before approving this section.'),
+            ];
+        } elseif (empty($lineReview['available'])) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = (array)($lineReview['errors'] ?? [
+                'The Corporation Tax line-treatment review is unavailable.',
+            ]);
+        } elseif ((int)($lineReview['unresolved_count'] ?? 0) > 0) {
+            $bundle['can_approve'] = false;
+            $bundle['approval_errors'] = [
+                (int)$lineReview['unresolved_count']
+                    . ' Corporation Tax line treatment(s) require review before Year End can be approved.',
             ];
         }
 
@@ -1396,6 +1425,13 @@ final class YearEndSectionApprovalService
                 'revision' => (int)($scope['revision'] ?? 0),
                 'basis_hash' => (string)($scope['basis_hash'] ?? ''),
             ];
+            $lineReview = $this->taxLineReviewContext($companyId, $accountingPeriodId);
+            $tokens['corporation_tax_line_treatment_review'] = [
+                'available' => !empty($lineReview['available']),
+                'basis_source' => (string)($lineReview['basis_source'] ?? 'unavailable'),
+                'review_basis_hash' => (string)($lineReview['review_basis_hash'] ?? ''),
+                'unresolved_count' => (int)($lineReview['unresolved_count'] ?? 0),
+            ];
         }
         return $tokens === [] ? '' : hash('sha256', $this->canonicalJson($tokens));
     }
@@ -1414,6 +1450,22 @@ final class YearEndSectionApprovalService
                 ) ?? [];
                 return (array)($checklist['tax_readiness'] ?? []);
             }
+        );
+
+        return is_array($context) ? $context : [];
+    }
+
+    /** @return array<string,mixed> */
+    private function taxLineReviewContext(int $companyId, int $accountingPeriodId): array
+    {
+        $context = \eel_accounts\Support\RequestCache::remember(
+            'year-end-section.tax-line-review',
+            $companyId . ':' . $accountingPeriodId,
+            static fn(): array => (new CorporationTaxLineTreatmentService())->fetchReview(
+                $companyId,
+                $accountingPeriodId,
+                0
+            )
         );
 
         return is_array($context) ? $context : [];
@@ -1645,7 +1697,7 @@ final class YearEndSectionApprovalService
             // Version the canonical freeze-manifest representation as well as
             // the filing-scope questions. Cached pre-canonical bundles must be
             // refreshed before their approval form is shown.
-            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v4_direct_freeze'],
+            'tax_readiness_acknowledgement' => ['provider' => 'tax_filing_scope_v5_line_review_gate'],
             'companies_house_mismatch_acknowledgement' => $this->companiesHouseQuestions(true),
             // Version the direct display provider so checklist-era cached
             // bundles are rebuilt with the P&L card's required display model.

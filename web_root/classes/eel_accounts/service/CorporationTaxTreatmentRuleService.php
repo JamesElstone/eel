@@ -192,28 +192,29 @@ final class CorporationTaxTreatmentRuleService
 
         $nominalId = (int)($nominal['id'] ?? $nominal['nominal_account_id'] ?? 0);
         $ruleNominalId = (int)($rule['nominal_account_id'] ?? 0);
-        if ($ruleNominalId > 0 && $nominalId === $ruleNominalId) {
-            return true;
-        }
-
         $nominalCode = trim((string)($nominal['code'] ?? ''));
         $ruleNominalCode = trim((string)($rule['nominal_code'] ?? ''));
-        if ($ruleNominalCode !== '' && strcasecmp($nominalCode, $ruleNominalCode) === 0) {
-            return true;
-        }
-
         $ruleAccountType = trim((string)($rule['account_type'] ?? ''));
         $ruleNameContains = trim((string)($rule['name_contains'] ?? ''));
-        $accountTypeMatches = $ruleAccountType !== ''
-            && $ruleAccountType === (string)($nominal['account_type'] ?? '');
-        $nameMatches = $ruleNameContains !== ''
-            && stripos((string)($nominal['name'] ?? ''), $ruleNameContains) !== false;
-
-        if ($ruleAccountType !== '' && $ruleNameContains !== '') {
-            return $accountTypeMatches && $nameMatches;
+        $hasExactSelector = $ruleNominalId > 0 || $ruleNominalCode !== '';
+        if ($hasExactSelector) {
+            $exactMatch = ($ruleNominalId > 0 && $nominalId === $ruleNominalId)
+                || ($ruleNominalCode !== '' && strcasecmp($nominalCode, $ruleNominalCode) === 0);
+            if (!$exactMatch) {
+                return false;
+            }
         }
 
-        return $accountTypeMatches || $nameMatches;
+        if ($ruleAccountType !== ''
+            && $ruleAccountType !== (string)($nominal['account_type'] ?? '')) {
+            return false;
+        }
+        if ($ruleNameContains !== ''
+            && stripos((string)($nominal['name'] ?? ''), $ruleNameContains) === false) {
+            return false;
+        }
+
+        return $hasExactSelector || $ruleAccountType !== '' || $ruleNameContains !== '';
     }
 
     private function isAssetDisposalLoss(array $nominal): bool

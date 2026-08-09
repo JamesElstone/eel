@@ -34,6 +34,21 @@ final class _corporation_tax_reviewCard extends CardBaseFramework
         if (empty($review['available'])) {
             return '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)(($review['errors'] ?? [])[0] ?? 'Corporation Tax review is unavailable.')) . '</div>';
         }
+        if (!empty($review['read_only']) || (string)($review['basis_source'] ?? '') === 'locked_snapshot') {
+            $unresolved = (int)($review['unresolved_count'] ?? 0);
+            $badge = $unresolved === 0
+                ? '<span class="badge success">No unresolved treatments at lock</span>'
+                : '<span class="badge danger">' . $unresolved . ' unresolved at lock</span>';
+            $detail = trim((string)($review['read_only_reason'] ?? ''));
+            if ($detail === '') {
+                $detail = 'This is the read-only Corporation Tax review persisted when the accounting period was locked.';
+            }
+            if ($unresolved > 0) {
+                $detail .= ' Unlock the accounting period before inspecting and resolving current line treatments.';
+            }
+            return '<div class="panel-soft">' . $badge . ' <span class="helper">'
+                . \eel_accounts\Support\Utf8::html($detail) . '</span></div>';
+        }
         $items = (array)($review['items'] ?? []);
         if ($items === []) {
             return '<div class="panel-soft"><span class="badge success">No review items</span> <span class="helper">No posted Corporation Tax treatment lines currently require review.</span></div>';

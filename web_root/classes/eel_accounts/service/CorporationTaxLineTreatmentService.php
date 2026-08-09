@@ -54,16 +54,35 @@ final class CorporationTaxLineTreatmentService
         if (!is_array($period)) {
             return ['available' => false, 'errors' => ['The accounting period could not be found.'], 'items' => []];
         }
+        $reviewPeriod = $this->reviewPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            (string)$period['period_start'],
+            (string)$period['period_end']
+        );
+        if (empty($reviewPeriod['available'])) {
+            return [
+                'available' => false,
+                'errors' => (array)($reviewPeriod['errors'] ?? ['The selected Corporation Tax period could not be found.']),
+                'items' => [],
+            ];
+        }
+        if ((new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return $this->frozenReview($companyId, $accountingPeriodId, $ctPeriodId);
+        }
+
         $scope = (new PeriodLedgerReadService())->scope(
             $companyId,
             $accountingPeriodId,
-            (string)$period['period_end'],
-            (string)$period['period_start']
+            (string)$reviewPeriod['period_end'],
+            (string)$reviewPeriod['period_start']
         );
         $ledgerLines = (new DatedTaxTreatmentLedgerService())->fetch($scope);
         $this->primeDecisions($ledgerLines);
         $decisionHistories = $this->decisionHistories($ledgerLines);
         $items = [];
+        $basisRows = [];
         foreach ($ledgerLines as $line) {
             $date = (string)($line['journal_date'] ?? '');
             $base = $this->rules()->resolveTaxTreatment($line, $date, $date);
@@ -98,11 +117,18 @@ final class CorporationTaxLineTreatmentService
                 'tax_treatment' => !empty($resolved['decision_current']) ? (string)$resolved['tax_treatment'] : '',
                 'state' => !empty($resolved['decision_current']) ? 'resolved' : ($latest !== null ? 'stale' : 'requires_review'),
                 'rule_code' => (string)($rule['rule_code'] ?? ''),
+                'rule_version' => (string)($rule['rule_version'] ?? ''),
                 'rationale' => (string)($rule['rationale'] ?? ''),
                 'guidance_url' => (string)($rule['source_url'] ?? ''),
                 'source_label' => $source['label'],
                 'source_url' => $source['url'],
                 'decision_history' => $history,
+            ];
+            $basisRows[] = [
+                'journal_line_id' => $lineId,
+                'state' => !empty($resolved['decision_current']) ? 'resolved' : ($latest !== null ? 'stale' : 'requires_review'),
+                'tax_treatment' => !empty($resolved['decision_current']) ? (string)$resolved['tax_treatment'] : '',
+                'line_basis_hash' => $this->basisHash($line, $base),
             ];
         }
 
@@ -112,7 +138,136 @@ final class CorporationTaxLineTreatmentService
             'items' => $items,
             'unresolved_count' => count(array_filter($items, static fn(array $item): bool => $item['state'] !== 'resolved')),
             'resolved_count' => count(array_filter($items, static fn(array $item): bool => $item['state'] === 'resolved')),
+            'basis_source' => 'live',
+            'read_only' => false,
+            'review_basis_hash' => $this->reviewBasisHash($companyId, $accountingPeriodId, $ctPeriodId, 'live', $basisRows),
         ];
+    }
+
+    private function reviewPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $accountingPeriodStart,
+        string $accountingPeriodEnd
+    ): array {
+        if ($ctPeriodId <= 0) {
+            return [
+                'available' => true,
+                'period_start' => $accountingPeriodStart,
+                'period_end' => $accountingPeriodEnd,
+            ];
+        }
+        $period = \InterfaceDB::fetchOne(
+            'SELECT id, period_start, period_end
+             FROM corporation_tax_periods
+             WHERE id = :ct_period_id
+               AND company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND status <> :superseded_status
+             LIMIT 1',
+            [
+                'ct_period_id' => $ctPeriodId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'superseded_status' => 'superseded',
+            ]
+        );
+        if (!is_array($period)) {
+            return ['available' => false, 'errors' => ['The selected Corporation Tax period does not belong to this accounting period.']];
+        }
+        return [
+            'available' => true,
+            'period_start' => (string)$period['period_start'],
+            'period_end' => (string)$period['period_end'],
+        ];
+    }
+
+    private function frozenReview(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    {
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'superseded_status' => 'superseded',
+        ];
+        $where = '';
+        if ($ctPeriodId > 0) {
+            $where = ' AND id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $periods = \InterfaceDB::fetchAll(
+            'SELECT id, sequence_no, period_start, period_end
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND status <> :superseded_status' . $where . '
+             ORDER BY period_start ASC, sequence_no ASC, id ASC',
+            $params
+        );
+        if ($periods === []) {
+            return ['available' => false, 'errors' => ['No frozen Corporation Tax period is available for this review.'], 'items' => []];
+        }
+
+        $computation = new CorporationTaxComputationService();
+        $frozenPeriods = [];
+        $unresolvedCount = 0;
+        $unresolvedAmount = 0.0;
+        foreach ($periods as $period) {
+            $summary = $computation->fetchSummaryForCtPeriodId($companyId, (int)$period['id']);
+            if (empty($summary['available']) || (string)($summary['summary_source'] ?? '') !== 'locked_snapshot') {
+                return [
+                    'available' => false,
+                    'errors' => (array)($summary['errors'] ?? ['The frozen Corporation Tax review snapshot is unavailable.']),
+                    'items' => [],
+                    'basis_source' => 'locked_snapshot',
+                    'read_only' => true,
+                ];
+            }
+            $periodUnresolved = (int)($summary['other_treatment_count'] ?? 0);
+            $periodAmount = round((float)($summary['other_treatment_amount'] ?? 0), 2);
+            $unresolvedCount += $periodUnresolved;
+            $unresolvedAmount = round($unresolvedAmount + $periodAmount, 2);
+            $frozenPeriods[] = [
+                'ct_period_id' => (int)$period['id'],
+                'sequence_no' => (int)($period['sequence_no'] ?? 0),
+                'period_start' => (string)$period['period_start'],
+                'period_end' => (string)$period['period_end'],
+                'unresolved_count' => $periodUnresolved,
+                'unresolved_amount' => $periodAmount,
+                'computation_run_id' => (int)($summary['computation_run_id'] ?? 0),
+                'computation_hash' => (string)(($summary['computation_persistence'] ?? [])['stored_hash'] ?? ''),
+            ];
+        }
+
+        return [
+            'available' => true,
+            'errors' => [],
+            'items' => [],
+            'unresolved_count' => $unresolvedCount,
+            'resolved_count' => 0,
+            'unresolved_amount' => $unresolvedAmount,
+            'basis_source' => 'locked_snapshot',
+            'read_only' => true,
+            'read_only_reason' => 'This accounting period is locked. The review shown is the persisted Corporation Tax position approved at lock time.',
+            'frozen_periods' => $frozenPeriods,
+            'review_basis_hash' => $this->reviewBasisHash($companyId, $accountingPeriodId, $ctPeriodId, 'locked_snapshot', $frozenPeriods),
+        ];
+    }
+
+    private function reviewBasisHash(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $basisSource,
+        array $rows
+    ): string {
+        return hash('sha256', \eel_accounts\Support\Utf8::json([
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'ct_period_id' => $ctPeriodId,
+            'basis_source' => $basisSource,
+            'rows' => array_values($rows),
+        ], JSON_UNESCAPED_SLASHES));
     }
 
     public function save(int $companyId, int $accountingPeriodId, int $journalLineId, string $treatment, string $actor): array

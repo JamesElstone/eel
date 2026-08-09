@@ -39,4 +39,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     $h->assertTrue(str_contains($html, 'user:42'));
     $h->assertTrue(str_contains($html, 'professional_review v1'));
     $h->assertTrue(str_contains($html, 'Current'));
+
+    $lockedContext = $context;
+    $lockedContext['services']['corporationTaxReview'] = [
+        'available' => true,
+        'items' => [],
+        'unresolved_count' => 0,
+        'resolved_count' => 0,
+        'basis_source' => 'locked_snapshot',
+        'read_only' => true,
+        'read_only_reason' => 'This accounting period is locked.',
+    ];
+    $lockedHtml = $card->render($lockedContext);
+    $h->assertTrue(str_contains($lockedHtml, 'No unresolved treatments at lock'));
+    $h->assertTrue(str_contains($lockedHtml, 'This accounting period is locked.'));
+    $h->assertFalse(str_contains($lockedHtml, '<select'));
+    $h->assertFalse(str_contains($lockedHtml, 'save_line_tax_treatment'));
 });

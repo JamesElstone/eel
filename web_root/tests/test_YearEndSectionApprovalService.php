@@ -275,7 +275,7 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $expected = hash('sha256', (string)$canonicalJson->invoke($service, [
             'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
             'check_code' => 'tax_readiness_acknowledgement',
-            'questions' => ['provider' => 'tax_filing_scope_v4_direct_freeze'],
+            'questions' => ['provider' => 'tax_filing_scope_v5_line_review_gate'],
         ]));
 
         $harness->assertSame(
@@ -315,6 +315,14 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
                 'definitions' => [
                     'ct600b' => ['question' => 'Does CT600B apply?'],
                 ],
+            ],
+            [
+                'available' => true,
+                'basis_source' => 'live',
+                'read_only' => false,
+                'unresolved_count' => 0,
+                'resolved_count' => 0,
+                'review_basis_hash' => 'line-review-hash',
             ]
         );
 
@@ -325,7 +333,44 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
             (string)((($bundle['facts'] ?? [])['freeze_manifest']['totals'] ?? [])['tax_payable'] ?? '')
         );
         $harness->assertSame('scope-hash', (string)(($bundle['facts'] ?? [])['filing_scope_basis_hash'] ?? ''));
+        $harness->assertSame('line-review-hash', (string)(($bundle['facts'] ?? [])['line_treatment_review_basis_hash'] ?? ''));
         $harness->assertSame('no', (string)(($bundle['current_answers'] ?? [])['filing_scope.ct600b'] ?? ''));
+
+        $blocked = (array)$method->invoke(
+            $service,
+            12,
+            34,
+            [
+                'available' => true,
+                'freeze_status' => 'ready_for_approval',
+                'freeze_manifest' => [
+                    'company_id' => 12,
+                    'accounting_period_id' => 34,
+                    'periods' => [],
+                    'totals' => [],
+                ],
+                'blocking_diagnostics' => [],
+            ],
+            [
+                'available' => true,
+                'complete' => true,
+                'revision' => 1,
+                'basis_hash' => 'scope-hash',
+                'answers' => ['ct600b' => 'no'],
+                'unanswered_fields' => [],
+                'errors' => [],
+                'definitions' => ['ct600b' => ['question' => 'Does CT600B apply?']],
+            ],
+            [
+                'available' => true,
+                'basis_source' => 'live',
+                'unresolved_count' => 2,
+                'resolved_count' => 0,
+                'review_basis_hash' => 'blocked-line-review-hash',
+            ]
+        );
+        $harness->assertSame(false, (bool)($blocked['can_approve'] ?? true));
+        $harness->assertTrue(str_contains((string)(($blocked['approval_errors'] ?? [])[0] ?? ''), '2 Corporation Tax line treatment'));
     });
 
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not mark a ready tax bundle current without its freeze manifest', static function () use ($harness, $service): void {

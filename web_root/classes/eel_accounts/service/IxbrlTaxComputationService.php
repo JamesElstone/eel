@@ -6,7 +6,7 @@ namespace eel_accounts\Service;
 
 final class IxbrlTaxComputationService
 {
-    public const PRESENTATION_VERSION = 'ct-computation-presentation-v2';
+    public const PRESENTATION_VERSION = 'ct-computation-presentation-v3';
 
     private const VISIBLE_AMOUNT_STYLE_STANDARD = 'standard';
     private const VISIBLE_AMOUNT_STYLE_ACCOUNTING_NEGATIVE = 'accounting_negative';
@@ -641,7 +641,7 @@ final class IxbrlTaxComputationService
         if ($facts === []) {
             throw new \RuntimeException('The active profile produced no Inline XBRL facts.');
         }
-        $body = $this->renderReportBody($generator, $model, $report, $facts);
+        $body = $this->renderReportBody($generator, $model, $report, $facts, $evidenceArtifactId);
         if (!str_starts_with($schemaRef, 'http://www.hmrc.gov.uk/')) {
             throw new \RuntimeException('The verified HMRC computation-taxonomy schema reference is invalid.');
         }
@@ -680,7 +680,8 @@ final class IxbrlTaxComputationService
         IxbrlGeneratorService $generator,
         array $filing,
         array $report,
-        array $facts
+        array $facts,
+        string $evidenceArtifactId = ''
     ): string {
         $model = (array)$filing['model'];
         $summary = (array)$model['computation']['summary'];
@@ -813,8 +814,13 @@ final class IxbrlTaxComputationService
             . '<table class="financial-table"><thead><tr><th scope="col">Tax liability</th>'
             . '<th scope="col" class="amount">£</th></tr></thead><tbody>' . $taxRows . '</tbody></table></div>'
             . $this->renderSection455Narrative($generator, (array)($model['ct600a'] ?? []))
-            . $this->renderSupportingSchedules($generator, $filing)
-            . '</div>';
+            . $this->renderSupportingSchedules($generator, $filing);
+        $evidenceArtifactId = trim($evidenceArtifactId);
+        if ($evidenceArtifactId !== '') {
+            $html .= '<div class="evidence-footer keep-together">Evidence ID: '
+                . $generator->escape($evidenceArtifactId) . '</div>';
+        }
+        $html .= '</div>';
         return $html;
     }
 
@@ -1140,7 +1146,7 @@ final class IxbrlTaxComputationService
         if (abs($claimTotal - $expected) > 0.009) {
             throw new \RuntimeException('The asset-level AIA schedule does not reconcile to the frozen CT600 AIA claim.');
         }
-        return '<div class="ct-section aia-section"><h2>Annual Investment Allowance schedule</h2>'
+        return '<div class="ct-section aia-section"><h2>Annual Investment Allowance (AIA) schedule</h2>'
             . '<table class="financial-table aia-table"><thead><tr><th scope="col">Asset description</th>'
             . '<th scope="col">Qualifying expenditure date</th><th scope="col" class="amount">Expenditure (£)</th>'
             . '<th scope="col" class="amount">AIA claimed (£)</th></tr></thead><tbody>' . $rows
@@ -1530,10 +1536,12 @@ thead th { border-bottom: 1px solid #7b858f; color: #39434d; }
 .aia-table th:nth-child(2), .aia-table td:nth-child(2) { width: 35mm; }
 .aia-table th:nth-child(3), .aia-table td:nth-child(3),
 .aia-table th:nth-child(4), .aia-table td:nth-child(4) { width: 27mm; }
+.evidence-footer { margin-top: 8mm; padding-top: 3mm; border-top: 1px solid #a8afb7; color: #59636e; font-size: 8pt; overflow-wrap: anywhere; }
 .keep-together { break-inside: avoid; page-break-inside: avoid; }
 @media print {
   html, body { width: auto; max-width: 100%; min-height: 0; margin: 0; padding: 0; }
-  .ct-report { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; }
+  /* A4 is 210mm wide: cap the report at 170mm so physical side gutters remain 2cm. */
+  .ct-report { box-sizing: border-box; width: 100%; max-width: 170mm; margin: 0 auto; }
   .ct-report table, .ct-report th, .ct-report td { box-sizing: border-box; max-width: 100%; }
   .ct-report th, .ct-report td:not(.amount) { overflow-wrap: anywhere; word-wrap: break-word; }
   .ct-report th.amount { white-space: normal; }

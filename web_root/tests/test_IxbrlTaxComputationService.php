@@ -245,7 +245,10 @@ function ixbrlTaxComputationMappings(array $model): array
 
         $h->assertTrue(str_contains($stylesheet, '@page { size: A4 portrait; margin: 18mm 2cm; }'));
         $h->assertTrue(str_contains($stylesheet, 'html, body { width: auto; max-width: 100%; min-height: 0; margin: 0; padding: 0; }'));
-        $h->assertTrue(str_contains($stylesheet, '.ct-report { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; }'));
+        $h->assertTrue(str_contains(
+            $stylesheet,
+            '.ct-report { box-sizing: border-box; width: 100%; max-width: 170mm; margin: 0 auto; }'
+        ));
         $h->assertTrue(str_contains($stylesheet, '.ct-report table, .ct-report th, .ct-report td { box-sizing: border-box; max-width: 100%; }'));
         $h->assertTrue(str_contains($stylesheet, '.ct-report th.amount { white-space: normal; }'));
         $h->assertTrue(str_contains($stylesheet, 'td.amount { white-space: nowrap; }'));
@@ -379,7 +382,11 @@ function ixbrlTaxComputationMappings(array $model): array
         $h->assertTrue(str_contains($body, '563.21'));
         $h->assertFalse(str_contains($body, 'identity.company_name'));
         $h->assertFalse(str_contains($body, 'EEL filing evidence artifact'));
-        $h->assertFalse(str_contains($body, $evidenceId));
+        $h->assertTrue(str_contains($body, 'Evidence ID: ' . $evidenceId));
+        $h->assertSame(1, $xpath->query(
+            '//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " ct-report ")]'
+                . '/*[last()][local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " evidence-footer ")]'
+        )->length);
         $h->assertTrue(str_contains($xhtml, 'name="eel-evidence-artifact-id" content="' . $evidenceId . '"'));
         $h->assertTrue(str_contains($xhtml, '@page { size: A4 portrait;'));
         $h->assertTrue(str_contains($xhtml, 'break-inside: avoid'));
@@ -897,7 +904,11 @@ function ixbrlTaxComputationMappings(array $model): array
         $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
         $body = (string)$xpath->evaluate('string(/*[local-name()="html"]/*[local-name()="body"])');
         $h->assertSame(1, $xpath->query('//*[local-name()="h2" and text()="Main pool"]')->length);
-        $h->assertTrue(str_contains($body, 'Annual Investment Allowance schedule'));
+        $h->assertTrue(str_contains($body, 'Annual Investment Allowance (AIA) schedule'));
+        $h->assertTrue(str_contains($body, 'Additions qualifying for AIA'));
+        $h->assertTrue(str_contains($body, 'AIA limit'));
+        $h->assertTrue(str_contains($body, 'Writing Down Allowance (WDA) rate'));
+        $h->assertTrue(str_contains($body, 'Total First Year Allowance (FYA) and WDA claimed for the main pool'));
         $h->assertTrue(str_contains($body, 'Total capital allowances for the main pool'));
         $h->assertTrue(str_contains($body, '1,000,000.00'));
         $h->assertTrue(str_contains($body, '18.00%'));

@@ -295,7 +295,7 @@ function goldenCtIxbrlCompleteFilingInputs(int $companyId, int $accountingPeriod
     }
 }
 
-/** @return array{xhtml:string,report:array<string,mixed>,package_archive:string,schema_ref:string} */
+/** @return array{xhtml:string,report:array<string,mixed>,package_archive:string,schema_ref:string,evidence_id:string} */
 function goldenCtIxbrlRender(array $periodFixture, array $package): array
 {
     $filing = (array)$periodFixture['model'];
@@ -314,6 +314,10 @@ function goldenCtIxbrlRender(array $periodFixture, array $package): array
     $catalogue = new \eel_accounts\Service\HmrcCtComputationCatalogueService();
     $resources = $catalogue->validationResources($package);
     $report = $service->buildReportModel($filing, (array)$mapped['mappings']);
+    $evidenceId = (new \eel_accounts\Service\FilingEvidenceService())->displayReference(
+        \eel_accounts\Service\FilingEvidenceService::ARTIFACT_PREFIX
+            . strtoupper(str_pad(dechex((int)($periodFixture['ct_period']['id'] ?? 0)), 32, '0', STR_PAD_LEFT))
+    );
     $method = new ReflectionMethod($service, 'renderMappedDocument');
     $method->setAccessible(true);
     $rendered = (array)$method->invoke(
@@ -321,13 +325,15 @@ function goldenCtIxbrlRender(array $periodFixture, array $package): array
         new \eel_accounts\Service\IxbrlGeneratorService(),
         $filing,
         (array)$mapped['mappings'],
-        (string)$resources['schema_ref']
+        (string)$resources['schema_ref'],
+        $evidenceId
     );
     return [
         'xhtml' => (string)$rendered['xhtml'],
         'report' => $report,
         'package_archive' => (string)$resources['package_archive'],
         'schema_ref' => (string)$resources['schema_ref'],
+        'evidence_id' => $evidenceId,
     ];
 }
 
@@ -528,6 +534,13 @@ function goldenCtIxbrlAssertDocumentIntegrity(GeneratedServiceClassTestHarness $
     $document = new DOMDocument();
     $harness->assertTrue($document->loadXML((string)$rendered['xhtml'], LIBXML_NONET | LIBXML_NOBLANKS));
     $xpath = goldenCtIxbrlXpath($document);
+    $harness->assertSame(
+        'Evidence ID: ' . (string)$rendered['evidence_id'],
+        trim((string)$xpath->evaluate(
+            'string(//*[local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " ct-report ")]'
+                . '/*[last()][local-name()="div" and contains(concat(" ", normalize-space(@class), " "), " evidence-footer ")])'
+        ))
+    );
     $contexts = [];
     foreach ($xpath->query('//xbrli:context') ?: [] as $context) {
         $contexts[(string)$context->attributes?->getNamedItem('id')?->nodeValue] = true;

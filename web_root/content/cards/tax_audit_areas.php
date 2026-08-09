@@ -13,7 +13,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
     public function title(): string { return 'Tax Areas'; }
     public function helper(array $context): string
     {
-        return 'Select a CT period and an area. The detail card loads only the evidence for that area.';
+        return 'Each row matches the wording in the HMRC computation and identifies the broader tax audit area containing its evidence.';
     }
     public function services(): array
     {
@@ -83,8 +83,10 @@ final class _tax_audit_areasCard extends CardBaseFramework
             $status = (string)($area['reconciliation_status'] ?? 'reconciled');
             $selected = $code === $selectedArea;
             $sourceCount = $area['source_count'] ?? null;
+            $computationLine = (string)($area['computation_line_label'] ?? $area['area_label'] ?? $code);
             $rows .= '<tr' . ($selected ? ' class="is-selected"' : '') . '>
-                <td><strong>' . \eel_accounts\Support\Utf8::html((string)($area['area_label'] ?? $code)) . '</strong></td>
+                <td><strong>' . \eel_accounts\Support\Utf8::html($computationLine) . '</strong></td>
+                <td>' . \eel_accounts\Support\Utf8::html((string)($area['area_label'] ?? $code)) . '</td>
                 <td>' . \eel_accounts\Support\Utf8::html($this->money($context, $area['amount'] ?? 0)) . '</td>
                 <td><span class="badge ' . ($status === 'reconciled' ? 'success' : 'danger') . '">' . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($status)) . '</span></td>
                 <td>' . ($sourceCount === null ? '<span class="helper">On demand</span>' : (int)$sourceCount) . '</td>
@@ -104,7 +106,7 @@ final class _tax_audit_areasCard extends CardBaseFramework
         $modeClass = $mode === 'frozen' ? 'success' : ($mode === 'reconstructed' ? 'warning' : 'info');
         return '<div class="helper tax-audit-mode-pill"><span class="badge ' . $modeClass . '">' . \eel_accounts\Support\Utf8::html((string)($index['mode_label'] ?? 'Audit preview')) . '</span><a class="button button-inline" href="https://www.gov.uk/guidance/company-expenses-you-can-deduct-before-paying-corporation-tax" target="_blank" rel="noopener noreferrer">HMRC expense guidance</a></div>'
             . $selector
-            . '<div class="table-scroll"><table><thead><tr><th>Tax area</th><th>Amount</th><th>Reconciliation</th><th>Sources</th><th>Action</th></tr></thead><tbody>'
+            . '<div class="table-scroll"><table><thead><tr><th>HMRC computation line</th><th>Tax audit area</th><th>Amount</th><th>Reconciliation</th><th>Sources</th><th>Action</th></tr></thead><tbody>'
             . $rows . '</tbody></table></div>';
     }
 

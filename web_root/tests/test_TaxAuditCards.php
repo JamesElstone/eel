@@ -25,6 +25,10 @@ $harness->run(_tax_audit_areasCard::class, static function (GeneratedServiceClas
         $harness->assertTrue(str_contains($html, 'select-tax-audit-area'));
         $harness->assertTrue(str_contains($html, 'View details'));
         $harness->assertTrue(str_contains($html, 'On demand'));
+        $harness->assertTrue(str_contains($html, 'HMRC computation line'));
+        $harness->assertTrue(str_contains($html, 'Tax audit area'));
+        $harness->assertTrue(str_contains($html, 'Disallowable expenses added back'));
+        $harness->assertTrue(str_contains($html, 'Expense Treatments and Add-Backs'));
         $harness->assertSame(false, str_contains($html, 'card_action'));
         $harness->assertSame(false, str_contains($html, 'adjustment_amount'));
     });
@@ -114,6 +118,8 @@ function taxAuditCardContext(): array
                 'areas' => [[
                     'area_code' => 'expense_treatments',
                     'area_label' => 'Expense Treatments and Add-Backs',
+                    'computation_line_code' => 'disallowable_add_backs',
+                    'computation_line_label' => 'Disallowable expenses added back',
                     'amount' => 0,
                     'reconciliation_status' => 'reconciled',
                     'source_count' => null,

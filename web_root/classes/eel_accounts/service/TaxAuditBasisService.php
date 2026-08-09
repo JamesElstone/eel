@@ -27,10 +27,47 @@ final class TaxAuditBasisService
         'tax_liability' => 'Rate Bands and Corporation Tax Liability',
     ];
 
+    private const COMPUTATION_LINES = [
+        'accounting_profit' => [
+            ['line_code' => 'accounting_profit', 'label' => 'Profit/(loss) before tax per statutory accounts'],
+        ],
+        'expense_treatments' => [
+            ['line_code' => 'disallowable_add_backs', 'label' => 'Disallowable expenses added back'],
+        ],
+        'depreciation_capital' => [
+            ['line_code' => 'capital_expenditure_add_backs', 'label' => 'Capital expenditure added back'],
+            ['line_code' => 'disposal_profit_or_loss_adjustment', 'label' => 'Adjustment for loss or profit on disposal of fixed assets'],
+            ['line_code' => 'depreciation_add_back', 'label' => 'Depreciation added back'],
+            ['line_code' => 'adjusted_result_before_capital_allowances', 'label' => 'Adjusted profit or loss before accounting-period adjustments'],
+            ['line_code' => 'time_apportionment_figure', 'label' => 'Time apportionment figure'],
+        ],
+        'capital_allowances' => [
+            ['line_code' => 'capital_allowances', 'label' => 'Capital allowances'],
+            ['line_code' => 'taxable_before_losses', 'label' => 'Adjusted trading profit or loss for the period'],
+        ],
+        'losses' => [
+            ['line_code' => 'losses_brought_forward', 'label' => 'Loss brought forward'],
+            ['line_code' => 'losses_used', 'label' => 'Losses used in this period'],
+            ['line_code' => 'losses_carried_forward', 'label' => 'Loss carried forward'],
+        ],
+        'tax_liability' => [
+            ['line_code' => 'taxable_profit', 'label' => 'Taxable total profits'],
+            ['line_code' => 'ordinary_corporation_tax', 'label' => 'Corporation Tax chargeable'],
+            ['line_code' => 'participator_tax', 'label' => 'Tax on loans to participators'],
+            ['line_code' => 'net_corporation_tax_payable', 'label' => 'Net Corporation Tax payable'],
+        ],
+    ];
+
     /** @return array<string, string> */
     public static function areaCatalogue(): array
     {
         return self::AREAS;
+    }
+
+    /** @return array<string, list<array{line_code:string,label:string}>> */
+    public static function computationLineCatalogue(): array
+    {
+        return self::COMPUTATION_LINES;
     }
 
     public static function isSupportedArea(string $areaCode): bool
@@ -58,13 +95,17 @@ final class TaxAuditBasisService
                 ['snapshot_id' => (int)$snapshot['id']]
             ) ?: [];
 
+            $summary = $this->storedComputationSummary((int)($snapshot['computation_run_id'] ?? 0));
             return [
                 'available' => true,
                 'mode' => 'frozen',
                 'mode_label' => 'Frozen audit snapshot',
                 'period' => $scope['period'],
                 'snapshot' => $snapshot,
-                'areas' => array_map([$this, 'normaliseStoredArea'], $rows),
+                'areas' => $this->computationLineIndexRows(
+                    array_map([$this, 'normaliseStoredArea'], $rows),
+                    $summary
+                ),
                 'errors' => [],
             ];
         }
@@ -104,7 +145,7 @@ final class TaxAuditBasisService
             'mode_label' => $mode === 'reconstructed' ? 'Reconstructed from current stored sources' : 'Live audit preview',
             'period' => $scope['period'],
             'snapshot' => null,
-            'areas' => $areas,
+            'areas' => $this->computationLineIndexRows($areas, $summary),
             'errors' => [],
         ];
     }
@@ -760,6 +801,129 @@ final class TaxAuditBasisService
         $field = $areaCode === 'accounting_profit' ? 'accounting_amount' : 'tax_adjustment_amount';
         $total = round(array_sum(array_map(static fn(array $row): float => (float)($row[$field] ?? 0), $rows)), 2);
         return $rows === [] ? $expected : $total;
+    }
+
+    /**
+     * Expand the broad evidence areas into the visible lines used by the HMRC
+     * computation. The area code remains the drill-down target, so historic
+     * frozen snapshots keep their existing evidence and hashes.
+     *
+     * @param list<array<string,mixed>> $areas
+     * @return list<array<string,mixed>>
+     */
+    private function computationLineIndexRows(array $areas, array $summary): array
+    {
+        $rows = [];
+        foreach ($areas as $area) {
+            $areaCode = (string)($area['area_code'] ?? '');
+            $lines = self::COMPUTATION_LINES[$areaCode] ?? [];
+            if ($lines === []) {
+                $area['computation_line_code'] = $areaCode;
+                $area['computation_line_label'] = (string)($area['area_label'] ?? $areaCode);
+                $area['area_amount'] = round((float)($area['amount'] ?? 0), 2);
+                $rows[] = $area;
+                continue;
+            }
+
+            foreach ($lines as $line) {
+                $lineCode = (string)$line['line_code'];
+                if ($lineCode === 'time_apportionment_figure'
+                    && empty($summary['accounting_allocation_basis']['time_apportioned'])) {
+                    continue;
+                }
+                $lineAmount = $this->computationLineAmount($lineCode, $summary, $area);
+                $row = $area;
+                $row['computation_line_code'] = $lineCode;
+                $lineLabel = $this->computationLineLabel(
+                    $lineCode,
+                    (string)$line['label'],
+                    $lineAmount
+                );
+                if ($lineCode === 'time_apportionment_figure') {
+                    $allocation = (array)($summary['accounting_allocation_basis'] ?? []);
+                    $lineLabel .= ' (' . (int)($allocation['ct_period_days'] ?? 0)
+                        . ' / ' . (int)($allocation['accounting_period_days'] ?? 0) . ' days)';
+                }
+                $row['computation_line_label'] = $lineLabel;
+                $row['area_amount'] = round((float)($area['amount'] ?? 0), 2);
+                $row['amount'] = $lineAmount;
+                $rows[] = $row;
+            }
+        }
+        return $rows;
+    }
+
+    private function computationLineAmount(string $lineCode, array $summary, array $area): float
+    {
+        $source = $summary;
+        $allocation = (array)($summary['accounting_allocation_basis'] ?? []);
+        if (!empty($allocation['time_apportioned'])
+            && in_array($lineCode, [
+                'accounting_profit',
+                'disallowable_add_backs',
+                'capital_expenditure_add_backs',
+                'disposal_profit_or_loss_adjustment',
+                'depreciation_add_back',
+            ], true)) {
+            $source = (array)($allocation['whole_period_values'] ?? $summary);
+        }
+
+        $disposal = round((float)($source['disposal_profit_or_loss_adjustment'] ?? 0), 2);
+        $amount = match ($lineCode) {
+            'capital_expenditure_add_backs' => $source['capital_expenditure_add_backs']
+                ?? ((float)($source['capital_add_backs'] ?? 0) - $disposal),
+            'adjusted_result_before_capital_allowances' => !empty($allocation['time_apportioned'])
+                ? ($allocation['whole_period_values']['adjusted_result_before_capital_allowances'] ?? 0)
+                : ((float)($summary['taxable_before_losses'] ?? 0) + (float)($summary['capital_allowances'] ?? 0)),
+            'time_apportionment_figure' => $allocation['allocated_values']['adjusted_result_before_capital_allowances']
+                ?? ((float)($summary['taxable_before_losses'] ?? 0) + (float)($summary['capital_allowances'] ?? 0)),
+            'participator_tax' => $summary['ct600a_tax'] ?? $summary['s455_tax'] ?? 0,
+            'net_corporation_tax_payable' => $summary['tax_payable']
+                ?? $summary['tax_chargeable']
+                ?? ($area['amount'] ?? $summary['estimated_corporation_tax'] ?? 0),
+            default => $source[$lineCode] ?? 0,
+        };
+        return round((float)$amount, 2);
+    }
+
+    private function computationLineLabel(string $lineCode, string $defaultLabel, float $amount): string
+    {
+        if ($lineCode === 'time_apportionment_figure') {
+            return $defaultLabel;
+        }
+        if ($lineCode === 'taxable_before_losses') {
+            if ($amount >= 0.005) {
+                return 'Adjusted trading profit for the period';
+            }
+            if ($amount <= -0.005) {
+                return 'Adjusted trading loss for the period';
+            }
+            return $defaultLabel;
+        }
+        if ($lineCode !== 'disposal_profit_or_loss_adjustment') {
+            return $defaultLabel;
+        }
+        if ($amount >= 0.005) {
+            return 'Loss on disposal of fixed assets added back';
+        }
+        if ($amount <= -0.005) {
+            return 'Profit on disposal of fixed assets deducted';
+        }
+        return $defaultLabel;
+    }
+
+    /** @return array<string,mixed> */
+    private function storedComputationSummary(int $computationRunId): array
+    {
+        if ($computationRunId <= 0 || !\InterfaceDB::tableExists('corporation_tax_computation_runs')) {
+            return [];
+        }
+        $json = \InterfaceDB::fetchColumn(
+            'SELECT summary_json FROM corporation_tax_computation_runs WHERE id = :id LIMIT 1',
+            ['id' => $computationRunId]
+        );
+        $summary = json_decode((string)$json, true);
+        return is_array($summary) ? $summary : [];
     }
 
     /** @return array<string, mixed> */

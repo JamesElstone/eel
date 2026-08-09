@@ -27,8 +27,78 @@ $harness->run(\eel_accounts\Service\TaxAuditBasisService::class, static function
             'losses',
             'tax_liability',
         ], array_keys($catalogue));
+        $computationLines = \eel_accounts\Service\TaxAuditBasisService::computationLineCatalogue();
+        $harness->assertSame([
+            'Profit/(loss) before tax per statutory accounts',
+            'Disallowable expenses added back',
+            'Capital expenditure added back',
+            'Adjustment for loss or profit on disposal of fixed assets',
+            'Depreciation added back',
+        ], array_slice(array_column(array_merge(
+            $computationLines['accounting_profit'],
+            $computationLines['expense_treatments'],
+            $computationLines['depreciation_capital']
+        ), 'label'), 0, 5));
         $harness->assertSame(true, \eel_accounts\Service\TaxAuditBasisService::isSupportedArea('losses'));
         $harness->assertSame(false, \eel_accounts\Service\TaxAuditBasisService::isSupportedArea('journals; DELETE'));
+    });
+
+    $harness->check(\eel_accounts\Service\TaxAuditBasisService::class, 'expands broad audit areas into exact HMRC computation rows', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod($service::class, 'computationLineIndexRows');
+        $method->setAccessible(true);
+        $rows = (array)$method->invoke($service, [
+            [
+                'area_code' => 'accounting_profit',
+                'area_label' => 'Accounting Profit or Loss',
+                'amount' => 1000,
+            ],
+            [
+                'area_code' => 'expense_treatments',
+                'area_label' => 'Expense Treatments and Add-Backs',
+                'amount' => 50,
+            ],
+            [
+                'area_code' => 'depreciation_capital',
+                'area_label' => 'Depreciation and Capital Adjustments',
+                'amount' => 240,
+            ],
+        ], [
+            'accounting_profit' => 1000,
+            'disallowable_add_backs' => 50,
+            'capital_add_backs' => 160,
+            'capital_expenditure_add_backs' => 100,
+            'disposal_profit_or_loss_adjustment' => 60,
+            'depreciation_add_back' => 80,
+        ]);
+
+        $harness->assertSame([
+            'Profit/(loss) before tax per statutory accounts',
+            'Disallowable expenses added back',
+            'Capital expenditure added back',
+            'Loss on disposal of fixed assets added back',
+            'Depreciation added back',
+        ], array_slice(array_column($rows, 'computation_line_label'), 0, 5));
+        $harness->assertSame(
+            'Adjusted profit or loss before accounting-period adjustments',
+            $rows[5]['computation_line_label'] ?? null
+        );
+        $harness->assertSame([
+            '1000.00',
+            '50.00',
+            '100.00',
+            '60.00',
+            '80.00',
+        ], array_slice(array_map(
+            static fn(array $row): string => number_format((float)$row['amount'], 2, '.', ''),
+            $rows
+        ), 0, 5));
+        $harness->assertSame([
+            'accounting_profit',
+            'expense_treatments',
+            'depreciation_capital',
+            'depreciation_capital',
+            'depreciation_capital',
+        ], array_slice(array_column($rows, 'area_code'), 0, 5));
     });
 
     $harness->check(\eel_accounts\Service\TaxAuditBasisService::class, 'does not load detail until an area is selected', static function () use ($harness, $service): void {

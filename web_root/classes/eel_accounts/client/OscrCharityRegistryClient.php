@@ -37,14 +37,34 @@ final class OscrCharityRegistryClient implements CharityRegistryClientInterface
             $records = [];
             foreach ($rows as $row) {
                 if (!is_array($row)) continue;
-                $name = trim((string)($row['CharityName'] ?? $row['charity_name'] ?? $row['name'] ?? ''));
+                $name = trim((string)(
+                    $row['charityName']
+                    ?? $row['CharityName']
+                    ?? $row['charity_name']
+                    ?? $row['name']
+                    ?? ''
+                ));
                 if ($name === '') continue;
-                $status = trim((string)($row['Status'] ?? $row['status'] ?? 'registered'));
+                $status = trim((string)(
+                    $row['charityStatus']
+                    ?? $row['CharityStatus']
+                    ?? $row['Status']
+                    ?? $row['status']
+                    ?? 'registered'
+                ));
                 $records[] = [
                     'authority' => 'oscr', 'registration_number' => $number, 'entity_suffix' => '',
                     'registered_name' => $name, 'registry_status' => $status,
-                    'registered_on' => self::date($row['RegisteredDate'] ?? $row['registered_date'] ?? null),
-                    'removed_on' => self::date($row['CeasedDate'] ?? $row['removed_date'] ?? null),
+                    'registered_on' => self::date(
+                        $row['registeredDate'] ?? $row['RegisteredDate'] ?? $row['registered_date'] ?? null
+                    ),
+                    'removed_on' => self::date(
+                        $row['ceasedDate']
+                        ?? $row['removedDate']
+                        ?? $row['CeasedDate']
+                        ?? $row['removed_date']
+                        ?? null
+                    ),
                     'source_url' => 'https://www.oscr.org.uk/about-charities/search-the-register/charity-details?number=' . rawurlencode($number),
                 ];
             }

@@ -53,17 +53,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Client\OscrCharityRegistryClient::class,
     static function (GeneratedServiceClassTestHarness $harness): void {
-        $client = new \eel_accounts\Client\OscrCharityRegistryClient(static fn(array $request): array => [
-            'status_code' => 200,
-            'body' => json_encode([[
-                'CharityName' => 'Scottish Example Charity',
-                'Status' => 'Registered',
-                'RegisteredDate' => '2015-06-01',
-            ]]),
-        ]);
+        $request = [];
+        $client = new \eel_accounts\Client\OscrCharityRegistryClient(static function (array $outboundRequest) use (&$request): array {
+            $request = $outboundRequest;
+            return [
+                'status_code' => 200,
+                'body' => json_encode(['data' => [[
+                    'charityName' => 'Scottish Example Charity',
+                    'charityNumber' => 'SC012345',
+                    'charityStatus' => 'Active',
+                    'registeredDate' => '2015-06-01',
+                ]]]),
+            ];
+        });
         $result = $client->lookup('SC012345');
         $harness->assertSame(true, (bool)$result['success']);
         $harness->assertSame('oscr', (string)$result['records'][0]['authority']);
+        $harness->assertSame('Scottish Example Charity', (string)$result['records'][0]['registered_name']);
+        $harness->assertSame('Active', (string)$result['records'][0]['registry_status']);
+        $harness->assertSame('2015-06-01', (string)$result['records'][0]['registered_on']);
+        $harness->assertSame('https://oscrapi.azurewebsites.net', (string)$request['base_url']);
+        $harness->assertSame('/api/all_charities', (string)$request['path']);
+        $harness->assertSame('SC012345', (string)$request['query']['charitynumber']);
         $harness->assertSame(false, (bool)$client->lookup('12345')['success']);
 
         $removed = new \eel_accounts\Client\OscrCharityRegistryClient(static fn(array $request): array => [

@@ -160,6 +160,9 @@ final class TransactionSplitService
         if (($payload['nominal_account_id'] ?? null) !== null && trim((string)($payload['nominal_account_id'] ?? '')) !== '' && $nominalAccountId <= 0) {
             $errors[] = 'Choose an active nominal account for the split line.';
         }
+        if ((new CharitableDonationService())->isDonationNominal($nominalAccountId)) {
+            $errors[] = 'Charitable Donations cannot be used on transaction split lines.';
+        }
 
         if ($errors === [] && $this->splitLineHasAsset($lineId)) {
             $currentAmount = $line['amount'] === null ? null : round((float)$line['amount'], 2);

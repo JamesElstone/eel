@@ -132,6 +132,11 @@ final class CorporationTaxComputationService
             'disposal_profit_or_loss_adjustment' => round((float)($current['disposal_profit_or_loss_adjustment'] ?? 0), 2),
             'depreciation_add_back' => round((float)$current['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$current['capital_allowances'], 2),
+            'qualifying_charitable_donation_add_back' => round((float)($current['qualifying_charitable_donation_add_back'] ?? 0), 2),
+            'qualifying_charitable_donations_paid' => round((float)($current['qualifying_charitable_donations_paid'] ?? 0), 2),
+            'qualifying_charitable_donations_claimed' => round((float)($current['qualifying_charitable_donations_claimed'] ?? 0), 2),
+            'unrelieved_qualifying_charitable_donations' => round((float)($current['unrelieved_qualifying_charitable_donations'] ?? 0), 2),
+            'profits_before_donations_group_relief' => round((float)($current['profits_before_donations_group_relief'] ?? 0), 2),
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
             'taxable_profit' => round((float)$current['taxable_profit'], 2),
             'taxable_loss' => round((float)$current['loss_created'], 2),
@@ -161,9 +166,12 @@ final class CorporationTaxComputationService
             ], $this->capitalAdjustmentSteps($current), [
                 ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
                 ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
+                ['label' => 'Add back qualifying charitable donations', 'amount' => round((float)($current['qualifying_charitable_donation_add_back'] ?? 0), 2)],
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
                 ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
-                ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
+                ['label' => 'Profits before qualifying donations [box 300]', 'amount' => round((float)($current['profits_before_donations_group_relief'] ?? 0), 2)],
+                ['label' => 'Less qualifying charitable donations [box 305]', 'amount' => round(0 - (float)($current['qualifying_charitable_donations_claimed'] ?? 0), 2)],
+                ['label' => 'Taxable total profits [box 315]', 'amount' => round((float)$current['taxable_profit'], 2)],
                 ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
             ]),
             'schedule' => array_values(array_map(
@@ -175,6 +183,8 @@ final class CorporationTaxComputationService
                     'loss_utilised' => round((float)$row['loss_utilised'], 2),
                     'loss_carried_forward' => round((float)$row['loss_carried_forward'], 2),
                     'capital_add_backs' => round((float)($row['capital_add_backs'] ?? 0), 2),
+                    'qualifying_charitable_donations_claimed' => round((float)($row['qualifying_charitable_donations_claimed'] ?? 0), 2),
+                    'profits_before_donations_group_relief' => round((float)($row['profits_before_donations_group_relief'] ?? 0), 2),
                     'taxable_before_losses' => round((float)$row['taxable_before_losses'], 2),
                     'taxable_profit' => round((float)$row['taxable_profit'], 2),
                 ],
@@ -271,10 +281,21 @@ final class CorporationTaxComputationService
         $pnl = (array)$accountingAllocation['pnl'];
         $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
         $taxableBeforeLosses = $this->taxableBeforeLossesForCtPeriod($accountingAllocation, $assetAdjustments);
+        $donationPosition = (new CharitableDonationService())->qualifyingPaidForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            (string)$ctPeriod['period_start'],
+            (string)$ctPeriod['period_end']
+        );
+        $qualifyingDonationsPaid = round((float)$donationPosition['total'], 2);
 
         $losses = $this->ctPeriodLossPosition($companyId, $ctPeriodId);
-        $lossUsed = min(max(0.0, $taxableBeforeLosses), (float)$losses['brought_forward']);
-        $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
+        $lossClaimCapacity = max(0.0, round($taxableBeforeLosses - $qualifyingDonationsPaid, 2));
+        $lossUsed = min($lossClaimCapacity, (float)$losses['brought_forward']);
+        $profitsBeforeDonationsGroupRelief = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
+        $qualifyingDonationsClaimed = min($qualifyingDonationsPaid, $profitsBeforeDonationsGroupRelief);
+        $unrelievedQualifyingDonations = round($qualifyingDonationsPaid - $qualifyingDonationsClaimed, 2);
+        $taxableProfit = max(0.0, round($profitsBeforeDonationsGroupRelief - $qualifyingDonationsClaimed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossCarriedForward = round((float)$losses['brought_forward'] - $lossUsed + $lossCreated, 2);
         $lossRestriction = $this->lossRestrictionDisclosure(
@@ -317,6 +338,12 @@ final class CorporationTaxComputationService
             'allowances' => (float)$assetAdjustments['capital_allowances'],
             'loss_bf' => (float)$losses['brought_forward'],
             'loss_used' => $lossUsed,
+            'qualifying_charitable_donation_add_back' => (float)($pnl['qualifying_charitable_donation_add_back'] ?? 0),
+            'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+            'qualifying_charitable_donations_claimed' => $qualifyingDonationsClaimed,
+            'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
+            'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
+            'charitable_donation_rows' => (array)$donationPosition['rows'],
             'loss_restriction' => $lossRestriction,
             'associated_company_count' => $associatedCompanyCount,
             'ordinary_corporation_tax' => $ordinaryCorporationTax,
@@ -342,6 +369,12 @@ final class CorporationTaxComputationService
             'disposal_profit_or_loss_adjustment' => round((float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
+            'qualifying_charitable_donation_add_back' => round((float)($pnl['qualifying_charitable_donation_add_back'] ?? 0), 2),
+            'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+            'qualifying_charitable_donations_claimed' => $qualifyingDonationsClaimed,
+            'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
+            'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
+            'charitable_donation_rows' => (array)$donationPosition['rows'],
             'taxable_before_losses' => $taxableBeforeLosses,
             'taxable_profit' => $taxableProfit,
             'ordinary_corporation_tax' => $ordinaryCorporationTax,
@@ -1119,13 +1152,17 @@ final class CorporationTaxComputationService
 
         $lossCalculation = $this->dividendCapacityLossCalculation(
             $taxableBeforeLosses,
-            $this->ctPeriodLossPosition($companyId, $ctPeriodId)
+            $this->ctPeriodLossPosition($companyId, $ctPeriodId),
+            (float)($preTaxProfitLoss['qualifying_charitable_donations_paid'] ?? 0)
         );
         $lossesBroughtForward = (float)$lossCalculation['losses_brought_forward'];
         $lossesUsed = (float)$lossCalculation['losses_used'];
         $taxableProfit = (float)$lossCalculation['taxable_profit'];
         $lossCreated = (float)$lossCalculation['loss_created'];
         $lossesCarriedForward = (float)$lossCalculation['losses_carried_forward'];
+        $profitsBeforeDonationsGroupRelief = (float)$lossCalculation['profits_before_donations_group_relief'];
+        $qualifyingDonationsClaimed = (float)$lossCalculation['qualifying_charitable_donations_claimed'];
+        $qualifyingDonationsPaid = (float)$lossCalculation['qualifying_charitable_donations_paid'];
         $rateCalculation = $this->resolvedRateService()->calculate(
             $periodStart,
             $periodEnd,
@@ -1152,6 +1189,11 @@ final class CorporationTaxComputationService
             'depreciation_add_back' => $depreciationAddBack,
             'capital_allowances' => round($capitalAllowances, 2),
             'taxable_before_losses' => $taxableBeforeLosses,
+            'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
+            'qualifying_charitable_donation_add_back' => round((float)($preTaxProfitLoss['qualifying_charitable_donation_add_back'] ?? 0), 2),
+            'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+            'qualifying_charitable_donations_claimed' => $qualifyingDonationsClaimed,
+            'unrelieved_qualifying_charitable_donations' => round($qualifyingDonationsPaid - $qualifyingDonationsClaimed, 2),
             'taxable_profit' => $taxableProfit,
             'taxable_loss' => round($lossCreated, 2),
             'loss_created_in_period' => round($lossCreated, 2),
@@ -1169,18 +1211,29 @@ final class CorporationTaxComputationService
         return $row + ['periods' => [$row], 'totals' => $row, 'errors' => []];
     }
 
-    private function dividendCapacityLossCalculation(float $taxableBeforeLosses, array $lossPosition): array
+    private function dividendCapacityLossCalculation(
+        float $taxableBeforeLosses,
+        array $lossPosition,
+        float $qualifyingDonationsPaid = 0.0
+    ): array
     {
         $lossesBroughtForward = round(max(0.0, (float)($lossPosition['brought_forward'] ?? 0)), 2);
-        $lossesUsed = $taxableBeforeLosses > 0
-            ? min($taxableBeforeLosses, $lossesBroughtForward)
+        $qualifyingDonationsPaid = round(max(0.0, $qualifyingDonationsPaid), 2);
+        $lossClaimCapacity = max(0.0, round($taxableBeforeLosses - $qualifyingDonationsPaid, 2));
+        $lossesUsed = $lossClaimCapacity > 0
+            ? min($lossClaimCapacity, $lossesBroughtForward)
             : 0.0;
-        $taxableProfit = round(max(0.0, $taxableBeforeLosses - $lossesUsed), 2);
+        $profitsBeforeDonationsGroupRelief = round(max(0.0, $taxableBeforeLosses - $lossesUsed), 2);
+        $qualifyingDonationsClaimed = min($qualifyingDonationsPaid, $profitsBeforeDonationsGroupRelief);
+        $taxableProfit = round(max(0.0, $profitsBeforeDonationsGroupRelief - $qualifyingDonationsClaimed), 2);
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
 
         return [
             'losses_brought_forward' => $lossesBroughtForward,
             'losses_used' => round($lossesUsed, 2),
+            'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
+            'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+            'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
             'taxable_profit' => $taxableProfit,
             'loss_created' => round($lossCreated, 2),
             'losses_carried_forward' => round($lossesBroughtForward - $lossesUsed + $lossCreated, 2),
@@ -1241,11 +1294,13 @@ final class CorporationTaxComputationService
                 );
                 $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
                 $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
+                $qualifyingDonationsPaid = round(max(0.0, (float)($pnl['qualifying_charitable_donations_paid'] ?? 0)), 2);
 
                 $lossBf = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
                 $lossUsed = 0.0;
-                if ($taxableBeforeLosses > 0 && $lossBf > 0) {
-                    $remainingTaxable = $taxableBeforeLosses;
+                $lossClaimCapacity = max(0.0, round($taxableBeforeLosses - $qualifyingDonationsPaid, 2));
+                if ($lossClaimCapacity > 0 && $lossBf > 0) {
+                    $remainingTaxable = $lossClaimCapacity;
                     foreach ($lossPool as &$lossRow) {
                         if ($remainingTaxable <= 0) {
                             break;
@@ -1271,7 +1326,10 @@ final class CorporationTaxComputationService
                 }
 
                 $lossCf = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
-                $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
+                $profitsBeforeDonationsGroupRelief = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
+                $qualifyingDonationsClaimed = min($qualifyingDonationsPaid, $profitsBeforeDonationsGroupRelief);
+                $unrelievedQualifyingDonations = round($qualifyingDonationsPaid - $qualifyingDonationsClaimed, 2);
+                $taxableProfit = max(0.0, round($profitsBeforeDonationsGroupRelief - $qualifyingDonationsClaimed, 2));
                 $rateCalculation = $rateService->calculate(
                     (string)($accountingPeriod['period_start'] ?? ''),
                     (string)($accountingPeriod['period_end'] ?? ''),
@@ -1290,6 +1348,11 @@ final class CorporationTaxComputationService
                     'allowances' => (float)$assetAdjustments['capital_allowances'],
                     'loss_bf' => $lossBf,
                     'loss_used' => $lossUsed,
+                    'qualifying_charitable_donation_add_back' => (float)($pnl['qualifying_charitable_donation_add_back'] ?? 0),
+                    'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+                    'qualifying_charitable_donations_claimed' => $qualifyingDonationsClaimed,
+                    'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
+                    'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
                     'associated_company_count' => $associatedCompanyCount,
                     'rate_liability' => (float)$rateCalculation['liability'],
                     'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
@@ -1308,6 +1371,11 @@ final class CorporationTaxComputationService
                     'disposal_profit_or_loss_adjustment' => round((float)($pnl['disposal_profit_or_loss_adjustment'] ?? 0), 2),
                     'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
                     'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
+                    'qualifying_charitable_donation_add_back' => round((float)($pnl['qualifying_charitable_donation_add_back'] ?? 0), 2),
+                    'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+                    'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
+                    'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
+                    'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
                     'taxable_before_losses' => $taxableBeforeLosses,
                     'taxable_profit' => $taxableProfit,
                     'estimated_corporation_tax' => round((float)$rateCalculation['liability'], 2),
@@ -1476,6 +1544,7 @@ final class CorporationTaxComputationService
 
         $profitPence = (int)round((float)($fullPnl['profit_before_tax'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $disallowablePence = (int)round((float)($fullPnl['disallowable_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+        $charitableDonationAddBackPence = (int)round((float)($fullPnl['qualifying_charitable_donation_add_back'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $capitalExpenditurePence = (int)round((float)(
             $fullPnl['capital_expenditure_add_backs'] ?? $fullPnl['capital_add_backs'] ?? 0
         ) * 100, 0, PHP_ROUND_HALF_UP);
@@ -1486,6 +1555,7 @@ final class CorporationTaxComputationService
             [
                 'accounting_profit' => $profitPence,
                 'disallowable_add_backs' => $disallowablePence,
+                'qualifying_charitable_donation_add_back' => $charitableDonationAddBackPence,
                 'capital_expenditure_add_backs' => $capitalExpenditurePence,
                 'disposal_profit_or_loss_adjustment' => $disposalProfitOrLossPence,
                 'depreciation_add_back' => $depreciationPence,
@@ -1498,6 +1568,7 @@ final class CorporationTaxComputationService
         $pnl = $fullPnl;
         $pnl['profit_before_tax'] = round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2);
         $pnl['disallowable_add_backs'] = round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2);
+        $pnl['qualifying_charitable_donation_add_back'] = round((int)($selectedAllocation['qualifying_charitable_donation_add_back'] ?? 0) / 100, 2);
         $pnl['capital_expenditure_add_backs'] = round((int)($selectedAllocation['capital_expenditure_add_backs'] ?? 0) / 100, 2);
         $pnl['disposal_profit_or_loss_adjustment'] = round((int)($selectedAllocation['disposal_profit_or_loss_adjustment'] ?? 0) / 100, 2);
         $pnl['capital_add_backs'] = round(
@@ -1538,18 +1609,20 @@ final class CorporationTaxComputationService
             'whole_period_values' => [
                 'accounting_profit' => round($profitPence / 100, 2),
                 'disallowable_add_backs' => round($disallowablePence / 100, 2),
+                'qualifying_charitable_donation_add_back' => round($charitableDonationAddBackPence / 100, 2),
                 'capital_add_backs' => round(($capitalExpenditurePence + $disposalProfitOrLossPence) / 100, 2),
                 'capital_expenditure_add_backs' => round($capitalExpenditurePence / 100, 2),
                 'disposal_profit_or_loss_adjustment' => round($disposalProfitOrLossPence / 100, 2),
                 'depreciation_add_back' => round($depreciationPence / 100, 2),
                 'adjusted_result_before_capital_allowances' => round(
-                    ($profitPence + $disallowablePence + $capitalExpenditurePence + $disposalProfitOrLossPence + $depreciationPence) / 100,
+                    ($profitPence + $disallowablePence + $charitableDonationAddBackPence + $capitalExpenditurePence + $disposalProfitOrLossPence + $depreciationPence) / 100,
                     2
                 ),
             ],
             'allocated_values' => [
                 'accounting_profit' => round((int)($selectedAllocation['accounting_profit'] ?? 0) / 100, 2),
                 'disallowable_add_backs' => round((int)($selectedAllocation['disallowable_add_backs'] ?? 0) / 100, 2),
+                'qualifying_charitable_donation_add_back' => round((int)($selectedAllocation['qualifying_charitable_donation_add_back'] ?? 0) / 100, 2),
                 'capital_add_backs' => round(
                     ((int)($selectedAllocation['capital_expenditure_add_backs'] ?? 0)
                         + (int)($selectedAllocation['disposal_profit_or_loss_adjustment'] ?? 0)) / 100,
@@ -1635,6 +1708,7 @@ final class CorporationTaxComputationService
         $componentKeys = [
             'accounting_profit',
             'disallowable_add_backs',
+            'qualifying_charitable_donation_add_back',
             'capital_expenditure_add_backs',
             'disposal_profit_or_loss_adjustment',
             'depreciation_add_back',
@@ -1717,6 +1791,7 @@ final class CorporationTaxComputationService
         return round(
             (float)($profitAndLoss['profit_before_tax'] ?? 0)
             + (float)($profitAndLoss['disallowable_add_backs'] ?? 0)
+            + (float)($profitAndLoss['qualifying_charitable_donation_add_back'] ?? 0)
             + (float)($profitAndLoss['capital_add_backs'] ?? 0)
             + (float)($assetAdjustments['depreciation_add_back'] ?? 0)
             - (float)($assetAdjustments['capital_allowances'] ?? 0),
@@ -2266,6 +2341,7 @@ final class CorporationTaxComputationService
         $steps = [
             ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
             ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
+            ['label' => 'Add back qualifying charitable donations', 'amount' => round((float)($current['qualifying_charitable_donation_add_back'] ?? 0), 2)],
         ];
         $steps = array_merge($steps, $this->capitalAdjustmentSteps($current), [
             ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
@@ -2278,7 +2354,9 @@ final class CorporationTaxComputationService
             ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
             ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
             ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - (float)$current['loss_utilised'], 2)],
-            ['label' => 'Taxable profit after losses', 'amount' => round((float)$current['taxable_profit'], 2)],
+            ['label' => 'Profits before qualifying donations and group relief [box 300]', 'amount' => round((float)($current['profits_before_donations_group_relief'] ?? $current['taxable_profit']), 2)],
+            ['label' => 'Less qualifying charitable donations [box 305]', 'amount' => round(0 - (float)($current['qualifying_charitable_donations_claimed'] ?? 0), 2)],
+            ['label' => 'Profits chargeable to Corporation Tax [box 315]', 'amount' => round((float)$current['taxable_profit'], 2)],
             ['label' => 'Corporation tax on profits', 'amount' => round((float)($current['ordinary_corporation_tax'] ?? $current['estimated_corporation_tax']), 2)],
         ]);
 
@@ -2286,6 +2364,12 @@ final class CorporationTaxComputationService
             'available' => true,
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
+            'qualifying_charitable_donation_add_back' => round((float)($current['qualifying_charitable_donation_add_back'] ?? 0), 2),
+            'qualifying_charitable_donations_paid' => round((float)($current['qualifying_charitable_donations_paid'] ?? 0), 2),
+            'qualifying_charitable_donations_claimed' => round((float)($current['qualifying_charitable_donations_claimed'] ?? 0), 2),
+            'unrelieved_qualifying_charitable_donations' => round((float)($current['unrelieved_qualifying_charitable_donations'] ?? 0), 2),
+            'profits_before_donations_group_relief' => round((float)($current['profits_before_donations_group_relief'] ?? $current['taxable_profit']), 2),
+            'charitable_donation_rows' => array_values((array)($current['charitable_donation_rows'] ?? [])),
             'capital_add_backs' => round((float)($current['capital_add_backs'] ?? 0), 2),
             'capital_expenditure_add_backs' => round((float)($current['capital_expenditure_add_backs'] ?? $current['capital_add_backs'] ?? 0), 2),
             'disposal_profit_or_loss_adjustment' => round((float)($current['disposal_profit_or_loss_adjustment'] ?? 0), 2),
@@ -2326,6 +2410,8 @@ final class CorporationTaxComputationService
                     'loss_carried_forward' => round((float)$row['loss_carried_forward'], 2),
                     'capital_add_backs' => round((float)($row['capital_add_backs'] ?? 0), 2),
                     'taxable_before_losses' => round((float)$row['taxable_before_losses'], 2),
+                    'qualifying_charitable_donations_claimed' => round((float)($row['qualifying_charitable_donations_claimed'] ?? 0), 2),
+                    'profits_before_donations_group_relief' => round((float)($row['profits_before_donations_group_relief'] ?? $row['taxable_profit']), 2),
                     'taxable_profit' => round((float)$row['taxable_profit'], 2),
                 ],
                 $schedule
@@ -2459,8 +2545,13 @@ final class CorporationTaxComputationService
             $accountingPeriodId,
             $periodStart
         );
-        $lossesUsed = min(max(0.0, $taxableBeforeLosses), $lossesBroughtForward);
-        $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
+        $qualifyingDonationsPaid = round(max(0.0, (float)($profitAndLoss['qualifying_charitable_donations_paid'] ?? 0)), 2);
+        $lossClaimCapacity = max(0.0, round($taxableBeforeLosses - $qualifyingDonationsPaid, 2));
+        $lossesUsed = min($lossClaimCapacity, $lossesBroughtForward);
+        $profitsBeforeDonationsGroupRelief = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
+        $qualifyingDonationsClaimed = min($qualifyingDonationsPaid, $profitsBeforeDonationsGroupRelief);
+        $unrelievedQualifyingDonations = round($qualifyingDonationsPaid - $qualifyingDonationsClaimed, 2);
+        $taxableProfit = max(0.0, round($profitsBeforeDonationsGroupRelief - $qualifyingDonationsClaimed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
         $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
         $associatedCompanyCount = $this->associatedCompanyCountForAccountingPeriod($companyId, $accountingPeriodId, true);
@@ -2494,9 +2585,12 @@ final class CorporationTaxComputationService
         ], $this->capitalAdjustmentSteps($profitAndLoss), [
             ['label' => 'Add back depreciation', 'amount' => round((float)$assetAdjustments['depreciation_add_back'], 2)],
             ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$assetAdjustments['capital_allowances'], 2)],
+            ['label' => 'Add back qualifying charitable donations', 'amount' => round((float)($profitAndLoss['qualifying_charitable_donation_add_back'] ?? 0), 2)],
             ['label' => 'Taxable result before losses', 'amount' => $taxableBeforeLosses],
             ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - $lossesUsed, 2)],
-            ['label' => 'Taxable profit after losses', 'amount' => $taxableProfit],
+            ['label' => 'Profits before qualifying donations [box 300]', 'amount' => $profitsBeforeDonationsGroupRelief],
+            ['label' => 'Less qualifying charitable donations [box 305]', 'amount' => round(0 - $qualifyingDonationsClaimed, 2)],
+            ['label' => 'Taxable total profits [box 315]', 'amount' => $taxableProfit],
             ['label' => 'Estimated corporation tax', 'amount' => round((float)$rateCalculation['liability'], 2)],
         ]);
 
@@ -2513,6 +2607,11 @@ final class CorporationTaxComputationService
             ), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
+            'qualifying_charitable_donation_add_back' => round((float)($profitAndLoss['qualifying_charitable_donation_add_back'] ?? 0), 2),
+            'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+            'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
+            'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
+            'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
             'taxable_before_losses' => $taxableBeforeLosses,
             'taxable_profit' => $taxableProfit,
             'taxable_loss' => round($lossCreated, 2),
@@ -2545,6 +2644,8 @@ final class CorporationTaxComputationService
                     'loss_utilised' => round($lossesUsed, 2),
                     'loss_carried_forward' => $lossesCarriedForward,
                     'capital_add_backs' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2),
+                    'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
+                    'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
                     'taxable_before_losses' => $taxableBeforeLosses,
                     'taxable_profit' => $taxableProfit,
                 ],

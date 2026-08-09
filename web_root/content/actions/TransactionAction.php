@@ -16,6 +16,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private const TRANSACTION_ACTIONS = [
         'save_transaction_category',
+        'verify_charitable_donation',
         'defer_transaction',
         'mark_director_loan',
         'toggle_inter_ac_transaction',
@@ -69,6 +70,7 @@ final class TransactionAction implements ActionInterfaceFramework
             'cancel_categorisation_rule' => $this->selectionResult($request, $intent),
             'save_transaction_note' => $this->saveTransactionNote($request),
             'save_transaction_category',
+            'verify_charitable_donation',
             'defer_transaction',
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
             'toggle_inter_ac_transaction' => $this->toggleInterAccountTransaction($request, $services),
@@ -101,6 +103,7 @@ final class TransactionAction implements ActionInterfaceFramework
         return in_array($intent, [
             'save_transaction_note',
             'save_transaction_category',
+            'verify_charitable_donation',
             'defer_transaction',
             'mark_director_loan',
             'toggle_inter_ac_transaction',
@@ -233,6 +236,9 @@ final class TransactionAction implements ActionInterfaceFramework
         $isTransferTransaction = is_array($existingTransaction) && $this->transactionIsTransferMode($existingTransaction);
         $errors = [];
         $categorisationChanged = false;
+        $donationVerification = null;
+        $donationService = new \eel_accounts\Service\CharitableDonationService();
+        $isDonationVerification = $globalAction === 'verify_charitable_donation';
 
         if (!in_array($globalAction, self::TRANSACTION_ACTIONS, true)) {
             return ActionResultFramework::none();
@@ -262,6 +268,29 @@ final class TransactionAction implements ActionInterfaceFramework
             $errors[] = 'Choose the matching owned bank or trade account before saving this transfer.';
         }
 
+        if ($errors === [] && is_array($existingTransaction)
+            && (int)($existingTransaction['company_id'] ?? 0) !== $companyId) {
+            $errors[] = 'The selected transaction does not belong to this company.';
+        }
+        if ($errors === [] && $isDonationVerification) {
+            if (!$donationService->isDonationNominal((int)$targetNominalAccountId)) {
+                $errors[] = 'Choose the Charitable Donations nominal before verifying the charity.';
+            } else {
+                $donationVerification = $donationService->verifyTransaction(
+                    (array)$existingTransaction,
+                    (int)$targetNominalAccountId,
+                    trim((string)$request->post('charity_authority', '')),
+                    trim((string)$request->post('charity_registration_number', '')),
+                    trim((string)$request->post('charity_entity_suffix', ''))
+                );
+                if (empty($donationVerification['success'])) {
+                    $errors = array_merge($errors, array_map('strval', (array)($donationVerification['errors'] ?? [])));
+                }
+            }
+        } elseif ($errors === [] && $donationService->isDonationNominal((int)$targetNominalAccountId)) {
+            $errors[] = 'Use Verify and categorise when assigning the Charitable Donations nominal.';
+        }
+
         if ($errors !== []) {
             return $this->result(
                 false,
@@ -275,6 +304,16 @@ final class TransactionAction implements ActionInterfaceFramework
 
         try {
             InterfaceDB::beginTransaction();
+
+            if ($isDonationVerification && is_array($donationVerification)) {
+                $donationService->recordVerification(
+                    (array)$existingTransaction,
+                    (int)$targetNominalAccountId,
+                    (array)$donationVerification['record'],
+                    (string)$donationVerification['response_sha256'],
+                    'user:' . $this->currentUserId()
+                );
+            }
 
             $saveResult = $transactionCategorisationService->saveManualCategorisation(
                 $transactionId,
@@ -320,6 +359,7 @@ final class TransactionAction implements ActionInterfaceFramework
                         'save_transaction_category' => $isTransferTransaction
                             ? 'Transfer account saved.'
                             : 'Manual categorisation saved.',
+                        'verify_charitable_donation' => 'Charity registration verified and donation categorisation saved.',
                         'mark_director_loan' => 'Participator loan categorisation saved.',
                         default => 'Manual categorisation saved.',
                     };
@@ -347,7 +387,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private function changedFactsForTransactionCategoryResult(bool $success, string $globalAction, bool $changed): array
     {
-        if ($globalAction !== 'save_transaction_category') {
+        if (!in_array($globalAction, ['save_transaction_category', 'verify_charitable_donation'], true)) {
             return ['page.context'];
         }
 

@@ -50,6 +50,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('0.00', number_format((float)$result['taxable_profit'], 2, '.', ''));
         });
 
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'preserves qualifying donations before using brought-forward losses', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'dividendCapacityLossCalculation');
+            $method->setAccessible(true);
+            $result = $method->invoke($service, 1000.00, ['brought_forward' => 900.00], 250.00);
+
+            $harness->assertSame('750.00', number_format((float)$result['losses_used'], 2, '.', ''));
+            $harness->assertSame('250.00', number_format((float)$result['profits_before_donations_group_relief'], 2, '.', ''));
+            $harness->assertSame('250.00', number_format((float)$result['qualifying_charitable_donations_claimed'], 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)$result['taxable_profit'], 2, '.', ''));
+            $harness->assertSame('150.00', number_format((float)$result['losses_carried_forward'], 2, '.', ''));
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'keeps expected pre-lock persistence state out of tax warnings', static function () use ($harness, $service): void {
             $method = new ReflectionMethod($service, 'withComputationPersistenceState');
             $method->setAccessible(true);

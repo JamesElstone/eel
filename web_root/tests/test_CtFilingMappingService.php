@@ -10,8 +10,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $h->assertFalse(str_contains($encoded, 'package_id'));
         $paths = [];
         foreach ((array)$rim['mappings'] as $mapping) { $paths[(string)$mapping['canonical_key']][] = (string)$mapping['target_xpath']; }
-        $h->assertSame('reviewed_ct600_v3_v1_994_return_v4', (string)$rim['profile_name']);
-        $h->assertCount(28, (array)$rim['mappings']);
+        $h->assertSame('reviewed_ct600_v3_v1_994_return_v5', (string)$rim['profile_name']);
+        $h->assertCount(29, (array)$rim['mappings']);
+        $h->assertSame(
+            ['IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/QualifyingDonations'],
+            $paths['ct600.calculation.qualifying_charitable_donations']
+        );
         $h->assertFalse(isset($paths['computation.summary.capital_allowances']));
         $h->assertTrue(in_array(
             'IRenvelope/CompanyTaxReturn/LossesDeficitsAndExcess/AmountArising/LossesOfTradesUK/Arising',

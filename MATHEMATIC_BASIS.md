@@ -23,10 +23,11 @@ The reviewed implementation provides a reproducible and traceable calculation fo
 4. applies sourced tax-treatment rules to accounting expenses;
 5. adds back disallowable expenditure and depreciation;
 6. substitutes the supported capital-allowance calculation for accounting depreciation;
-7. rolls supported trading losses forward in chronological order;
-8. apportions profits and thresholds by inclusive calendar days where a financial-year boundary is crossed;
-9. applies the small-profits rate, main rate or statutory marginal-relief formula; and
-10. rounds and records the result in a repeatable manner.
+7. adds back verified cash donations and deducts qualifying charitable donations after loss relief;
+8. rolls supported trading losses forward in chronological order while preserving profits for the donation deduction;
+9. apportions profits and thresholds by inclusive calendar days where a financial-year boundary is crossed;
+10. applies the small-profits rate, main rate or statutory marginal-relief formula; and
+11. rounds and records the result in a repeatable manner.
 
 The mathematical evidence supports use within that defined scope. It does not support tax cases expressly excluded in section 3.
 
@@ -70,6 +71,7 @@ The assurance in this document applies to:
 - removal of the accounting profit or loss on disposal of a supported registered fixed asset through `disposal_profit_or_loss_adjustment`;
 - pool disposal values and balancing charges produced by the supported capital-allowance model;
 - ordinary carried-forward trading losses below the loss-restriction threshold;
+- cash donations paid directly from a bank account to a charity whose registration and status on the payment date were verified against the Charity Commission for England and Wales, OSCR or CCNI register;
 - the non-ring-fence rate regimes represented by active, date-effective rate rules;
 - short Corporation Tax periods and periods crossing 31 March; and
 - the small-profits rate, main rate and marginal relief, including threshold reduction for associated companies.
@@ -96,7 +98,7 @@ This document does not claim mathematical coverage for:
 - qualifying exempt distributions where augmented profits exceed taxable total profits;
 - chargeable gains or capital losses;
 - a credit balance or reversal in a disallowable expense nominal: the implemented add-back takes the magnitude of the net expense row, so these cases require separate review;
-- R&D relief or expenditure credits, Patent Box, creative-industry reliefs, charitable donations, group relief, loss carry-back, terminal-loss relief, property-business losses, non-trading loan relationships, foreign tax or double-taxation relief;
+- R&D relief or expenditure credits, Patent Box, creative-industry reliefs, non-cash charitable donations, sponsorship, gifts carrying a benefit, payroll giving, group relief, loss carry-back, terminal-loss relief, property-business losses, non-trading loan relationships, foreign tax or double-taxation relief;
 - the carried-forward loss restriction above the available deductions allowance;
 - structures and buildings allowance, full expensing, the 40% first-year allowance, private-use adjustments or other capital-allowance regimes not listed in section 3.1; or
 - a cessation period in which AIA is unavailable or special cessation rules apply.
@@ -374,12 +376,13 @@ Let:
 - $P$ = accounting profit or loss before Corporation Tax;
 - $E$ = supported disallowable expense add-backs;
 - $D$ = accounting depreciation;
+- $Q_A$ = qualifying charitable donations charged in the accounts and added back;
 - $CA$ = net capital allowances from section 8.
 
 The implemented bridge is:
 
 $$
-TaxableBeforeLosses = round_2(P+E+D-CA)
+TaxableBeforeLosses = round_2(P+E+D+Q_A-CA)
 $$
 
 This reflects the tax principle that accounting profit is the starting point, depreciation is not a tax deduction, and supported capital allowances provide the replacement tax deduction.
@@ -387,7 +390,7 @@ This reflects the tax principle that accounting profit is the starting point, de
 The bridge is arithmetically self-reconciling:
 
 $$
-BridgeDifference = TaxableBeforeLosses-(P+E+D-CA)=0.00
+BridgeDifference = TaxableBeforeLosses-(P+E+D+Q_A-CA)=0.00
 $$
 
 Any non-zero difference is a calculation failure.
@@ -400,16 +403,26 @@ Let:
 - $L_{BF}$ = supported losses brought forward;
 - $L_U$ = losses used in the current period;
 - $L_C$ = new loss created; and
-- $L_{CF}$ = losses carried forward.
+- $L_{CF}$ = losses carried forward;
+- $Q_P$ = verified qualifying charitable donations paid in the Corporation Tax period; and
+- $Q_C$ = the qualifying charitable donations claimed.
 
 The implemented ordinary loss roll-forward is:
 
 $$
-L_U=\min(\max(0,T),L_{BF})
+L_U=\min(\max(0,T-Q_P),L_{BF})
 $$
 
 $$
-TaxableProfit=\max(0,round_2(T-L_U))
+ProfitsBeforeDonations=\max(0,round_2(T-L_U))
+$$
+
+$$
+Q_C=\min(Q_P,ProfitsBeforeDonations)
+$$
+
+$$
+TaxableProfit=\max(0,round_2(ProfitsBeforeDonations-Q_C))
 $$
 
 $$

@@ -785,6 +785,11 @@ final class TransactionJournalService
         if ($nominalAccountId <= 0 || !in_array($categoryStatus, ['auto', 'manual'], true)) {
             return null;
         }
+        $donationService = new CharitableDonationService();
+        if ($donationService->isDonationNominal($nominalAccountId)
+            && $donationService->currentVerification((int)($transaction['id'] ?? 0)) === null) {
+            return null;
+        }
 
         $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
         $sourceAccountId = (int)($transaction['account_id'] ?? 0);

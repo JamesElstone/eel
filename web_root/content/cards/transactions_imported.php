@@ -81,6 +81,15 @@ final class _transactions_importedCard extends CardBaseFramework
                     'monthKey' => ':page.month_key',
                 ],
             ],
+            [
+                'key' => 'charitable_donation_verifications',
+                'service' => \eel_accounts\Service\CharitableDonationService::class,
+                'method' => 'fetchCurrentForPeriod',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -119,6 +128,13 @@ final class _transactions_importedCard extends CardBaseFramework
         $page = (array)($context['page'] ?? []);
         $services = (array)($context['services'] ?? []);
         $transactionsByMonth = (array)($services['transactions_by_month'] ?? []);
+        $donationVerifications = (array)($services['charitable_donation_verifications'] ?? []);
+        foreach ($transactionsByMonth as &$transactionRow) {
+            if (is_array($transactionRow)) {
+                $transactionRow['charitable_donation_verification'] = (array)($donationVerifications[(int)($transactionRow['id'] ?? 0)] ?? []);
+            }
+        }
+        unset($transactionRow);
         $monthStatus = (array)($services['month_status'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
         $companyAccounts = $this->companyAccounts($services);
@@ -823,11 +839,42 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
-        $nominalOptions = $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId);
+        $donationNominalId = 0;
+        foreach ($nominalAccounts as $nominal) {
+            if (is_array($nominal) && (string)($nominal['code'] ?? '') === \eel_accounts\Service\CharitableDonationService::NOMINAL_CODE
+                && (string)($nominal['subtype_code'] ?? '') === \eel_accounts\Service\CharitableDonationService::SUBTYPE_CODE) {
+                $donationNominalId = (int)($nominal['id'] ?? 0);
+                break;
+            }
+        }
+        $eligibleOutgoing = (string)($transaction['source_account_type'] ?? '') === \eel_accounts\Service\CompanyAccountService::TYPE_BANK
+            && (float)($transaction['amount'] ?? 0) < 0
+            && (int)($transaction['has_transaction_split'] ?? 0) !== 1;
+        $selectableNominals = $eligibleOutgoing
+            ? $nominalAccounts
+            : (new \eel_accounts\Service\CharitableDonationService())->withoutDonationNominal($nominalAccounts);
+        $nominalOptions = $this->nominalSelectOptions($selectableNominals, $selectedNominalAccountId);
+        $selectedDonation = $donationNominalId > 0 && (int)$selectedNominalAccountId === $donationNominalId;
+        $verification = (array)($transaction['charitable_donation_verification'] ?? []);
+        $verificationHtml = $verification !== []
+            ? '<div class="helper"><span class="badge success">Verified</span> ' . \eel_accounts\Support\Utf8::html((string)($verification['registered_name'] ?? '')) . ' · ' . \eel_accounts\Support\Utf8::html((string)($verification['registration_number'] ?? '')) . ' <a href="' . \eel_accounts\Support\Utf8::html((string)($verification['source_url'] ?? '')) . '" target="_blank" rel="noopener">official register</a></div>'
+            : '';
+        $donationPanel = $eligibleOutgoing && $donationNominalId > 0
+            ? '<div class="transaction-charity-fields" data-charity-fields-for="' . $donationNominalId . '"' . ($selectedDonation ? '' : ' hidden') . '>
+                    <select class="select" name="charity_authority" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '">
+                        <option value="cc_ew">England &amp; Wales</option><option value="oscr">Scotland (OSCR)</option><option value="ccni">Northern Ireland (CCNI)</option>
+                    </select>
+                    <input class="input" name="charity_registration_number" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" placeholder="Charity registration number" autocomplete="off">
+                    <input type="hidden" name="charity_entity_suffix" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" value="">
+                    <button class="button primary" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="verify_charitable_donation">Verify and categorise</button>
+                    ' . $verificationHtml . '
+                </div>'
+            : '';
 
         return '<div class="transaction-categorisation-control">
-                <select class="select js-transaction-nominal" name="nominal_account_id" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>
+                <select class="select js-transaction-nominal" name="nominal_account_id" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1" data-charitable-donation-nominal-id="' . $donationNominalId . '">' . $nominalOptions . '</select>
                 <button class="button" type="submit" form="' . \eel_accounts\Support\Utf8::html($transactionFormId) . '" name="global_action" value="start_transaction_split">Split</button>
+                ' . $donationPanel . '
             </div>';
     }
 
@@ -914,6 +961,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '<div>' . \eel_accounts\Support\Utf8::html($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
         }
 
+        $nominalAccounts = (new \eel_accounts\Service\CharitableDonationService())->withoutDonationNominal($nominalAccounts);
         return '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="' . \eel_accounts\Support\Utf8::html($formId) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">' . $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId) . '</select>';
     }
 

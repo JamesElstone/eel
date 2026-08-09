@@ -33,6 +33,9 @@ function ct600_builder_test_mappings(array $amounts): array
         'profits_before_donations'
             => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/'
                 . 'ProfitsBeforeDonationsAndGroupRelief',
+        'qualifying_donations'
+            => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/'
+                . 'QualifyingDonations',
         'trading_losses_current_or_later'
             => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLosses',
         'trading_losses_carried_forward'
@@ -385,6 +388,37 @@ function ct600_builder_test_assert_official_business_rules(
                     $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/'
                         . 'ct:CompanyTaxCalculation/ct:Income/ct:Trading/ct:NetProfits)')
                 );
+                ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\Ct600BuilderService::class,
+            'serializes qualifying charitable donations in the charges and reliefs section',
+            static function () use ($harness): void {
+                $return = ct600_builder_test_return([
+                    'chargeable_profits' => '750',
+                    'net_corporation_tax' => '142.50',
+                    'tax_payable' => '142.50',
+                    'profits_before_other_deductions' => '1000',
+                    'profits_before_donations' => '1000',
+                    'qualifying_donations' => '250',
+                ], [[
+                    'financial_year' => '2023',
+                    'profit' => 750.0,
+                    'tax_rate_percent' => 19.0,
+                    'gross_tax' => 142.50,
+                    'marginal_relief' => 0.0,
+                    'net_tax' => 142.50,
+                    'basis' => 'flat_main_rate',
+                ]]);
+                $result = ct600_builder_test_build($return, 997021);
+
+                $harness->assertSame(true, (bool)($result['ok'] ?? false));
+                $xpath = ct600_builder_test_xpath((string)$result['xml']);
+                $harness->assertSame('1000.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:ChargesAndReliefs/ct:ProfitsBeforeDonationsAndGroupRelief)'));
+                $harness->assertSame('250.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:ChargesAndReliefs/ct:QualifyingDonations)'));
+                $harness->assertSame('750.00', $xpath->evaluate('string(/ct:IRenvelope/ct:CompanyTaxReturn/ct:CompanyTaxCalculation/ct:ChargeableProfits)'));
                 ct600_builder_test_assert_official_schema($harness, (string)$result['xml']);
             }
         );

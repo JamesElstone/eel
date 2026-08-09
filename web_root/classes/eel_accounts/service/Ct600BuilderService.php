@@ -328,6 +328,15 @@ final class Ct600BuilderService
                     ''
                 );
             $this->element($document, $charges, 'ProfitsBeforeDonationsAndGroupRelief', $profitsBeforeDonations);
+            $qualifyingDonationsPath = 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/QualifyingDonations';
+            if ($this->positive($values, $qualifyingDonationsPath)) {
+                $this->element(
+                    $document,
+                    $charges,
+                    'QualifyingDonations',
+                    $this->wholePounds($this->mapped($values, $qualifyingDonationsPath), 'CompanyTaxCalculation/ChargesAndReliefs/QualifyingDonations')
+                );
+            }
         }
         // The CT600 schema defines ChargeableProfits as a whole-pound value.
         // The frozen computation remains in pence for reconciliation elsewhere,

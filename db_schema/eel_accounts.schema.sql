@@ -1962,7 +1962,8 @@ INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `
   ('corp_tax_expense', 'Corporation Tax Expense', 'expense', 625, 1),
   ('asset_disposal_gain', 'Asset Disposal Gain', 'income', 420, 1),
   ('depreciation_expense', 'Depreciation Expense', 'expense', 620, 1),
-  ('asset_disposal_loss', 'Asset Disposal Loss', 'expense', 621, 1);
+  ('asset_disposal_loss', 'Asset Disposal Loss', 'expense', 621, 1),
+  ('charitable_donations', 'Charitable Donations', 'expense', 615, 1);
 
 --
 -- Table structure for table `nominal_accounts`
@@ -2764,6 +2765,38 @@ CREATE TABLE `transactions` (
 CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 ) ENGINE=InnoDB AUTO_INCREMENT=4099 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `transaction_charitable_donation_verifications`
+--
+
+DROP TABLE IF EXISTS `transaction_charitable_donation_verifications`;
+CREATE TABLE `transaction_charitable_donation_verifications` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `transaction_id` bigint(20) NOT NULL,
+  `authority` enum('cc_ew','oscr','ccni') NOT NULL,
+  `registration_number` varchar(32) NOT NULL,
+  `entity_suffix` varchar(32) NOT NULL DEFAULT '',
+  `registered_name` varchar(500) NOT NULL,
+  `registry_status` varchar(100) NOT NULL,
+  `registered_on` date DEFAULT NULL,
+  `removed_on` date DEFAULT NULL,
+  `source_url` varchar(2000) NOT NULL,
+  `verified_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `verified_by` varchar(100) NOT NULL,
+  `response_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `basis_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_charity_verification_current` (`transaction_id`,`basis_sha256`,`id`),
+  KEY `idx_charity_verification_period` (`company_id`,`accounting_period_id`,`id`),
+  KEY `idx_charity_verification_register` (`authority`,`registration_number`),
+  CONSTRAINT `fk_charity_verification_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_charity_verification_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_charity_verification_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Table structure for table `hmrc_obligation_evidence_links`
@@ -4648,6 +4681,15 @@ INSERT IGNORE INTO `schema_migrations` (`migration`) VALUES
   ('2026_08_08_001_companies_house_report_exemptions.sql'),
   ('2026_08_08_002_companies_house_report_mapping_parity.sql');
 
+INSERT IGNORE INTO ct_filing_canonical_sources
+  (target_scope, canonical_key, source_label, value_type, source_section, is_required)
+VALUES
+  ('ct600_rim', 'ct600.calculation.qualifying_charitable_donations', 'CT600 qualifying charitable donations', 'numeric', 'tax_liability', 0);
+INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
+SELECT `role_id`, 'tax_charitable_donations'
+FROM `role_card_permissions`
+WHERE `card_key` = 'tax_disallowable_add_backs';
+
 DROP TRIGGER IF EXISTS `trg_journals_append_only_update`;
 CREATE TRIGGER `trg_journals_append_only_update`
 BEFORE UPDATE ON `journals`
@@ -4678,6 +4720,16 @@ CREATE TRIGGER `trg_journal_metadata_append_only_delete`
 BEFORE DELETE ON `journal_entry_metadata`
 FOR EACH ROW
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Posted journal metadata is append-only';
+DROP TRIGGER IF EXISTS `trg_charity_verifications_append_only_update`;
+CREATE TRIGGER `trg_charity_verifications_append_only_update`
+BEFORE UPDATE ON `transaction_charitable_donation_verifications`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Charity verification evidence is append-only; record a new verification';
+DROP TRIGGER IF EXISTS `trg_charity_verifications_append_only_delete`;
+CREATE TRIGGER `trg_charity_verifications_append_only_delete`
+BEFORE DELETE ON `transaction_charitable_donation_verifications`
+FOR EACH ROW
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Charity verification evidence is append-only';
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

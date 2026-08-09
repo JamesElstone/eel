@@ -28,6 +28,9 @@ final class ApiCredentialCatalogProvider implements \ApiCredentialCatalogProvide
             $entries[] = $this->entry('HMRC', 'XML', 'CT600_XML', $environment);
         }
 
+        $entries[] = $this->entry('CHARITYCOMMISSION', 'REST', 'CHARITY_LOOKUP', 'LIVE');
+        $entries[] = $this->entry('OSCR', 'REST', 'CHARITY_LOOKUP', 'LIVE');
+
         return $entries;
     }
 

@@ -185,6 +185,11 @@ final class YearEndTaxFreezeService
             'turnover_basis_version' => (string)($period['turnover_basis_version'] ?? ''),
             'accounting_profit' => $this->money($period['accounting_profit'] ?? 0),
             'disallowable_add_backs' => $this->money($period['disallowable_add_backs'] ?? 0),
+            'qualifying_charitable_donation_add_back' => $this->money($period['qualifying_charitable_donation_add_back'] ?? 0),
+            'qualifying_charitable_donations_paid' => $this->money($period['qualifying_charitable_donations_paid'] ?? 0),
+            'qualifying_charitable_donations_claimed' => $this->money($period['qualifying_charitable_donations_claimed'] ?? 0),
+            'unrelieved_qualifying_charitable_donations' => $this->money($period['unrelieved_qualifying_charitable_donations'] ?? 0),
+            'profits_before_donations_group_relief' => $this->money($period['profits_before_donations_group_relief'] ?? 0),
             'capital_add_backs' => $this->money($period['capital_add_backs'] ?? 0),
             'capital_expenditure_add_backs' => $this->money(
                 $period['capital_expenditure_add_backs'] ?? $period['capital_add_backs'] ?? 0
@@ -217,6 +222,7 @@ final class YearEndTaxFreezeService
             'disallowable_expense_breakdown' => $this->stableNestedData(
                 (array)($period['disallowable_expense_breakdown'] ?? [])
             ),
+            'charitable_donation_rows' => $this->stableNestedData((array)($period['charitable_donation_rows'] ?? [])),
             'blocking_diagnostic_codes' => $diagnosticCodes,
         ];
     }

@@ -91,7 +91,9 @@ final class _transactions_rule_formCard extends CardBaseFramework
         $services = (array)($context['services'] ?? []);
         $editingRuleId = (int)($page['editing_rule_id'] ?? $page['edit_rule_id'] ?? 0);
         $ruleForm = (array)($page['rule_form'] ?? $services['editing_rule'] ?? $services['blank_rule_form'] ?? []);
-        $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
+        $nominalAccounts = (new \eel_accounts\Service\CharitableDonationService())->withoutDonationNominal(
+            (array)($services['nominal_accounts'] ?? [])
+        );
         $sourceCategoryOptions = $this->sourceOptionsHtml(
             (array)($services['source_category_options'] ?? []),
             (string)($ruleForm['source_category_value'] ?? ''),

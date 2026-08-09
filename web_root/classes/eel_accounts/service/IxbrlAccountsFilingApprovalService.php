@@ -814,10 +814,15 @@ final class IxbrlAccountsFilingApprovalService
         $lossCreated = round((float)$summary['loss_created_in_period'], 2);
         $lossesBroughtForward = round((float)$summary['losses_brought_forward'], 2);
         $lossesUsed = round((float)$summary['losses_used'], 2);
-        $expectedProfit = max(0.0, round($beforeLosses - $lossesUsed, 2));
+        $expectedBeforeDonations = max(0.0, round($beforeLosses - $lossesUsed, 2));
+        $profitsBeforeDonations = round((float)($summary['profits_before_donations_group_relief'] ?? $expectedBeforeDonations), 2);
+        $qualifyingDonations = round((float)($summary['qualifying_charitable_donations_claimed'] ?? 0), 2);
+        $expectedProfit = max(0.0, round($profitsBeforeDonations - $qualifyingDonations, 2));
         $expectedLoss = max(0.0, round(-$beforeLosses, 2));
         if ($lossesUsed < 0.0 || $lossesBroughtForward < $lossesUsed
             || ($lossesUsed > 0.0 && $beforeLosses <= 0.0)
+            || $qualifyingDonations < 0.0 || $qualifyingDonations > $profitsBeforeDonations
+            || abs($profitsBeforeDonations - $expectedBeforeDonations) > 0.009
             || abs($taxableProfit - $expectedProfit) > 0.009
             || abs($taxableLoss - $expectedLoss) > 0.009
             || abs($lossCreated - $expectedLoss) > 0.009) {
@@ -853,7 +858,8 @@ final class IxbrlAccountsFilingApprovalService
             'net_trading_profits' => max(0.0, $beforeLosses),
             'profits_before_other_deductions' => max(0.0, $beforeLosses),
             'total_deductions_and_reliefs' => $lossesUsed,
-            'profits_before_donations_group_relief' => $taxableProfit,
+            'profits_before_donations_group_relief' => $profitsBeforeDonations,
+            'qualifying_charitable_donations' => $qualifyingDonations,
             'associated_company_count' => (int)$summary['associated_company_count'],
             'tax_calculation_bands' => $taxBands,
         ], $capital);

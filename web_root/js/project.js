@@ -553,6 +553,18 @@
 
             control.dataset.autosaveBound = '1';
             control.addEventListener('change', () => {
+                const charitableDonationNominalId = String(control.dataset.charitableDonationNominalId || '').trim();
+                if (charitableDonationNominalId !== '') {
+                    const wrapper = control.closest('.transaction-categorisation-control');
+                    const fields = wrapper ? wrapper.querySelector('[data-charity-fields-for]') : null;
+                    const isDonation = String(control.value || '') === charitableDonationNominalId;
+                    if (fields instanceof HTMLElement) {
+                        fields.hidden = !isDonation;
+                    }
+                    if (isDonation) {
+                        return;
+                    }
+                }
                 if (control.dataset.autosaveRequireValue === '1' && String(control.value || '').trim() === '') {
                     return;
                 }

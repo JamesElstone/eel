@@ -116,6 +116,10 @@ final class CorporationTaxHardGateService
         $created = round((float)($current['loss_created_in_period'] ?? $current['taxable_loss'] ?? 0), 2);
         $carriedForward = round((float)($current['losses_carried_forward'] ?? 0), 2);
         $taxableBeforeLosses = round((float)($current['taxable_before_losses'] ?? 0), 2);
+        $donationsPaid = round(max(0.0, (float)($current['qualifying_charitable_donations_paid'] ?? 0)), 2);
+        $donationsClaimed = round(max(0.0, (float)($current['qualifying_charitable_donations_claimed'] ?? 0)), 2);
+        $profitsBeforeDonations = round((float)($current['profits_before_donations_group_relief']
+            ?? max(0.0, $taxableBeforeLosses - $used)), 2);
         $taxableProfit = round((float)($current['taxable_profit'] ?? 0), 2);
 
         if ($previous !== null) {
@@ -127,7 +131,8 @@ final class CorporationTaxHardGateService
         if (min($broughtForward, $used, $created, $carriedForward, $taxableProfit) < -0.005) {
             $diagnostics[] = $this->lossDiagnostic('loss_negative_value', 'The CT loss schedule contains a negative value in a field that must be non-negative.', $ctPeriodId);
         }
-        if ($used - $broughtForward >= 0.005 || $used - max(0.0, $taxableBeforeLosses) >= 0.005) {
+        if ($used - $broughtForward >= 0.005
+            || $used - max(0.0, $taxableBeforeLosses - $donationsPaid) >= 0.005) {
             $diagnostics[] = $this->lossDiagnostic('loss_use_exceeds_available', 'Losses used exceed the available brought-forward loss or current taxable profit.', $ctPeriodId);
         }
         $expectedCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
@@ -137,8 +142,14 @@ final class CorporationTaxHardGateService
         if (abs($carriedForward - round($broughtForward - $used + $created, 2)) >= 0.005) {
             $diagnostics[] = $this->lossDiagnostic('loss_carried_forward_cross_cast', 'Losses carried forward do not cross-cast from brought forward, used, and created amounts.', $ctPeriodId);
         }
-        if (abs($taxableProfit - round(max(0.0, $taxableBeforeLosses - $used), 2)) >= 0.005) {
-            $diagnostics[] = $this->lossDiagnostic('loss_taxable_profit_cross_cast', 'Taxable profit does not cross-cast from the result before losses and losses used.', $ctPeriodId);
+        if (abs($profitsBeforeDonations - round(max(0.0, $taxableBeforeLosses - $used), 2)) >= 0.005) {
+            $diagnostics[] = $this->lossDiagnostic('loss_box_300_cross_cast', 'Profits before qualifying donations do not cross-cast from the result before losses and losses used.', $ctPeriodId);
+        }
+        if ($donationsClaimed - $donationsPaid >= 0.005 || $donationsClaimed - $profitsBeforeDonations >= 0.005) {
+            $diagnostics[] = $this->lossDiagnostic('charitable_donation_claim_exceeds_capacity', 'Qualifying charitable donations claimed exceed the verified amount paid or the available profits.', $ctPeriodId);
+        }
+        if (abs($taxableProfit - round(max(0.0, $profitsBeforeDonations - $donationsClaimed), 2)) >= 0.005) {
+            $diagnostics[] = $this->lossDiagnostic('loss_taxable_profit_cross_cast', 'Taxable total profits do not cross-cast after the qualifying charitable donations deduction.', $ctPeriodId);
         }
 
         $unique = [];

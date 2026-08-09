@@ -41,6 +41,8 @@ final class PreTaxProfitLossService
         $costOfSales = 0.0;
         $subcontractorCosts = 0.0;
         $operatingExpenses = 0.0;
+        $charitableDonationExpense = 0.0;
+        $qualifyingCharitableDonationAddBack = 0.0;
         $postedCt = 0.0;
         $disallowable = 0.0;
         $capital = 0.0;
@@ -72,6 +74,9 @@ final class PreTaxProfitLossService
                 }
             } else {
                 $operatingExpenses += $amount;
+                if ((new CharitableDonationService())->isDonationRow($row)) {
+                    $charitableDonationExpense += $amount;
+                }
             }
         }
         $taxRows = (new DatedTaxTreatmentLedgerService())->fetch($scope);
@@ -82,6 +87,15 @@ final class PreTaxProfitLossService
                 continue;
             }
             $amount = (float)($row['total_debit'] ?? 0) - (float)($row['total_credit'] ?? 0);
+            if ((new CharitableDonationService())->isDonationRow($row)) {
+                $sourceRef = (string)($row['source_ref'] ?? '');
+                $transactionId = preg_match('/^transaction:(\d+)$/', $sourceRef, $matches) === 1 ? (int)$matches[1] : 0;
+                if ((string)($row['source_type'] ?? '') === 'bank_csv'
+                    && (new CharitableDonationService())->currentVerification($transactionId) !== null) {
+                    $qualifyingCharitableDonationAddBack += $amount;
+                    continue;
+                }
+            }
             $journalDate = (string)($row['journal_date'] ?? '');
             $taxTreatment = (string)($lineTreatments->resolve(
                 $row,
@@ -216,6 +230,9 @@ final class PreTaxProfitLossService
             'depreciation_expense_rows' => $depreciationExpenseRows,
             'depreciation_preview' => $depreciationPreview,
             'operating_expense_total' => $operatingExpenses,
+            'charitable_donation_expense' => round($charitableDonationExpense, 2),
+            'qualifying_charitable_donation_add_back' => round($qualifyingCharitableDonationAddBack, 2),
+            'qualifying_charitable_donations_paid' => round($qualifyingCharitableDonationAddBack, 2),
             'posted_corporation_tax_charge' => round($postedCt, 2),
             'profit_before_tax' => $profitBeforeTax,
             'disallowable_add_backs' => round($disallowable, 2),

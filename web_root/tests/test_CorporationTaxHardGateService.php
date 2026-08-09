@@ -29,6 +29,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame([], $diagnostics);
         });
 
+        $harness->check(\eel_accounts\Service\CorporationTaxHardGateService::class, 'accepts the box 300 and box 305 charitable donation cross-cast', static function () use ($harness): void {
+            $diagnostics = (new \eel_accounts\Service\CorporationTaxHardGateService())->evaluatePeriod([
+                'ct_period_id' => 60,
+                'unknown_treatment_amount' => 0.0,
+                'other_treatment_amount' => 0.0,
+                'warnings' => [],
+                'taxable_before_losses' => 1000.0,
+                'profits_before_donations_group_relief' => 250.0,
+                'qualifying_charitable_donations_paid' => 250.0,
+                'qualifying_charitable_donations_claimed' => 250.0,
+                'taxable_profit' => 0.0,
+                'loss_created_in_period' => 0.0,
+                'losses_brought_forward' => 900.0,
+                'losses_used' => 750.0,
+                'losses_carried_forward' => 150.0,
+            ]);
+
+            $harness->assertSame([], $diagnostics);
+        });
+
         $harness->check(\eel_accounts\Service\CorporationTaxHardGateService::class, 'routes journal treatments and asset warnings to correction workflows', static function () use ($harness): void {
             $diagnostics = (new \eel_accounts\Service\CorporationTaxHardGateService())->evaluatePeriod([
                 'ct_period_id' => 7,

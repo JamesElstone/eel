@@ -768,6 +768,7 @@ final class DashboardRepository
                        COALESCE(t.is_internal_transfer, 0) AS is_internal_transfer,
                        {$internalTransferMarkerSql} AS internal_transfer_marker,
                        COALESCE(ca.account_name, '') AS owned_account_name,
+                       COALESCE(ca.account_type, '') AS source_account_type,
                        COALESCE(ta.account_name, '') AS transfer_account_name,
                        COALESCE(na.code, '') AS nominal_code,
                        COALESCE(na.name, '') AS assigned_nominal,

@@ -89,6 +89,7 @@ final class ProfitLossService
             'gross_profit' => $grossProfit,
             'gross_profit_before_subcontractors' => $grossProfitBeforeSubcontractors,
             'operating_expense_total' => $operatingExpenseTotal,
+            'charitable_donation_expense' => round((float)($totals['charitable_donation_expense'] ?? 0), 2),
             'posted_operating_expense_total' => round((float)($totals['posted_operating_expense_total'] ?? $operatingExpenseTotal), 2),
             'depreciation_expense' => round((float)($totals['depreciation_expense'] ?? 0), 2),
             'prepayment_expense_adjustment' => round((float)($totals['prepayment_expense_adjustment'] ?? 0), 2),
@@ -939,6 +940,8 @@ final class ProfitLossService
                     [
                         'profit_before_tax' => (float)($preTax['profit_before_tax'] ?? 0),
                         'disallowable_add_backs' => (float)($preTax['disallowable_add_backs'] ?? 0),
+                        'qualifying_charitable_donation_add_back' => (float)($preTax['qualifying_charitable_donation_add_back'] ?? 0),
+                        'qualifying_charitable_donations_paid' => (float)($preTax['qualifying_charitable_donations_paid'] ?? 0),
                         'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
                         'capital_expenditure_add_backs' => (float)(
                             $preTax['capital_expenditure_add_backs'] ?? $preTax['capital_add_backs'] ?? 0

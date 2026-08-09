@@ -396,6 +396,8 @@ final class CategorisationRuleService
             $errors[] = 'Choose the nominal account this rule should assign.';
         } elseif (!$this->nominalBelongsToCompany($companyId, (int)$input['nominal_account_id'])) {
             $errors[] = 'The selected nominal account is not available for the current company.';
+        } elseif ((new CharitableDonationService())->isDonationNominal((int)$input['nominal_account_id'])) {
+            $errors[] = 'Charitable Donations cannot be assigned by an automatic categorisation rule; verify each bank payment against the charity register.';
         }
         if (
             $input['is_active']

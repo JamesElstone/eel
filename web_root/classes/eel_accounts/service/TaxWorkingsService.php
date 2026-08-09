@@ -158,6 +158,7 @@ final class TaxWorkingsService
             'bridge' => $this->ordinaryTaxBridge((array)($estimate['steps'] ?? [])),
             'disallowable_add_backs' => (array)($addBackRows['disallowable'] ?? []),
             'capital_add_backs' => (array)($addBackRows['capital'] ?? []),
+            'charitable_donations' => array_values((array)($estimate['charitable_donation_rows'] ?? [])),
             'depreciation_add_back' => $this->depreciationRows(
                 $companyId,
                 $accountingPeriodId,
@@ -226,6 +227,7 @@ final class TaxWorkingsService
             'bridge' => $this->ordinaryTaxBridge((array)($estimate['steps'] ?? [])),
             'disallowable_add_backs' => [],
             'capital_add_backs' => [],
+            'charitable_donations' => array_values((array)($estimate['charitable_donation_rows'] ?? [])),
             'depreciation_add_back' => [],
             'capital_allowances_summary' => $this->capitalAllowanceSummary(
                 (array)($estimate['capital_allowance_breakdown']['rows'] ?? [])

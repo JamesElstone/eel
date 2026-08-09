@@ -17,6 +17,7 @@ final class FilingEvidenceSnapshotService
         }
         $sections = [
             'transactions' => $this->transactions($companyId, $accountingPeriodId),
+            'charitable_donations' => $this->charitableDonations($companyId, $accountingPeriodId),
             'expense_claims' => $this->expenseClaims($companyId, $accountingPeriodId),
             'loans' => $this->loans($loanSnapshot),
             'assets' => $this->assets($companyId, $accountingPeriodId),
@@ -106,6 +107,26 @@ final class FilingEvidenceSnapshotService
              LEFT JOIN nominal_accounts na ON na.id = ecl.nominal_account_id
              WHERE ec.company_id = :company_id AND ec.accounting_period_id = :period_id ORDER BY ecl.expense_claim_id, ecl.line_number', $companyId, $periodId);
         return $this->payload('expense_claims', ['claims' => $claims, 'lines' => $lines], ['claimed_amount' => $this->sum($lines, 'amount')], count($claims) + count($lines));
+    }
+
+    /** @return array<string,mixed> */
+    private function charitableDonations(int $companyId, int $periodId): array
+    {
+        $rows = [];
+        $categorisation = new TransactionCategorisationService();
+        foreach ((new CharitableDonationService())->fetchCurrentForPeriod($companyId, $periodId) as $transactionId => $verification) {
+            $transaction = $categorisation->fetchTransaction((int)$transactionId);
+            if (!is_array($transaction)) {
+                continue;
+            }
+            $rows[] = array_merge($verification, [
+                'transaction_id' => (int)$transactionId,
+                'txn_date' => (string)($transaction['txn_date'] ?? ''),
+                'amount' => round(abs((float)($transaction['amount'] ?? 0)), 2),
+                'nominal_account_id' => (int)($transaction['nominal_account_id'] ?? 0),
+            ]);
+        }
+        return $this->payload('charitable_donations', $rows, ['verified_amount' => $this->sum($rows, 'amount')]);
     }
 
     /** @return array<string,mixed> */

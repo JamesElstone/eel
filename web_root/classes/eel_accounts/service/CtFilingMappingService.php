@@ -61,7 +61,7 @@ final class CtFilingMappingService
         if ($targetType === self::TARGET_RIM
             && $version === 'V3' && $artifactVersion === 'V1.994') {
             return [
-                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v4',
+                'profile_name' => 'reviewed_ct600_v3_v1_994_return_v5',
                 'natural_identity' => ['form_version' => 'V3', 'artifact_version' => 'V1.994'],
                 'mappings' => [
                     ['canonical_key' => 'identity.company_name', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyInformation/CompanyName'],
@@ -78,6 +78,7 @@ final class CtFilingMappingService
                     ['canonical_key' => 'ct600.calculation.trading_losses_carried_forward_claimed', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/TradingLossesCarriedForward'],
                     ['canonical_key' => 'ct600.calculation.total_deductions_and_reliefs', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/DeductionsAndReliefs/Total'],
                     ['canonical_key' => 'ct600.calculation.profits_before_donations_group_relief', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/ProfitsBeforeDonationsAndGroupRelief'],
+                    ['canonical_key' => 'ct600.calculation.qualifying_charitable_donations', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargesAndReliefs/QualifyingDonations'],
                     ['canonical_key' => 'computation.summary.taxable_profit', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/ChargeableProfits'],
                     ['canonical_key' => 'computation.summary.ordinary_corporation_tax', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/NetCorporationTaxChargeable'],
                     ['canonical_key' => 'filing_decisions.associated_company_count', 'target_xpath' => 'IRenvelope/CompanyTaxReturn/CompanyTaxCalculation/CorporationTaxChargeable/AssociatedCompanies/ThisPeriod'],
@@ -215,7 +216,7 @@ final class CtFilingMappingService
                 'reviewed_natural_identity' => $template['natural_identity'],
                 'predecessor_profile_id' => is_array($predecessor) ? (int)$predecessor['id'] : null,
                 'replacement_reason' => $targetType === self::TARGET_RIM
-                    ? 'Reviewed CT600 loss-relief mappings and canonical return-position sources supersede the prior profile.'
+                    ? 'Reviewed CT600 loss-relief, qualifying-donation, and canonical return-position mappings supersede the prior profile.'
                     : 'Reviewed filing mapping template supersedes the prior profile.',
             ]);
             $profile = $this->profile($profileId);

@@ -27,6 +27,7 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
             ['Less cost of sales', -1 * (float)($summary['cost_of_sales_total'] ?? 0), ''],
             ['Gross profit', $summary['gross_profit'] ?? 0, 'strong'],
             ['Less operating expenses', -1 * (float)($summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0)), ''],
+            ['Of which charitable donations', $summary['charitable_donation_expense'] ?? 0, ''],
             ['Profit before tax', $summary['profit_before_tax'] ?? 0, 'strong'],
             ['Ordinary Corporation Tax component [CT600 box 475]', $summary['ordinary_corporation_tax'] ?? 0, ''],
             ['CT600A component [A80 / CT600 box 480]', $summary['ct600a_tax'] ?? 0, ''],

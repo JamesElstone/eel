@@ -1309,6 +1309,9 @@ final class ExpenseClaimService
 
         $lineId = isset($payload['id']) ? (int)$payload['id'] : 0;
         $errors = $this->validateLinePayload($payload);
+        if ((new CharitableDonationService())->isDonationNominal((int)($payload['nominal_account_id'] ?? 0))) {
+            $errors[] = 'Charitable Donations can only be recorded from an outgoing bank transaction.';
+        }
         if ($errors !== []) {
             return ['success' => false, 'errors' => $errors];
         }
@@ -1595,6 +1598,9 @@ final class ExpenseClaimService
         $line = $this->fetchClaimLine($claimId, $lineId);
         if ($line !== null && (string)($line['line_type'] ?? 'expense') === 'asset') {
             return ['success' => false, 'errors' => ['Switch the line back to Expense before choosing an expense charge.']];
+        }
+        if ((new CharitableDonationService())->isDonationNominal($nominalAccountId)) {
+            return ['success' => false, 'errors' => ['Charitable Donations can only be recorded from an outgoing bank transaction.']];
         }
 
         $nextDirectorId = (new DirectorLoanAttributionService())->isDirectorLoanNominal($companyId, $nominalAccountId)
@@ -2370,11 +2376,13 @@ final class ExpenseClaimService
 
     public function fetchExpenseNominals(): array {
         $stmt = \InterfaceDB::query(
-            "SELECT id, code, name, account_type
-             FROM nominal_accounts
-             WHERE is_active = 1
-               AND account_type IN ('expense', 'cost_of_sales')
-             ORDER BY sort_order ASC, code ASC, id ASC"
+            "SELECT na.id, na.code, na.name, na.account_type
+             FROM nominal_accounts na
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.is_active = 1
+               AND na.account_type IN ('expense', 'cost_of_sales')
+               AND COALESCE(nas.code, '') <> 'charitable_donations'
+             ORDER BY na.sort_order ASC, na.code ASC, na.id ASC"
         );
 
         return $stmt->fetchAll() ?: [];
@@ -3228,6 +3236,8 @@ final class ExpenseClaimService
 
         if ((int)($line['nominal_account_id'] ?? 0) <= 0) {
             $errors[] = 'Every expense line needs a Charge To value before submitting.';
+        } elseif ((new CharitableDonationService())->isDonationNominal((int)$line['nominal_account_id'])) {
+            $errors[] = 'Charitable Donations can only be recorded from an outgoing bank transaction.';
         }
 
         return $errors;

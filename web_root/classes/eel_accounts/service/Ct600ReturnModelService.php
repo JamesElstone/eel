@@ -307,6 +307,7 @@ final class Ct600ReturnModelService
                 'profits_before_other_deductions' => (float)$ct600Calculation['profits_before_other_deductions'],
                 'total_deductions_and_reliefs' => (float)$ct600Calculation['total_deductions_and_reliefs'],
                 'profits_before_donations_group_relief' => (float)$ct600Calculation['profits_before_donations_group_relief'],
+                'qualifying_charitable_donations' => (float)$ct600Calculation['qualifying_charitable_donations'],
                 'associated_company_count' => (int)$decisions['associated_company_count'],
                 'tax_bands' => $taxBands,
                 'gross_corporation_tax' => $grossTax,
@@ -325,6 +326,8 @@ final class Ct600ReturnModelService
                 'accounting_profit' => $this->number($summary, 'accounting_profit'),
                 'capital_allowances' => $this->number($summary, 'capital_allowances'),
                 'taxable_before_losses' => $this->number($summary, 'taxable_before_losses'),
+                'profits_before_donations_group_relief' => $this->number($summary, 'profits_before_donations_group_relief'),
+                'qualifying_charitable_donations' => $this->number($summary, 'qualifying_charitable_donations_claimed'),
                 'taxable_profit' => $taxableProfit,
                 'taxable_loss' => $taxableLoss,
                 'losses_brought_forward' => $this->number($summary, 'losses_brought_forward'),
@@ -388,12 +391,19 @@ final class Ct600ReturnModelService
         $netTrading = round($beforeLosses - $sameTrade, 2);
         $deductions = round($currentOrLater + $carriedForward, 2);
         $beforeDonations = round($netTrading - $deductions, 2);
+        $qualifyingDonations = round($this->number($summary, 'qualifying_charitable_donations_claimed'), 2);
+        $chargeableProfits = round($beforeDonations - $qualifyingDonations, 2);
+        $expectedBeforeDonations = array_key_exists('profits_before_donations_group_relief', $summary)
+            ? $this->number($summary, 'profits_before_donations_group_relief')
+            : $this->number($summary, 'taxable_profit');
         if ($sameTrade < -0.004 || $currentOrLater < -0.004 || $carriedForward < -0.004
             || $currentOrLater > $netTrading + 0.009
             || $carriedForward > $netTrading - $currentOrLater + 0.009
             || $deductions < -0.004 || $deductions > $netTrading + 0.009
             || $netTrading < -0.004 || $beforeDonations < -0.004
-            || abs($beforeDonations - $this->number($summary, 'taxable_profit')) > 0.009) {
+            || $qualifyingDonations < -0.004 || $qualifyingDonations > $beforeDonations + 0.009
+            || abs($beforeDonations - $expectedBeforeDonations) > 0.009
+            || abs($chargeableProfits - $this->number($summary, 'taxable_profit')) > 0.009) {
             throw new \RuntimeException('The CT600 loss boxes do not reconcile to the frozen taxable profit.');
         }
         return [
@@ -406,6 +416,7 @@ final class Ct600ReturnModelService
             'profits_before_other_deductions' => $netTrading,
             'total_deductions_and_reliefs' => $deductions,
             'profits_before_donations_group_relief' => $beforeDonations,
+            'qualifying_charitable_donations' => $qualifyingDonations,
         ];
     }
 
@@ -637,7 +648,7 @@ final class Ct600ReturnModelService
 
     private function number(array $source, string $key): float
     {
-        return (float)$source[$key];
+        return (float)($source[$key] ?? 0);
     }
 
     private function isDate(string $value): bool

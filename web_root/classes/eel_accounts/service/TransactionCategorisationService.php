@@ -194,6 +194,16 @@ final class TransactionCategorisationService
         } else {
             $nextState = $this->buildManualTargetState($transaction, $nominalAccountId, $isAutoExcluded);
             $selfNominalErrors = $this->validateDestinationNominal($transaction, $nextState['nominal_account_id']);
+            $donationService = new CharitableDonationService();
+            if ($donationService->isDonationNominal((int)($nextState['nominal_account_id'] ?? 0))) {
+                if ($donationService->verificationForBasis($transaction, (int)$nextState['nominal_account_id']) === null) {
+                    $selfNominalErrors[] = 'Verify the charity registration number before assigning Charitable Donations.';
+                }
+                $selfNominalErrors = array_merge(
+                    $selfNominalErrors,
+                    $donationService->transactionEligibilityErrors($transaction, (int)$nextState['nominal_account_id'])
+                );
+            }
             if ($selfNominalErrors !== []) {
                 return [
                     'success' => false,
@@ -417,6 +427,7 @@ final class TransactionCategorisationService
                     t.auto_rule_id,
                     t.is_auto_excluded,
                     ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker,
+                    COALESCE(ca.account_type, \'\') AS source_account_type,
                     COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
@@ -457,9 +468,17 @@ final class TransactionCategorisationService
              FROM categorisation_rules
              WHERE company_id = :company_id
                AND is_active = 1
+               AND NOT EXISTS (
+                   SELECT 1 FROM nominal_accounts na
+                   WHERE na.id = categorisation_rules.nominal_account_id
+                     AND na.code = :charitable_donation_code
+               )
              ORDER BY priority ASC, id ASC'
         );
-        $stmt->execute(['company_id' => $companyId]);
+        $stmt->execute([
+            'company_id' => $companyId,
+            'charitable_donation_code' => CharitableDonationService::NOMINAL_CODE,
+        ]);
 
         return $stmt->fetchAll();
     }

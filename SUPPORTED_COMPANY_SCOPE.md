@@ -62,6 +62,7 @@ The supported scope expands over time as additional functionality is implemented
 * iXBRL computations
 * GovTalk XML generation
 * HMRC submission workflow integration
+* Cash donations by a supported company to a charity currently registered in England and Wales, Scotland or Northern Ireland, where the outgoing bank transaction is verified against the applicable official register
 
 ## Planned
 
@@ -69,6 +70,8 @@ The following may be supported in future releases:
 
 * Additional CT600 supplementary pages
 * Additional tax computations
+
+Charities remain unsupported as EEL Accounts entities. Donation support is limited to verified outgoing bank payments by an otherwise supported company; expense claims, split transactions, transfers, gifts of assets or shares, sponsorship, payroll giving and non-cash donations are not treated as qualifying charitable donations.
 
 ---
 

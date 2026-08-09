@@ -63,6 +63,7 @@ final class _pl_summaryCard extends CardBaseFramework
                 ' . $this->summaryCard('Gross profit before subcontractors', $summary['gross_profit_before_subcontractors'] ?? (($summary['gross_profit'] ?? 0) + ($summary['subcontractor_cost_total'] ?? 0)), $companySettings) . '
                 ' . $this->summaryCard('Subcontractor costs', $summary['subcontractor_cost_total'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Operating expenses', $summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0), $companySettings) . '
+                ' . $this->summaryCard('Charitable donations (included in operating expenses)', $summary['charitable_donation_expense'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Depreciation preview', $summary['depreciation_expense'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Posted CT charge', $summary['posted_corporation_tax_charge'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Net Corporation Tax liability [CT600 box 475]', $summary['ordinary_corporation_tax'] ?? 0, $companySettings) . '

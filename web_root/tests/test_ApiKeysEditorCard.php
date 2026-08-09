@@ -33,6 +33,29 @@ $harness->check(_api_keys_editorCard::class, 'renders gateway metadata and never
     $harness->assertSame(false, str_contains($html, $identity));
 });
 
+$harness->check(_api_keys_editorCard::class, 'sorts existing keys by provider gateway tag and environment', function () use ($harness): void {
+    $rows = [
+        ['id' => 'provider-last', 'provider' => 'BETA', 'gateway' => 'REST', 'tag' => 'ALPHA', 'environment' => 'LIVE'],
+        ['id' => 'gateway-last', 'provider' => 'ACME', 'gateway' => 'XML', 'tag' => 'ALPHA', 'environment' => 'LIVE'],
+        ['id' => 'tag-last', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'ZETA', 'environment' => 'LIVE'],
+        ['id' => 'environment-last', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'ALPHA', 'environment' => 'TEST'],
+        ['id' => 'environment-first', 'provider' => 'ACME', 'gateway' => 'REST', 'tag' => 'ALPHA', 'environment' => 'LIVE'],
+    ];
+    $html = (new _api_keys_editorCard())->render([
+        'page' => ['csrf_token' => 'token'],
+        'services' => ['api_keys_editor' => ['rows' => $rows, 'catalog' => []]],
+    ]);
+    $positions = [];
+    foreach (['environment-first', 'environment-last', 'tag-last', 'gateway-last', 'provider-last'] as $id) {
+        $position = strpos($html, 'data-credential-id="' . $id . '"');
+        $harness->assertTrue(is_int($position));
+        $positions[] = $position;
+    }
+    $sortedPositions = $positions;
+    sort($sortedPositions);
+    $harness->assertSame($sortedPositions, $positions);
+});
+
 $harness->check(_api_keys_editorCard::class, 'browser editing prefills clears and reinitialises Software Reference', function () use ($harness): void {
     $script = file_get_contents(APP_JS . 'index.js');
     if (!is_string($script)) { throw new RuntimeException('Unable to read frontend script.'); }

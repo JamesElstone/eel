@@ -76,6 +76,19 @@ final class _api_keys_editorCard extends CardBaseFramework
     /** @param list<array<string, mixed>> $rows */
     private function rows(array $rows): string
     {
+        $rows = array_values(array_filter($rows, 'is_array'));
+        usort($rows, static function (array $left, array $right): int {
+            foreach (['provider', 'gateway', 'tag', 'environment'] as $field) {
+                $comparison = strcasecmp(
+                    trim((string)($left[$field] ?? '')),
+                    trim((string)($right[$field] ?? ''))
+                );
+                if ($comparison !== 0) {
+                    return $comparison;
+                }
+            }
+            return 0;
+        });
         if ($rows === []) {
             return '<tr><td colspan="8">No API credential metadata is available.</td></tr>';
         }

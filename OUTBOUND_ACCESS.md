@@ -19,10 +19,12 @@ This is the allow-list of static outbound HTTP(S) base URLs used by the applicat
 - https://www.hmrc.gov.uk/
 - https://xmlgw.companieshouse.gov.uk/
 
-## Configurable endpoint
+## Configurable endpoints
 
 The SMS gateway URL is application configuration. Its default host is listed below, but an administrator can replace it with another HTTP(S) URL.
 
 - https://sms.api.server/
+
+The SMTP settings allow an administrator to configure an SMTP server host and TCP port, or to select PHP `mail()`. There is no fixed default SMTP host to list.
 
 This list excludes browser-only links, XML/XBRL namespace identifiers, test fixtures, and third-party/dependency sources because the application does not make outbound calls to them as part of its runtime behaviour.

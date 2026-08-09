@@ -76,7 +76,7 @@ $harness->run(_tax_audit_detailCard::class, static function (GeneratedServiceCla
             'pagination' => ['page' => 1, 'page_count' => 1, 'total_rows' => 1],
         ];
         $html = $card->render($context);
-        $harness->assertTrue(str_contains($html, 'Open transaction'));
+        $harness->assertTrue(str_contains($html, 'Open Transaction'));
         $harness->assertTrue(str_contains($html, 'name="transaction_id" value="42"'));
         $harness->assertTrue(str_contains($html, 'href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35500"'));
         $harness->assertTrue(str_contains($html, 'Reconciled'));

@@ -111,7 +111,7 @@ $harness->run(_vat_turnover_monitoringCard::class, static function (GeneratedSer
 
         $harness->assertTrue(str_contains($html, 'Threshold unavailable.'));
         $harness->assertTrue(str_contains($html, 'href="?page=artefacts"'));
-        $harness->assertTrue(str_contains($html, 'Import HMRC VAT thresholds'));
+        $harness->assertTrue(str_contains($html, 'Import HMRC VAT Thresholds'));
     });
 });
 
@@ -129,7 +129,7 @@ $harness->run(_tax_vat_thresholdCard::class, static function (GeneratedServiceCl
         $html = $card->render($unavailableThresholdContext);
 
         $harness->assertTrue(str_contains($html, 'Threshold unavailable.'));
-        $harness->assertTrue(str_contains($html, 'Import HMRC VAT thresholds'));
+        $harness->assertTrue(str_contains($html, 'Import HMRC VAT Thresholds'));
     });
 });
 

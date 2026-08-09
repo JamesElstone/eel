@@ -16,6 +16,9 @@ final class GoldenFilingArtifactDependencyFixture
         if (strtolower((string)InterfaceDB::driverName()) !== 'sqlite') {
             throw new RuntimeException('Golden filing artefact dependencies may only be installed in SQLite.');
         }
+        if (!InterfaceDB::inTransaction()) {
+            throw new RuntimeException('Golden filing artefact dependencies require an active SQLite test transaction.');
+        }
         if ($configureArelle) {
             self::ensureArelleConfiguration();
             self::ensureFrcTaxonomyPackage();
@@ -133,31 +136,39 @@ final class GoldenFilingArtifactDependencyFixture
 
     private static function ensureSchema(): void
     {
+        self::resetOutdatedSchema();
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS hmrc_ct_computation_packages (
             id INTEGER PRIMARY KEY AUTOINCREMENT, taxonomy_version TEXT NOT NULL, artifact_version TEXT NOT NULL,
             applicable_from TEXT NOT NULL, applicable_to TEXT NULL, source_url TEXT NOT NULL, download_url TEXT NULL,
             local_path TEXT NULL, entry_point_path TEXT NULL, combined_dpl_entry_point_path TEXT NULL, sha256 TEXT NULL,
             package_state TEXT NOT NULL, verification_error TEXT NULL, checked_at TEXT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (taxonomy_version, artifact_version)
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS hmrc_ct_computation_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT, package_id INTEGER NOT NULL, archive_path TEXT NOT NULL,
             extracted_path TEXT NOT NULL, file_type TEXT NOT NULL, file_role TEXT NULL,
-            file_size INTEGER NOT NULL, sha256 TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            file_size INTEGER NOT NULL, sha256 TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (package_id, archive_path),
+            FOREIGN KEY (package_id) REFERENCES hmrc_ct_computation_packages (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS hmrc_ct_computation_concepts (
             id INTEGER PRIMARY KEY AUTOINCREMENT, package_id INTEGER NOT NULL, qname TEXT NOT NULL,
             namespace_uri TEXT NOT NULL, local_name TEXT NOT NULL, data_type TEXT NULL, period_type TEXT NULL,
             substitution_group TEXT NULL, is_abstract INTEGER NOT NULL DEFAULT 0,
             is_dimension INTEGER NOT NULL DEFAULT 0, is_required INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (package_id, namespace_uri, local_name),
+            FOREIGN KEY (package_id) REFERENCES hmrc_ct_computation_packages (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS hmrc_ct_rim_components (
             id INTEGER PRIMARY KEY AUTOINCREMENT, package_id INTEGER NOT NULL, component_path TEXT NOT NULL,
             parent_path TEXT NULL, element_name TEXT NOT NULL, namespace_uri TEXT NULL, data_type TEXT NULL,
             min_occurs INTEGER NULL, max_occurs TEXT NULL, is_required INTEGER NOT NULL DEFAULT 0,
-            sequence_order INTEGER NULL, is_leaf INTEGER NOT NULL DEFAULT 0, source_file_id INTEGER NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            sequence_order INTEGER NULL, is_leaf INTEGER NOT NULL DEFAULT 1, source_file_id INTEGER NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (package_id, component_path),
+            FOREIGN KEY (package_id) REFERENCES hmrc_ct_rim_packages (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS ct_filing_mapping_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, rim_package_id INTEGER NULL,
@@ -166,13 +177,19 @@ final class GoldenFilingArtifactDependencyFixture
             compatibility_status TEXT NOT NULL DEFAULT \'pending\', compatibility_json TEXT NULL,
             created_by TEXT NOT NULL, validated_by TEXT NULL, validated_at TEXT NULL,
             activated_by TEXT NULL, activated_at TEXT NULL, retired_by TEXT NULL, retired_at TEXT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (target_type, profile_name, revision_no),
+            FOREIGN KEY (rim_package_id) REFERENCES hmrc_ct_rim_packages (id) ON DELETE CASCADE ON UPDATE CASCADE,
+            FOREIGN KEY (computation_package_id) REFERENCES hmrc_ct_computation_packages (id) ON DELETE CASCADE ON UPDATE CASCADE,
+            FOREIGN KEY (parent_profile_id) REFERENCES ct_filing_mapping_profiles (id) ON DELETE SET NULL ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS ct600_rim_mappings (
             id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL, canonical_key TEXT NOT NULL,
             target_xpath TEXT NOT NULL, value_type TEXT NOT NULL, sign_multiplier REAL NOT NULL DEFAULT 1,
             null_policy TEXT NOT NULL DEFAULT \'omit\', is_required INTEGER NOT NULL DEFAULT 0,
-            sort_order INTEGER NOT NULL DEFAULT 100, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            sort_order INTEGER NOT NULL DEFAULT 100, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (profile_id, target_xpath),
+            FOREIGN KEY (profile_id) REFERENCES ct_filing_mapping_profiles (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS ct_computation_ixbrl_mappings (
             id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL, canonical_key TEXT NOT NULL,
@@ -182,18 +199,102 @@ final class GoldenFilingArtifactDependencyFixture
             dimensions_json TEXT NULL, sign_multiplier REAL NOT NULL DEFAULT 1,
             presentation_section TEXT NOT NULL, presentation_label TEXT NOT NULL,
             null_policy TEXT NOT NULL DEFAULT \'omit\', is_required INTEGER NOT NULL DEFAULT 0,
-            sort_order INTEGER NOT NULL DEFAULT 100, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            sort_order INTEGER NOT NULL DEFAULT 100, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (profile_id, canonical_key),
+            FOREIGN KEY (profile_id) REFERENCES ct_filing_mapping_profiles (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS ct_filing_mapping_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER NOT NULL, event_type TEXT NOT NULL,
-            actor TEXT NOT NULL, detail_json TEXT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            actor TEXT NOT NULL, detail_json TEXT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (profile_id) REFERENCES ct_filing_mapping_profiles (id) ON DELETE CASCADE ON UPDATE CASCADE
         )');
         InterfaceDB::execute('CREATE TABLE IF NOT EXISTS ct_filing_canonical_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT, target_scope TEXT NOT NULL DEFAULT \'both\',
             canonical_key TEXT NOT NULL, source_label TEXT NOT NULL, value_type TEXT NOT NULL,
             source_section TEXT NOT NULL, is_required INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (target_scope, canonical_key)
         )');
+    }
+
+    private static function resetOutdatedSchema(): void
+    {
+        $expectedColumns = [
+            'hmrc_ct_computation_packages' => [
+                'id', 'taxonomy_version', 'artifact_version', 'applicable_from', 'applicable_to',
+                'source_url', 'download_url', 'local_path', 'entry_point_path',
+                'combined_dpl_entry_point_path', 'sha256', 'package_state', 'verification_error',
+                'checked_at', 'created_at', 'updated_at',
+            ],
+            'hmrc_ct_computation_files' => [
+                'id', 'package_id', 'archive_path', 'extracted_path', 'file_type', 'file_role',
+                'file_size', 'sha256', 'created_at',
+            ],
+            'hmrc_ct_computation_concepts' => [
+                'id', 'package_id', 'qname', 'namespace_uri', 'local_name', 'data_type',
+                'period_type', 'substitution_group', 'is_abstract', 'is_dimension', 'is_required',
+                'created_at',
+            ],
+            'hmrc_ct_rim_components' => [
+                'id', 'package_id', 'component_path', 'parent_path', 'element_name', 'namespace_uri',
+                'data_type', 'min_occurs', 'max_occurs', 'is_required', 'sequence_order', 'is_leaf',
+                'source_file_id', 'created_at',
+            ],
+            'ct_filing_mapping_profiles' => [
+                'id', 'target_type', 'rim_package_id', 'computation_package_id', 'profile_name',
+                'revision_no', 'status', 'parent_profile_id', 'content_hash', 'compatibility_status',
+                'compatibility_json', 'created_by', 'validated_by', 'validated_at', 'activated_by',
+                'activated_at', 'retired_by', 'retired_at', 'created_at', 'updated_at',
+            ],
+            'ct600_rim_mappings' => [
+                'id', 'profile_id', 'canonical_key', 'target_xpath', 'value_type', 'sign_multiplier',
+                'null_policy', 'is_required', 'sort_order', 'created_at',
+            ],
+            'ct_computation_ixbrl_mappings' => [
+                'id', 'profile_id', 'canonical_key', 'taxonomy_concept', 'namespace_uri', 'local_name',
+                'value_type', 'period_type', 'context_profile', 'unit_ref', 'decimals_value',
+                'dimensions_json', 'sign_multiplier', 'presentation_section', 'presentation_label',
+                'null_policy', 'is_required', 'sort_order', 'created_at',
+            ],
+            'ct_filing_mapping_events' => [
+                'id', 'profile_id', 'event_type', 'actor', 'detail_json', 'created_at',
+            ],
+            'ct_filing_canonical_sources' => [
+                'id', 'target_scope', 'canonical_key', 'source_label', 'value_type', 'source_section',
+                'is_required', 'created_at',
+            ],
+        ];
+
+        foreach ($expectedColumns as $table => $expected) {
+            if (!InterfaceDB::tableExists($table)) {
+                continue;
+            }
+            $actual = array_values(array_map(
+                static fn(array $column): string => (string)($column['name'] ?? ''),
+                InterfaceDB::fetchAll('PRAGMA table_info(' . $table . ')')
+            ));
+            if ($actual !== $expected) {
+                self::dropDependencySchema();
+                return;
+            }
+        }
+    }
+
+    private static function dropDependencySchema(): void
+    {
+        foreach ([
+            'ct600_rim_mappings',
+            'ct_computation_ixbrl_mappings',
+            'ct_filing_mapping_events',
+            'ct_filing_mapping_profiles',
+            'ct_filing_canonical_sources',
+            'hmrc_ct_rim_components',
+            'hmrc_ct_computation_concepts',
+            'hmrc_ct_computation_files',
+            'hmrc_ct_computation_packages',
+        ] as $table) {
+            InterfaceDB::execute('DROP TABLE IF EXISTS ' . $table);
+        }
     }
 
     private static function ensureCanonicalSources(int $computationPackageId, int $rimPackageId): void

@@ -20,6 +20,18 @@ $harness->check('GoldenFilingArtifactReviewPack', 'recognises only the explicit 
 
 $harness->check('GoldenFilingArtifactReviewPack', 'installs verified filing dependencies only inside the SQLite test transaction', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
+    foreach ([
+        'ct600_rim_mappings', 'ct_computation_ixbrl_mappings', 'ct_filing_mapping_events',
+        'ct_filing_mapping_profiles', 'ct_filing_canonical_sources', 'hmrc_ct_rim_components',
+        'hmrc_ct_computation_concepts', 'hmrc_ct_computation_files', 'hmrc_ct_computation_packages',
+    ] as $table) {
+        InterfaceDB::execute('DROP TABLE IF EXISTS ' . $table);
+    }
+    InterfaceDB::execute('CREATE TABLE ct_filing_mapping_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL,
+        profile_name TEXT NOT NULL, status TEXT NOT NULL,
+        compatibility_report_json TEXT NULL
+    )');
     $dependencies = GoldenFilingArtifactDependencyFixture::ensure();
     $harness->assertTrue((int)$dependencies['computation_package_id'] > 0);
     $harness->assertTrue((int)$dependencies['rim_package_id'] > 0);
@@ -29,6 +41,36 @@ $harness->check('GoldenFilingArtifactReviewPack', 'installs verified filing depe
             "SELECT COUNT(*) FROM ct_filing_mapping_profiles WHERE status = 'active'"
         )
     );
+    $profileColumns = array_map(
+        static fn(array $column): string => (string)$column['name'],
+        InterfaceDB::fetchAll('PRAGMA table_info(ct_filing_mapping_profiles)')
+    );
+    foreach (['parent_profile_id', 'compatibility_json', 'validated_by', 'activated_by', 'retired_by'] as $column) {
+        $harness->assertTrue(in_array($column, $profileColumns, true));
+    }
+});
+
+$harness->check('GoldenFilingArtifactReviewPack', 'keeps the master schema aligned with filing and charity migrations', static function () use ($harness): void {
+    $master = (string)file_get_contents(
+        dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql'
+    );
+    foreach ([
+        'hmrc_ct_computation_packages', 'hmrc_ct_computation_files', 'hmrc_ct_computation_concepts',
+        'hmrc_ct_rim_components', 'ct_filing_mapping_profiles', 'ct600_rim_mappings',
+        'ct_computation_ixbrl_mappings', 'ct_filing_mapping_events', 'ct_filing_canonical_sources',
+        'ixbrl_accounts_artifacts', 'ixbrl_validation_runs', 'hmrc_ct_filing_approvals',
+        'hmrc_ct_filing_approval_period_bases', 'transaction_charitable_donation_verifications',
+    ] as $table) {
+        $harness->assertTrue(str_contains($master, 'CREATE TABLE `' . $table . '`'));
+    }
+    foreach ([
+        '`parent_profile_id` bigint(20) DEFAULT NULL',
+        '`compatibility_json` longtext DEFAULT NULL',
+        '`directors_report_exempt_section_415a` tinyint(1) NOT NULL DEFAULT 1',
+        '`profit_loss_not_delivered_section_444` tinyint(1) NOT NULL DEFAULT 1',
+    ] as $definition) {
+        $harness->assertTrue(str_contains($master, $definition));
+    }
 });
 
 $harness->check('GoldenFilingArtifactReviewPack', 'publishes a complete 18-file review pack with valid links and hashes', static function () use ($harness): void {

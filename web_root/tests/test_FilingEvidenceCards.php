@@ -38,7 +38,7 @@ $h->run(_filing_evidence_charitable_donationsCard::class, static function (Gener
         ]);
         $h->assertTrue(str_contains($html, 'Example Charity'));
         $h->assertTrue(str_contains($html, '1234567'));
-        $h->assertTrue(str_contains($html, '£250.00'));
+        $h->assertTrue(str_contains($html, '£ 250.00'));
         $h->assertTrue(str_contains($html, 'may reduce Corporation Tax owed'));
     });
 });
@@ -111,7 +111,7 @@ $h->run(_filing_evidence_calculation_detailCard::class, static function (Generat
             ]],
         ]);
         $h->assertTrue(str_contains($html, 'Frozen evidence'));
-        $h->assertTrue(str_contains($html, 'Current journal'));
+        $h->assertTrue(str_contains($html, 'Current Journal'));
         $h->assertTrue(str_contains($html, 'journal_id'));
     });
 });

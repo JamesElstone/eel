@@ -133,9 +133,9 @@ final class IxbrlDirectorsReportContentService
             }
             return $item;
         };
-        return (string)json_encode(
+        return \eel_accounts\Support\Utf8::json(
             $normalise($value),
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );
     }
 }

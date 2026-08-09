@@ -4137,7 +4137,7 @@ CREATE TABLE `year_end_section_review_bundles` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `schema_migrations`
+-- Table structures for HMRC CT RIM packages
 --
 
 DROP TABLE IF EXISTS `hmrc_ct_rim_packages`;
@@ -4195,6 +4195,205 @@ CREATE TABLE `hmrc_ct_rim_files` (
   ,CONSTRAINT `chk_hmrc_ct_rim_file_type` CHECK (`file_type` in ('xsd','sch','xslt'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Table structures for HMRC computation packages and CT filing mappings
+--
+
+DROP TABLE IF EXISTS `hmrc_ct_computation_packages`;
+CREATE TABLE `hmrc_ct_computation_packages` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `taxonomy_version` varchar(32) NOT NULL,
+  `artifact_version` varchar(64) NOT NULL,
+  `applicable_from` date NOT NULL,
+  `applicable_to` date DEFAULT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `download_url` varchar(1000) DEFAULT NULL,
+  `local_path` varchar(1000) DEFAULT NULL,
+  `entry_point_path` varchar(1000) DEFAULT NULL,
+  `combined_dpl_entry_point_path` varchar(1000) DEFAULT NULL,
+  `sha256` char(64) DEFAULT NULL,
+  `package_state` varchar(32) NOT NULL DEFAULT 'not_downloaded',
+  `verification_error` text DEFAULT NULL,
+  `checked_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_computation_package` (`taxonomy_version`,`artifact_version`),
+  KEY `idx_hmrc_ct_computation_applicability` (`applicable_from`,`applicable_to`,`package_state`),
+  CONSTRAINT `chk_hmrc_ct_computation_dates` CHECK (`applicable_to` IS NULL OR `applicable_from` <= `applicable_to`),
+  CONSTRAINT `chk_hmrc_ct_computation_state` CHECK (`package_state` in ('not_downloaded','downloaded','verified','stale','failed'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `hmrc_ct_computation_files`;
+CREATE TABLE `hmrc_ct_computation_files` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `package_id` bigint(20) NOT NULL,
+  `archive_path` varchar(1000) NOT NULL,
+  `extracted_path` varchar(1000) NOT NULL,
+  `file_type` enum('xsd','xml','json','linkbase','other') NOT NULL DEFAULT 'other',
+  `file_role` varchar(64) DEFAULT NULL,
+  `file_size` bigint(20) NOT NULL DEFAULT 0,
+  `sha256` char(64) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_computation_file` (`package_id`,`archive_path`) USING HASH,
+  KEY `idx_hmrc_ct_computation_file_role` (`package_id`,`file_role`),
+  CONSTRAINT `fk_hmrc_ct_computation_file_package` FOREIGN KEY (`package_id`) REFERENCES `hmrc_ct_computation_packages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `hmrc_ct_computation_concepts`;
+CREATE TABLE `hmrc_ct_computation_concepts` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `package_id` bigint(20) NOT NULL,
+  `qname` varchar(255) NOT NULL,
+  `namespace_uri` varchar(500) NOT NULL,
+  `local_name` varchar(255) NOT NULL,
+  `data_type` varchar(255) DEFAULT NULL,
+  `period_type` enum('instant','duration') DEFAULT NULL,
+  `substitution_group` varchar(255) DEFAULT NULL,
+  `is_abstract` tinyint(1) NOT NULL DEFAULT 0,
+  `is_dimension` tinyint(1) NOT NULL DEFAULT 0,
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_computation_concept` (`package_id`,`namespace_uri`,`local_name`),
+  KEY `idx_hmrc_ct_computation_concept_qname` (`package_id`,`qname`),
+  CONSTRAINT `fk_hmrc_ct_computation_concept_package` FOREIGN KEY (`package_id`) REFERENCES `hmrc_ct_computation_packages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `hmrc_ct_rim_components`;
+CREATE TABLE `hmrc_ct_rim_components` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `package_id` bigint(20) NOT NULL,
+  `component_path` varchar(1000) NOT NULL,
+  `parent_path` varchar(1000) DEFAULT NULL,
+  `element_name` varchar(255) NOT NULL,
+  `namespace_uri` varchar(500) DEFAULT NULL,
+  `data_type` varchar(255) DEFAULT NULL,
+  `min_occurs` int(11) DEFAULT NULL,
+  `max_occurs` varchar(32) DEFAULT NULL,
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `sequence_order` int(11) DEFAULT NULL,
+  `is_leaf` tinyint(1) NOT NULL DEFAULT 1,
+  `source_file_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_ct_rim_component` (`package_id`,`component_path`) USING HASH,
+  KEY `idx_hmrc_ct_rim_component_name` (`package_id`,`element_name`),
+  KEY `idx_hmrc_ct_rim_component_leaf` (`package_id`,`is_leaf`,`is_required`),
+  CONSTRAINT `fk_hmrc_ct_rim_component_package` FOREIGN KEY (`package_id`) REFERENCES `hmrc_ct_rim_packages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Keep MariaDB's prefix index outside CREATE TABLE so the SQLite test-schema
+-- converter does not interpret parent_path(190) as a function call.
+ALTER TABLE `hmrc_ct_rim_components`
+  ADD KEY `idx_hmrc_ct_rim_component_parent` (`package_id`,`parent_path`(190));
+
+DROP TABLE IF EXISTS `ct_filing_mapping_profiles`;
+CREATE TABLE `ct_filing_mapping_profiles` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `target_type` enum('ct600_rim','computation_ixbrl') NOT NULL,
+  `rim_package_id` bigint(20) DEFAULT NULL,
+  `computation_package_id` bigint(20) DEFAULT NULL,
+  `profile_name` varchar(150) NOT NULL,
+  `revision_no` int(11) NOT NULL DEFAULT 1,
+  `status` enum('draft','validated','active','retired') NOT NULL DEFAULT 'draft',
+  `parent_profile_id` bigint(20) DEFAULT NULL,
+  `content_hash` char(64) DEFAULT NULL,
+  `compatibility_status` enum('pending','compatible','incompatible') NOT NULL DEFAULT 'pending',
+  `compatibility_json` longtext DEFAULT NULL,
+  `created_by` varchar(100) NOT NULL,
+  `validated_by` varchar(100) DEFAULT NULL,
+  `validated_at` datetime DEFAULT NULL,
+  `activated_by` varchar(100) DEFAULT NULL,
+  `activated_at` datetime DEFAULT NULL,
+  `retired_by` varchar(100) DEFAULT NULL,
+  `retired_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_filing_mapping_revision` (`target_type`,`profile_name`,`revision_no`),
+  KEY `idx_ct_filing_mapping_active` (`target_type`,`status`),
+  KEY `idx_ct_filing_mapping_rim_package` (`rim_package_id`,`status`),
+  KEY `idx_ct_filing_mapping_computation_package` (`computation_package_id`,`status`),
+  KEY `fk_ct_filing_mapping_parent` (`parent_profile_id`),
+  CONSTRAINT `fk_ct_filing_mapping_computation_package` FOREIGN KEY (`computation_package_id`) REFERENCES `hmrc_ct_computation_packages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_filing_mapping_parent` FOREIGN KEY (`parent_profile_id`) REFERENCES `ct_filing_mapping_profiles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_filing_mapping_rim_package` FOREIGN KEY (`rim_package_id`) REFERENCES `hmrc_ct_rim_packages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `ct600_rim_mappings`;
+CREATE TABLE `ct600_rim_mappings` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `profile_id` bigint(20) NOT NULL,
+  `canonical_key` varchar(180) NOT NULL,
+  `target_xpath` varchar(1000) NOT NULL,
+  `value_type` enum('numeric','text','date','boolean','integer') NOT NULL,
+  `sign_multiplier` decimal(8,2) NOT NULL DEFAULT 1.00,
+  `null_policy` enum('omit','nil','error') NOT NULL DEFAULT 'omit',
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `sort_order` int(11) NOT NULL DEFAULT 100,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct600_rim_mapping_target` (`profile_id`,`target_xpath`) USING HASH,
+  KEY `idx_ct600_rim_mapping_source` (`profile_id`,`canonical_key`),
+  CONSTRAINT `fk_ct600_rim_mapping_profile` FOREIGN KEY (`profile_id`) REFERENCES `ct_filing_mapping_profiles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `ct_computation_ixbrl_mappings`;
+CREATE TABLE `ct_computation_ixbrl_mappings` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `profile_id` bigint(20) NOT NULL,
+  `canonical_key` varchar(180) NOT NULL,
+  `taxonomy_concept` varchar(255) NOT NULL,
+  `namespace_uri` varchar(500) NOT NULL,
+  `local_name` varchar(255) NOT NULL,
+  `value_type` enum('numeric','text','date','boolean','integer') NOT NULL,
+  `period_type` enum('instant','duration') NOT NULL DEFAULT 'duration',
+  `context_profile` varchar(100) NOT NULL DEFAULT 'ct_period',
+  `unit_ref` varchar(50) DEFAULT NULL,
+  `decimals_value` varchar(20) DEFAULT NULL,
+  `dimensions_json` longtext DEFAULT NULL,
+  `sign_multiplier` decimal(8,2) NOT NULL DEFAULT 1.00,
+  `presentation_section` varchar(100) NOT NULL,
+  `presentation_label` varchar(255) NOT NULL,
+  `null_policy` enum('omit','nil','error') NOT NULL DEFAULT 'omit',
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `sort_order` int(11) NOT NULL DEFAULT 100,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_computation_mapping_source` (`profile_id`,`canonical_key`),
+  KEY `idx_ct_computation_mapping_section` (`profile_id`,`presentation_section`,`sort_order`),
+  CONSTRAINT `fk_ct_computation_mapping_profile` FOREIGN KEY (`profile_id`) REFERENCES `ct_filing_mapping_profiles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `ct_filing_mapping_events`;
+CREATE TABLE `ct_filing_mapping_events` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `profile_id` bigint(20) NOT NULL,
+  `event_type` enum('created','cloned','mapping_changed','validated','activated','retired','validation_failed') NOT NULL,
+  `actor` varchar(100) NOT NULL,
+  `detail_json` longtext DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_ct_filing_mapping_event_profile` (`profile_id`,`id`),
+  CONSTRAINT `fk_ct_filing_mapping_event_profile` FOREIGN KEY (`profile_id`) REFERENCES `ct_filing_mapping_profiles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+DROP TABLE IF EXISTS `ct_filing_canonical_sources`;
+CREATE TABLE `ct_filing_canonical_sources` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `target_scope` enum('both','ct600_rim','computation_ixbrl') NOT NULL DEFAULT 'both',
+  `canonical_key` varchar(180) NOT NULL,
+  `source_label` varchar(255) NOT NULL,
+  `value_type` enum('numeric','text','date','boolean','integer') NOT NULL,
+  `source_section` varchar(100) NOT NULL,
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_filing_canonical_source` (`target_scope`,`canonical_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT IGNORE INTO `hmrc_ct_rim_packages` (`form_version`,`artifact_version`,`applicable_from`,`applicable_to`,`live_from`,`hmrc_status`,`source_url`) VALUES
 ('V2','V3.99',NULL,NULL,'2015-07-22 00:00:00','live','https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts'),
 ('V3','V1.994',NULL,NULL,'2026-04-07 08:23:02','live','https://www.gov.uk/government/publications/corporation-tax-technical-specifications-ct600-rim-artefacts');
@@ -4203,6 +4402,10 @@ INSERT IGNORE INTO `role_card_permissions` (`role_id`, `card_key`)
 SELECT DISTINCT `role_id`, 'ixbrl_accounts_disclosures'
 FROM `role_card_permissions`
 WHERE `card_key` IN ('ixbrl_readiness', 'ixbrl_facts_preview');
+
+--
+-- Table structure for table `schema_migrations`
+--
 
 DROP TABLE IF EXISTS `schema_migrations`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

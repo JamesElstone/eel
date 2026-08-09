@@ -18,6 +18,24 @@ $harness->check('GoldenFilingArtifactReviewPack', 'recognises only the explicit 
     $harness->assertFalse(GoldenFilingArtifactReviewPack::requested(['runner.php', '--export-filing-artifact']));
 });
 
+$harness->check('GoldenFilingArtifactReviewPack', 'contains generated source artifacts in its test upload staging root', static function () use ($harness): void {
+    $root = goldenArtifactReviewTestRoot('staging');
+    $uploadRoot = $root . DIRECTORY_SEPARATOR . 'uploads';
+    $outputRoot = $root . DIRECTORY_SEPARATOR . 'published';
+    mkdir($uploadRoot, 0775, true);
+    $pack = new GoldenFilingArtifactReviewPack($uploadRoot, $outputRoot, '20260808T120000Z-a1b2c3d4');
+    $directory = $pack->stagingDirectory('companies-house-accounts');
+
+    $harness->assertTrue(is_dir($directory));
+    $harness->assertTrue(str_starts_with(
+        str_replace('\\', '/', $directory) . '/',
+        rtrim(str_replace('\\', '/', $uploadRoot), '/') . '/'
+    ));
+    $harness->assertTrue(isset(
+        $GLOBALS['eel_accounts_test_cleanup_paths'][dirname($directory)]
+    ));
+});
+
 $harness->check('GoldenFilingArtifactReviewPack', 'installs verified filing dependencies only inside the SQLite test transaction', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     foreach ([

@@ -45,6 +45,22 @@ final class GoldenFilingArtifactReviewPack
         );
     }
 
+    public function stagingDirectory(string $artifactKind): string
+    {
+        if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/D', $artifactKind) !== 1) {
+            throw new InvalidArgumentException('The Golden artefact staging kind is invalid.');
+        }
+        $runDirectory = $this->join(
+            $this->uploadRoot,
+            'golden-filing-artifacts-' . $this->runId
+        );
+        $directory = $this->join($runDirectory, $artifactKind);
+        $this->ensureDirectory($directory);
+        test_register_cleanup_path($runDirectory);
+
+        return $directory;
+    }
+
     /** @param array<string,mixed> $result */
     public function captureForIds(
         int $companyId,

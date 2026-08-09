@@ -370,6 +370,9 @@ final class IxbrlFactBuilderService
         if ($value === null) {
             return null;
         }
+        if ((string)$mapping['fact_key'] === 'principal_activity_description') {
+            $value = $this->titleCasePrincipalActivityStatement((string)$value);
+        }
 
         $type = (string)$mapping['value_type'];
         $decimals = $mapping['decimals_value'] !== null ? (string)$mapping['decimals_value'] : null;
@@ -455,6 +458,22 @@ final class IxbrlFactBuilderService
                     : [],
             ],
         ];
+    }
+
+    private function titleCasePrincipalActivityStatement(string $statement): string
+    {
+        $prefix = 'The principal activity of the company during the period was ';
+        if (!str_starts_with($statement, $prefix)) {
+            return mb_convert_case($statement, MB_CASE_TITLE, 'UTF-8');
+        }
+
+        $activity = substr($statement, strlen($prefix));
+        $suffix = str_ends_with($activity, '.') ? '.' : '';
+        if ($suffix !== '') {
+            $activity = substr($activity, 0, -1);
+        }
+
+        return $prefix . mb_convert_case($activity, MB_CASE_TITLE, 'UTF-8') . $suffix;
     }
 
     private function contextRef(string $profile, bool $comparative): string

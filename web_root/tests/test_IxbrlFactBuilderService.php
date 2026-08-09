@@ -185,7 +185,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('bus:VersionProductionSoftware', (string)$mappings['production_software_version']['taxonomy_concept']);
         });
 
-        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds the principal activity statement as a current duration fact only', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlFactBuilderService::class, 'builds the title-cased principal activity statement as a current duration fact only', static function () use ($harness, $service): void {
             $mapping = null;
             foreach ((new \eel_accounts\Service\IxbrlTaxonomyProfileService())->mappings() as $candidate) {
                 if ((string)$candidate['fact_key'] === 'principal_activity_description') {
@@ -209,7 +209,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('bus:DescriptionPrincipalActivities', (string)($fact['taxonomy_concept'] ?? ''));
             $harness->assertSame('current_period_duration', (string)($fact['context_ref'] ?? ''));
             $harness->assertSame(
-                'The principal activity of the company during the period was Electrical installation.',
+                'The principal activity of the company during the period was Electrical Installation.',
                 (string)($fact['text_value'] ?? '')
             );
         });

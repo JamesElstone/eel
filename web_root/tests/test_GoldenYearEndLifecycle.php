@@ -743,7 +743,27 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 InterfaceDB::beginTransaction();
             }
             GoldenFilingArtifactDependencyFixture::ensure(true);
-            $filingSet = new \eel_accounts\Service\IxbrlFilingSetGenerationService();
+            $companiesHouseSubmission = new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService(
+                originalArtifactService: new \eel_accounts\Service\IxbrlOriginalAccountsArtifactService(
+                    outputDirectory: $artifactReview->stagingDirectory('companies-house-accounts')
+                )
+            );
+            $filingSet = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                companiesHousePreparer: static function (
+                    int $companyId,
+                    int $accountingPeriodId,
+                    string $actor,
+                    mixed $progress
+                ) use ($companiesHouseSubmission): array {
+                    return $companiesHouseSubmission->prepareAccounts(
+                        $companyId,
+                        $accountingPeriodId,
+                        [],
+                        $actor,
+                        $progress
+                    );
+                }
+            );
             $preflight = $filingSet->plan($companyId, $periodId);
             $generatedSet = $filingSet->generate(
                 $companyId,

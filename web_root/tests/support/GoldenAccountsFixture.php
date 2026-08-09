@@ -257,7 +257,7 @@ final class GoldenAccountsFixture
     private static function seedCompanies(): void
     {
         foreach ([
-            self::GOLDEN_COMPANY_ID => 'Golden Electrical Test Limited',
+            self::GOLDEN_COMPANY_ID => 'Golden Test Limited',
             self::EMPTY_COMPANY_ID => 'Empty Scenario Test Limited',
             self::WARNING_COMPANY_ID => 'Warning Scenario Test Limited',
             self::COMPLETE_COMPANY_ID => 'Completed Scenario Test Limited',

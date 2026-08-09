@@ -226,7 +226,7 @@ final class GoldenAccountingOracle
                 'warning_messages' => $warningMessages,
             ],
             'companies_house' => [
-                'company_name' => 'Golden Electrical Test Limited',
+                'company_name' => 'Golden Test Limited',
                 'company_number' => 'T9100',
                 'fixed_assets' => $fixedAssets,
                 'current_assets' => $currentAssets,

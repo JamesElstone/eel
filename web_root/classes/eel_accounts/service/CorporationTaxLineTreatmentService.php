@@ -83,8 +83,19 @@ final class CorporationTaxLineTreatmentService
         $decisionHistories = $this->decisionHistories($ledgerLines);
         $items = [];
         $basisRows = [];
+        $donations = new CharitableDonationService();
         foreach ($ledgerLines as $line) {
             $date = (string)($line['journal_date'] ?? '');
+            if ($donations->isDonationRow($line)) {
+                $sourceRef = (string)($line['source_ref'] ?? '');
+                $transactionId = preg_match('/^transaction:(\d+)$/', $sourceRef, $matches) === 1
+                    ? (int)$matches[1]
+                    : 0;
+                if ((string)($line['source_type'] ?? '') === 'bank_csv'
+                    && $donations->currentVerification($transactionId) !== null) {
+                    continue;
+                }
+            }
             $base = $this->rules()->resolveTaxTreatment($line, $date, $date);
             $latest = $this->latestDecision((int)($line['journal_line_id'] ?? 0));
             if ((string)($base['tax_treatment'] ?? '') !== 'other' && $latest === null) {

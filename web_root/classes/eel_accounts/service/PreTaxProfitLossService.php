@@ -211,6 +211,12 @@ final class PreTaxProfitLossService
         $grossProfit = round($income - $costOfSales, 2);
         $grossProfitBeforeSubcontractors = round($grossProfit + $subcontractorCosts, 2);
         $profitBeforeTax = round($grossProfit - $operatingExpenses, 2);
+        $qualifyingDonationRows = (array)((new CharitableDonationService())->qualifyingPaidForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $scope->periodStart,
+            $scope->asAtDate
+        )['rows'] ?? []);
 
         $result = [
             'scope' => $scope,
@@ -233,6 +239,7 @@ final class PreTaxProfitLossService
             'charitable_donation_expense' => round($charitableDonationExpense, 2),
             'qualifying_charitable_donation_add_back' => round($qualifyingCharitableDonationAddBack, 2),
             'qualifying_charitable_donations_paid' => round($qualifyingCharitableDonationAddBack, 2),
+            'charitable_donation_rows' => array_values($qualifyingDonationRows),
             'posted_corporation_tax_charge' => round($postedCt, 2),
             'profit_before_tax' => $profitBeforeTax,
             'disallowable_add_backs' => round($disallowable, 2),

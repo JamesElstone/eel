@@ -60,6 +60,7 @@ final class GoldenAccountsFixture
 
             return self::manifest();
         });
+        \eel_accounts\Support\RequestCache::reset();
         $built = true;
 
         return $manifest;
@@ -73,7 +74,7 @@ final class GoldenAccountsFixture
             $adjustments = match ($period['id']) {
                 9111 => ['transaction_count' => 7, 'expenses' => 1775.00, 'net_profit' => 7225.00, 'bank' => 404.00, 'journal_total' => 24717.00],
                 9112 => ['transaction_count' => 4, 'expenses' => 2466.00, 'net_profit' => 6534.00, 'bank' => -1200.00, 'journal_total' => 26466.00],
-                9113 => ['transaction_count' => 4, 'expenses' => 2047.00, 'net_profit' => 6953.00, 'bank' => 7435.00, 'journal_total' => 17593.00],
+                9113 => ['transaction_count' => 5, 'expenses' => 2297.00, 'net_profit' => 6703.00, 'bank' => 7185.00, 'journal_total' => 17843.00],
                 9114 => ['transaction_count' => 4, 'expenses' => 1863.00, 'net_profit' => 7137.00, 'bank' => 7110.00, 'journal_total' => 17553.00],
                 default => ['transaction_count' => 3, 'expenses' => 1500.00, 'net_profit' => 7500.00, 'bank' => 7800.00, 'journal_total' => 16500.00],
             };
@@ -131,6 +132,7 @@ final class GoldenAccountsFixture
                 'depreciation_expense' => self::nominalId(91017),
                 'prepayments' => 91018,
                 'annual_subscriptions' => 91019,
+                'charitable_donations' => self::nominalId(91028),
             ],
             'privacy' => [
                 'live_rows_copied' => false,
@@ -226,6 +228,7 @@ final class GoldenAccountsFixture
             [91017, '6200', 'Golden Test Depreciation Expense', 'expense', 'disallowable', 'depreciation_expense'],
             [91018, 'GOLDEN-TEST-91018', 'Golden Test Prepayments', 'asset', 'other', 'prepayments'],
             [91019, 'GOLDEN-TEST-91019', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
+            [91028, '6160', 'Golden Test Charitable Donations', 'expense', 'other', 'charitable_donations'],
         ];
         foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeCode]) {
             $existingId = (int)InterfaceDB::fetchColumn(
@@ -365,6 +368,7 @@ final class GoldenAccountsFixture
             self::insertPeriod(self::GOLDEN_COMPANY_ID, $period);
             self::seedPeriodActivity($index, $period);
         }
+        self::seedCharitableDonation();
         self::seedFixedAssets();
         self::seedHmrcPenaltyLifecycle();
         self::seedFourPeriodPrepayment();
@@ -701,6 +705,66 @@ final class GoldenAccountsFixture
                     . $periodId . ': ' . implode(' ', (array)($posting['errors'] ?? [])));
             }
         }
+    }
+
+    private static function seedCharitableDonation(): void
+    {
+        $nominalId = self::nominalId(91028);
+        $transaction = [
+            'id' => 9196,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'accounting_period_id' => 9113,
+            'statement_upload_id' => 9142,
+            'account_id' => 9120,
+            'txn_date' => '2025-04-15',
+            'txn_type' => 'Synthetic',
+            'description' => 'Golden Community Charity donation',
+            'reference' => 'GOLDEN-CHARITY-DONATION-Y3',
+            'amount' => -250.00,
+            'currency' => 'GBP',
+            'source_type' => 'statement_csv',
+            'source_account_label' => 'Golden Current Account',
+            'balance' => 7185.00,
+            'counterparty_name' => 'Golden Community Charity',
+            'dedupe_hash' => hash('sha256', 'GOLDEN-CHARITY-DONATION-Y3'),
+            'nominal_account_id' => $nominalId,
+            'category_status' => 'manual',
+            'document_download_status' => 'skipped',
+        ];
+        self::insert('transactions', $transaction);
+        self::journal(9242, 9113, '2025-04-15', 'bank_csv', 'transaction:9196', $nominalId, 91001, 250.00);
+
+        $basis = hash('sha256', \eel_accounts\Support\Utf8::json([
+            'transaction_id' => 9196,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'accounting_period_id' => 9113,
+            'txn_date' => '2025-04-15',
+            'amount' => '-250.00',
+            'nominal_account_id' => $nominalId,
+        ], JSON_UNESCAPED_SLASHES));
+        self::insert('transaction_charitable_donation_verifications', [
+            'id' => 9196,
+            'company_id' => self::GOLDEN_COMPANY_ID,
+            'accounting_period_id' => 9113,
+            'transaction_id' => 9196,
+            'authority' => 'cc_ew',
+            'registration_number' => '9999999',
+            'entity_suffix' => '0',
+            'registered_name' => 'Golden Community Charity',
+            'registry_status' => 'registered',
+            'registered_on' => '2020-01-01',
+            'removed_on' => null,
+            'source_url' => 'https://example.test/charities/9999999',
+            'verified_at' => '2025-04-15 12:00:00',
+            'verified_by' => 'golden-test',
+            'response_sha256' => hash('sha256', 'GOLDEN-CHARITY-REGISTRY-RESPONSE'),
+            'basis_sha256' => $basis,
+        ]);
+        InterfaceDB::prepareExecute(
+            'UPDATE statement_uploads
+             SET rows_parsed = 5, rows_inserted = 5, rows_valid = 5, rows_committed = 5
+             WHERE id = 9142'
+        );
     }
 
     /** @param array{id: int, label: string, start: string, end: string} $period */

@@ -41,6 +41,26 @@ $h->run(_filing_evidence_charitable_donationsCard::class, static function (Gener
         $h->assertTrue(str_contains($html, '£ 250.00'));
         $h->assertTrue(str_contains($html, 'may reduce Corporation Tax owed'));
     });
+    $h->check($card::class, 'renders an explicit empty frozen donation state', static function () use ($h, $card): void {
+        $html = $card->render([
+            'company' => ['settings' => []],
+            'services' => ['filingEvidenceCharitableDonations' => [
+                'available' => true,
+                'section' => ['record_count' => 0, 'snapshot_hash' => str_repeat('e', 64)],
+                'payload' => ['totals' => ['verified_amount' => 0.00], 'records' => []],
+            ]],
+        ]);
+        $h->assertTrue(str_contains($html, 'No verified qualifying charitable donations were frozen'));
+        $h->assertTrue(str_contains($html, 'Frozen payments'));
+    });
+    $h->check($card::class, 'does not reconstruct donations for a historic bundle without a snapshot', static function () use ($h, $card): void {
+        $html = $card->render(['services' => ['filingEvidenceCharitableDonations' => [
+            'available' => false,
+            'errors' => ['Charitable-donation evidence was not captured for this historic bundle.'],
+        ]]]);
+        $h->assertTrue(str_contains($html, 'not captured for this historic bundle'));
+        $h->assertSame(false, str_contains($html, '<table>'));
+    });
 });
 $h->run(_filing_evidence_coverageCard::class, static function (GeneratedServiceClassTestHarness $h, _filing_evidence_coverageCard $card): void {
     $h->check($card::class, 'labels legacy section gaps without reconstructing live records', static function () use ($h, $card): void {

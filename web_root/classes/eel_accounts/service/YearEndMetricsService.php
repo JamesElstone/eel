@@ -730,6 +730,13 @@ final class YearEndMetricsService
             'disposal_profit_or_loss_adjustment' => round((float)(
                 $result['disposal_profit_or_loss_adjustment'] ?? 0
             ), 2),
+            'qualifying_charitable_donation_add_back' => round((float)(
+                $result['qualifying_charitable_donation_add_back'] ?? 0
+            ), 2),
+            'qualifying_charitable_donations_paid' => round((float)(
+                $result['qualifying_charitable_donations_paid'] ?? 0
+            ), 2),
+            'charitable_donation_rows' => array_values((array)($result['charitable_donation_rows'] ?? [])),
             'depreciation_expense' => round((float)$result['depreciation_expense'], 2),
             'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $result)
                 || !empty($result['prepayment_preview_reliable']),

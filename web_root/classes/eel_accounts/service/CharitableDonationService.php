@@ -154,7 +154,11 @@ final class CharitableDonationService
             'response_sha256' => preg_match('/^[a-f0-9]{64}$/', $responseSha256) === 1 ? $responseSha256 : hash('sha256', $responseSha256),
             'basis_sha256' => $basis,
         ]);
-        return (int)\InterfaceDB::lastInsertId();
+        return (int)(\InterfaceDB::fetchColumn(
+            strtolower(\InterfaceDB::driverName()) === 'sqlite'
+                ? 'SELECT last_insert_rowid()'
+                : 'SELECT LAST_INSERT_ID()'
+        ) ?: 0);
     }
 
     public function currentVerification(int $transactionId): ?array

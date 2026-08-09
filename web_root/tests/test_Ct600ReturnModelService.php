@@ -260,6 +260,58 @@ function ct600_return_model_test_service(array $filing): \eel_accounts\Service\C
 
         $h->check(
             \eel_accounts\Service\Ct600ReturnModelService::class,
+            'preserves the Golden donation deduction after brought-forward loss relief',
+            static function () use ($h): void {
+                $filing = ct600_return_model_test_filing();
+                $filing['model']['computation']['summary'] = array_replace(
+                    $filing['model']['computation']['summary'],
+                    [
+                        'accounting_profit' => 1699.62,
+                        'taxable_before_losses' => 6953.00,
+                        'taxable_profit' => 4837.00,
+                        'taxable_loss' => 0.00,
+                        'losses_brought_forward' => 1866.00,
+                        'losses_used' => 1866.00,
+                        'losses_carried_forward' => 0.00,
+                        'loss_created_in_period' => 0.00,
+                        'profits_before_donations_group_relief' => 5087.00,
+                        'qualifying_charitable_donations_claimed' => 250.00,
+                        'ordinary_corporation_tax' => 919.03,
+                        'estimated_corporation_tax' => 919.03,
+                        'loss_restriction' => [
+                            'post_2017_trading_losses' => [
+                                'brought_forward' => 1866.00,
+                                'arising' => 0.00,
+                                'used' => 1866.00,
+                                'carried_forward' => 0.00,
+                            ],
+                            'carried_forward_loss_relief_claimed' => 1866.00,
+                        ],
+                    ]
+                );
+                $filing['model']['filing_decisions']['tax_calculation_bands'] = [[
+                    'financial_year' => '2025',
+                    'profit' => 4837.00,
+                    'tax_rate_percent' => 19.0,
+                    'gross_tax' => 919.03,
+                    'marginal_relief' => 0.0,
+                    'net_tax' => 919.03,
+                    'basis' => 'small_profits_rate',
+                ]];
+
+                $result = ct600_return_model_test_service($filing)->build(49, 79, 6);
+                $h->assertSame(true, (bool)($result['ok'] ?? false));
+                $calculation = (array)$result['model']['calculation'];
+                $h->assertSame(1866.00, (float)$calculation['trading_losses_carried_forward_claimed']);
+                $h->assertSame(5087.00, (float)$calculation['profits_before_donations_group_relief']);
+                $h->assertSame(250.00, (float)$calculation['qualifying_charitable_donations']);
+                $h->assertSame(4837.00, (float)$result['model']['amounts']['taxable_profit']);
+                $h->assertSame(919.03, (float)$result['model']['amounts']['tax_payable']);
+            }
+        );
+
+        $h->check(
+            \eel_accounts\Service\Ct600ReturnModelService::class,
             'fails closed when the frozen Corporation Tax UTR is invalid',
             static function () use ($h): void {
                 $filing = ct600_return_model_test_filing();

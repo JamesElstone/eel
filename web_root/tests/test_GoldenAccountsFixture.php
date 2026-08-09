@@ -18,11 +18,11 @@ $harness->check(GoldenAccountsFixture::class, 'builds deterministic synthetic ac
     $harness->assertSame(false, (bool)($manifest['privacy']['live_rows_copied'] ?? true));
     $harness->assertSame(4, count((array)($manifest['periods'] ?? [])));
     $harness->assertSame(4, InterfaceDB::countWhere('accounting_periods', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
-    $harness->assertSame(19, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
+    $harness->assertSame(20, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     $harness->assertSame(4, InterfaceDB::countWhere('expense_claims', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     $harness->assertSame(4, InterfaceDB::countWhere('asset_register', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     GoldenAccountsFixture::build();
-    $harness->assertSame(19, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
+    $harness->assertSame(20, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
 });
 
 $harness->check(GoldenAccountsFixture::class, 'seeds a confirmed, transaction-backed CT600A scenario without manual tax events', static function () use ($harness): void {

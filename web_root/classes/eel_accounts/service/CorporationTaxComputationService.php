@@ -2612,6 +2612,7 @@ final class CorporationTaxComputationService
             'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
             'unrelieved_qualifying_charitable_donations' => $unrelievedQualifyingDonations,
             'profits_before_donations_group_relief' => $profitsBeforeDonationsGroupRelief,
+            'charitable_donation_rows' => array_values((array)($profitAndLoss['charitable_donation_rows'] ?? [])),
             'taxable_before_losses' => $taxableBeforeLosses,
             'taxable_profit' => $taxableProfit,
             'taxable_loss' => round($lossCreated, 2),

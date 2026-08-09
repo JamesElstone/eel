@@ -37,17 +37,22 @@ final class GoldenHmrcCorporationTaxOracle
             $accountingProfit = round((float)($facts['accounting_profit'] ?? 0), 2);
             $disallowableAddBacks = round((float)($facts['disallowable_add_backs'] ?? 0), 2);
             $depreciationAddBack = round((float)($facts['depreciation_add_back'] ?? 0), 2);
+            $charitableDonationAddBack = round((float)($facts['charitable_donation_add_back'] ?? 0), 2);
+            $qualifyingDonationsPaid = round(max(0.0, (float)($facts['qualifying_charitable_donations_paid'] ?? 0)), 2);
             $capitalAllowances = round((float)($facts['capital_allowances'] ?? 0), 2);
             $taxableBeforeLosses = round(
-                $accountingProfit + $disallowableAddBacks + $depreciationAddBack - $capitalAllowances,
+                $accountingProfit + $disallowableAddBacks + $charitableDonationAddBack + $depreciationAddBack - $capitalAllowances,
                 2
             );
 
             $lossesBroughtForward = $lossesCarriedForward;
-            $lossesUsed = $taxableBeforeLosses > 0
-                ? min($lossesBroughtForward, $taxableBeforeLosses)
+            $lossClaimCapacity = max(0.0, round($taxableBeforeLosses - $qualifyingDonationsPaid, 2));
+            $lossesUsed = $lossClaimCapacity > 0
+                ? min($lossesBroughtForward, $lossClaimCapacity)
                 : 0.0;
-            $taxableProfit = round(max(0.0, $taxableBeforeLosses - $lossesUsed), 2);
+            $profitsBeforeDonations = round(max(0.0, $taxableBeforeLosses - $lossesUsed), 2);
+            $qualifyingDonationsClaimed = min($qualifyingDonationsPaid, $profitsBeforeDonations);
+            $taxableProfit = round(max(0.0, $profitsBeforeDonations - $qualifyingDonationsClaimed), 2);
             $newLoss = max(0.0, -$taxableBeforeLosses);
             $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $newLoss, 2);
 
@@ -66,6 +71,10 @@ final class GoldenHmrcCorporationTaxOracle
                 'accounting_profit' => $accountingProfit,
                 'disallowable_add_backs' => $disallowableAddBacks,
                 'depreciation_add_back' => $depreciationAddBack,
+                'charitable_donation_add_back' => $charitableDonationAddBack,
+                'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+                'qualifying_charitable_donations_claimed' => round($qualifyingDonationsClaimed, 2),
+                'profits_before_donations_group_relief' => $profitsBeforeDonations,
                 'capital_allowances' => $capitalAllowances,
                 'taxable_before_losses' => $taxableBeforeLosses,
                 'losses_brought_forward' => $lossesBroughtForward,

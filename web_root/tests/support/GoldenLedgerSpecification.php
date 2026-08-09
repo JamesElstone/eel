@@ -33,7 +33,7 @@ final class GoldenLedgerSpecification
         return [
             9111 => ['depreciation_entries' => 3, 'depreciation' => 2190.05, 'profit_before_tax' => 5034.95, 'capital_allowances' => 6300.00, 'taxable_profit' => 925.00, 'corporation_tax' => 175.75],
             9112 => ['depreciation_entries' => 4, 'depreciation' => 5027.19, 'profit_before_tax' => 1506.81, 'capital_allowances' => 9000.00, 'taxable_profit' => 0.00, 'corporation_tax' => 0.00],
-            9113 => ['depreciation_entries' => 4, 'depreciation' => 5003.38, 'profit_before_tax' => 1949.62, 'capital_allowances' => 0.00, 'taxable_profit' => 5087.00, 'corporation_tax' => 966.53],
+            9113 => ['depreciation_entries' => 4, 'depreciation' => 5003.38, 'profit_before_tax' => 1699.62, 'capital_allowances' => 0.00, 'taxable_profit' => 4837.00, 'corporation_tax' => 919.03],
         ];
     }
 
@@ -43,7 +43,7 @@ final class GoldenLedgerSpecification
         return [
             9111 => ['period_start' => '2022-09-05', 'period_end' => '2023-09-30', 'accounting_profit' => 5034.95, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 2190.05, 'capital_allowances' => 6300.00, 'associated_company_count' => 0],
             9112 => ['period_start' => '2023-10-01', 'period_end' => '2024-09-30', 'accounting_profit' => 1506.81, 'disallowable_add_backs' => 600.00, 'depreciation_add_back' => 5027.19, 'capital_allowances' => 9000.00, 'associated_company_count' => 0],
-            9113 => ['period_start' => '2024-10-01', 'period_end' => '2025-09-30', 'accounting_profit' => 1949.62, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 5003.38, 'capital_allowances' => 0.00, 'associated_company_count' => 0, 'hmrc_interest_amount' => 90.00, 'hmrc_interest_type' => 'corporation_tax_late_payment'],
+            9113 => ['period_start' => '2024-10-01', 'period_end' => '2025-09-30', 'accounting_profit' => 1699.62, 'disallowable_add_backs' => 0.00, 'charitable_donation_add_back' => 250.00, 'qualifying_charitable_donations_paid' => 250.00, 'depreciation_add_back' => 5003.38, 'capital_allowances' => 0.00, 'associated_company_count' => 0, 'hmrc_interest_amount' => 90.00, 'hmrc_interest_type' => 'corporation_tax_late_payment'],
             9114 => ['period_start' => '2025-10-01', 'period_end' => '2026-09-30', 'accounting_profit' => 7137.00, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 0.00, 'capital_allowances' => 0.00, 'associated_company_count' => 0],
         ];
     }
@@ -75,7 +75,8 @@ final class GoldenLedgerSpecification
                 ['date' => '2025-07-01', 'source' => 'annual_subscription', 'debit' => 'prepayment_expense', 'credit' => 'bank', 'amount' => 365.00],
                 ['date' => '2025-09-30', 'source' => 'prepayment_deferral', 'debit' => 'prepaid_expenses', 'credit' => 'prepayment_expense', 'amount' => 273.00],
                 ['date' => '2024-10-01', 'source' => 'prepayment_release_long_3', 'debit' => 'prepayment_expense', 'credit' => 'prepaid_expenses', 'amount' => 365.00],
-            ], 0.00, 4),
+                ['date' => '2025-04-15', 'source' => 'charitable_donation', 'debit' => 'charitable_donations', 'credit' => 'bank', 'amount' => 250.00],
+            ], 0.00, 5),
             9114 => self::period('2025-10-01', '2026-09-30', [
                 ['date' => '2026-02-15', 'source' => 'hmrc_payment', 'debit' => 'hmrc_payable', 'credit' => 'bank', 'amount' => 690.00],
                 ['date' => '2025-10-01', 'source' => 'prepayment_release', 'debit' => 'prepayment_expense', 'credit' => 'prepaid_expenses', 'amount' => 273.00],

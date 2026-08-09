@@ -923,7 +923,10 @@ function goldenYearEndApproveSection(int $companyId, int $accountingPeriodId, st
     if (empty($review['available']) || empty($review['can_approve'])) {
         throw new RuntimeException(
             'AP ' . $accountingPeriodId . ' / ' . $checkCode . ' could not be approved: '
-            . implode(' ', array_map('strval', (array)($review['errors'] ?? $review['approval_errors'] ?? [])))
+            . implode(' ', array_map('strval', array_merge(
+                (array)($review['errors'] ?? []),
+                (array)($review['approval_errors'] ?? [])
+            )))
         );
     }
 

@@ -74,7 +74,7 @@ $harness->check(GoldenHmrcCorporationTaxOracle::class, 'independently applies HM
     $expected = [
         9111 => ['taxable_before_losses' => 925.00, 'losses_used' => 0.00, 'taxable_profit' => 925.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 175.75],
         9112 => ['taxable_before_losses' => -1866.00, 'losses_used' => 0.00, 'taxable_profit' => 0.00, 'losses_carried_forward' => 1866.00, 'corporation_tax' => 0.00],
-        9113 => ['taxable_before_losses' => 6953.00, 'losses_used' => 1866.00, 'taxable_profit' => 5087.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 966.53],
+        9113 => ['taxable_before_losses' => 6953.00, 'losses_used' => 1866.00, 'profits_before_donations_group_relief' => 5087.00, 'qualifying_charitable_donations_claimed' => 250.00, 'taxable_profit' => 4837.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 919.03],
         9114 => ['taxable_before_losses' => 7137.00, 'losses_used' => 0.00, 'taxable_profit' => 7137.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1356.03],
     ];
     $actual = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
@@ -135,13 +135,13 @@ $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalt
             'tax' => 0.00,
         ],
         9113 => [
-            'profit_before_tax' => 1949.62,
+            'profit_before_tax' => 1699.62,
             'add_back' => 0.00,
             'capital_allowances' => 0.00,
             'taxable_before_losses' => 6953.00,
             'losses_used' => 1866.00,
-            'taxable_profit' => 5087.00,
-            'tax' => 966.53,
+            'taxable_profit' => 4837.00,
+            'tax' => 919.03,
         ],
         9114 => [
             'profit_before_tax' => 7137.00,
@@ -165,6 +165,12 @@ $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalt
         $harness->assertSame($values['losses_used'], (float)($tax['summary']['losses_used'] ?? 0));
         $harness->assertSame($values['taxable_profit'], (float)($tax['summary']['taxable_profit'] ?? 0));
         $harness->assertSame($values['tax'], (float)($tax['summary']['estimated_corporation_tax'] ?? 0));
+        if ($periodId === 9113) {
+            $harness->assertSame(250.00, (float)($tax['summary']['qualifying_charitable_donation_add_back'] ?? 0));
+            $harness->assertSame(250.00, (float)($tax['summary']['qualifying_charitable_donations_paid'] ?? 0));
+            $harness->assertSame(250.00, (float)($tax['summary']['qualifying_charitable_donations_claimed'] ?? 0));
+            $harness->assertSame(5087.00, (float)($tax['summary']['profits_before_donations_group_relief'] ?? 0));
+        }
     }
 
     $obligations = InterfaceDB::fetchAll(
@@ -217,7 +223,7 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
         goldenCompare($failures, 'loans', 'director_loan_state', $periodId, 'closing_balance', $expected['director_loan']['closing'], $directorLoan['closing_balance'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'taxable_profit', $expected['corporation_tax']['taxable_profit'], $tax['summary']['taxable_profit'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'estimated_corporation_tax', $expected['profit_loss']['estimated_corporation_tax'], $tax['summary']['estimated_corporation_tax'] ?? null);
-        foreach (['accounting_profit', 'disallowable_add_backs', 'depreciation_add_back', 'capital_allowances', 'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax', 'estimated_rate', 'losses_brought_forward', 'losses_used', 'losses_carried_forward'] as $field) {
+        foreach (['accounting_profit', 'disallowable_add_backs', 'depreciation_add_back', 'capital_allowances', 'qualifying_charitable_donation_add_back', 'qualifying_charitable_donations_paid', 'qualifying_charitable_donations_claimed', 'unrelieved_qualifying_charitable_donations', 'profits_before_donations_group_relief', 'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax', 'estimated_rate', 'losses_brought_forward', 'losses_used', 'losses_carried_forward'] as $field) {
             goldenCompare($failures, 'tax', 'tax_taxable_profit_bridge', $periodId, $field, $expected['corporation_tax'][$field], $tax['summary'][$field] ?? null);
         }
         goldenCompare($failures, 'tax', 'tax_disallowable_add_backs', $periodId, 'row_count', $expected['corporation_tax']['disallowable_add_backs'] > 0 ? 1 : 0, count((array)($tax['disallowable_add_backs'] ?? [])));

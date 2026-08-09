@@ -118,6 +118,9 @@ final class GoldenAccountingOracle
         $taxResult = (array)(self::hmrcTaxSequence()[$periodId] ?? []);
         $capitalAllowances = round((float)($taxResult['capital_allowances'] ?? 0), 2);
         $taxableBeforeLosses = round((float)($taxResult['taxable_before_losses'] ?? 0), 2);
+        $profitsBeforeDonations = round((float)($taxResult['profits_before_donations_group_relief'] ?? 0), 2);
+        $qualifyingDonationsPaid = round((float)($taxResult['qualifying_charitable_donations_paid'] ?? 0), 2);
+        $qualifyingDonationsClaimed = round((float)($taxResult['qualifying_charitable_donations_claimed'] ?? 0), 2);
         $taxableProfit = round((float)($taxResult['taxable_profit'] ?? 0), 2);
         $taxableLoss = round(max(0.0, 0 - $taxableBeforeLosses), 2);
         $tax = round((float)($taxResult['corporation_tax'] ?? 0), 2);
@@ -211,6 +214,11 @@ final class GoldenAccountingOracle
                 'disallowable_add_backs' => $disallowableAddBack,
                 'depreciation_add_back' => $depreciation,
                 'capital_allowances' => $capitalAllowances,
+                'qualifying_charitable_donation_add_back' => round((float)($taxResult['charitable_donation_add_back'] ?? 0), 2),
+                'qualifying_charitable_donations_paid' => $qualifyingDonationsPaid,
+                'qualifying_charitable_donations_claimed' => $qualifyingDonationsClaimed,
+                'unrelieved_qualifying_charitable_donations' => round($qualifyingDonationsPaid - $qualifyingDonationsClaimed, 2),
+                'profits_before_donations_group_relief' => $profitsBeforeDonations,
                 'taxable_before_losses' => $taxableBeforeLosses,
                 'taxable_profit' => $taxableProfit,
                 'taxable_loss' => $taxableLoss,
@@ -338,7 +346,8 @@ final class GoldenAccountingOracle
             (float)($balances['overheads'] ?? 0)
             + (float)($balances['hmrc_penalty'] ?? 0)
             + (float)($balances['hmrc_interest'] ?? 0)
-            + (float)($balances['prepayment_expense'] ?? 0),
+            + (float)($balances['prepayment_expense'] ?? 0)
+            + (float)($balances['charitable_donations'] ?? 0),
             2
         );
         $depreciation = self::depreciationPreviewForPeriod($periodId);

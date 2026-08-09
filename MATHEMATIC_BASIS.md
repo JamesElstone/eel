@@ -63,9 +63,11 @@ The assurance in this document applies to:
 - accounting depreciation calculated by the supported straight-line or reducing-balance methods;
 - depreciation add-back;
 - disallowable expense add-backs where the period balance represents a positive expense;
+- reviewed capital expenditure charged to profit and loss and classified with the supported `capital` tax treatment, added back through `capital_expenditure_add_backs`;
 - Annual Investment Allowance for supported qualifying plant, machinery, tools, equipment and vans;
 - supported car treatment: 100% first-year allowance for qualifying new and unused zero-emission cars, or main/special-rate pool writing-down allowance according to the recorded vehicle facts;
 - main-pool and special-rate-pool writing-down allowance;
+- removal of the accounting profit or loss on disposal of a supported registered fixed asset through `disposal_profit_or_loss_adjustment`;
 - pool disposal values and balancing charges produced by the supported capital-allowance model;
 - ordinary carried-forward trading losses below the loss-restriction threshold;
 - the non-ring-fence rate regimes represented by active, date-effective rate rules;
@@ -93,8 +95,6 @@ This document does not claim mathematical coverage for:
 - close investment-holding company restrictions;
 - qualifying exempt distributions where augmented profits exceed taxable total profits;
 - chargeable gains or capital losses;
-- periods containing a book profit or loss on disposal that requires removal from trading profit under tax rules;
-- capital expenditure charged directly to the profit and loss account: the calculation identifies `capital` treatment rows but the current taxable-profit bridge does not add that separate value back, so such rows must be nil before reliance;
 - a credit balance or reversal in a disallowable expense nominal: the implemented add-back takes the magnitude of the net expense row, so these cases require separate review;
 - R&D relief or expenditure credits, Patent Box, creative-industry reliefs, charitable donations, group relief, loss carry-back, terminal-loss relief, property-business losses, non-trading loan relationships, foreign tax or double-taxation relief;
 - the carried-forward loss restriction above the available deductions allowance;

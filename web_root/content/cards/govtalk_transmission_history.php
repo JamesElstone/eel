@@ -382,7 +382,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                         trim((string)($exchange['transaction_id'] ?? '')),
                         trim((string)($exchange['correlation_id'] ?? '')),
                     ], static fn(string $value): bool => $value !== ''));
-                }
+                },
+                preserveExportLineBreaks: true
             )
             ->column(
                 'sent_at',
@@ -411,7 +412,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 ),
                 export: fn(array $exchange): string => $this->govTalkErrorsExport(
                     (array)($exchange['govtalk_errors'] ?? [])
-                )
+                ),
+                preserveExportLineBreaks: true
             )
             ->column(
                 'outcome',

@@ -1672,6 +1672,9 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                         ],
                         'companies_house_accounts' => [
                             'profile' => $companiesHouseProfile,
+                            'artifact' => [
+                                'generated_at' => '2026-08-03 10:00:30',
+                            ],
                             'state' => 'filing_ready',
                             'ready' => true,
                             'errors' => [],
@@ -1692,7 +1695,7 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
                     'filing_required' => true,
                     'filing_kind' => 'original',
                     'can_prepare' => true,
-                    'submission' => ['id' => 901, 'lifecycle' => 'prepared', 'prepared_at' => '2026-08-03 10:01:00'],
+                    'submission' => ['id' => 901, 'lifecycle' => 'prepared', 'prepared_at' => '2026-08-03 09:00:00'],
                     'prepared_artifact' => ['filename' => 'companies-house.xhtml', 'path' => __FILE__, 'fact_count' => 42],
                 ],
             ],
@@ -1709,6 +1712,8 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($hmrcPanel, 'HMRC-only transformation failure.'));
         $harness->assertTrue(str_contains($companiesHousePanel, 'Companies House accounts v1.0.0'));
         $harness->assertTrue(str_contains($companiesHousePanel, '<div class="summary-value">2015</div>'));
+        $harness->assertTrue(str_contains($companiesHousePanel, '<div class="summary-value">2026-08-03 10:00:30</div>'));
+        $harness->assertFalse(str_contains($companiesHousePanel, '2026-08-03 09:00:00'));
         $harness->assertFalse(str_contains($companiesHousePanel, 'HMRC-only transformation failure.'));
         $harness->assertTrue(preg_match('/<button class="button primary" type="submit">Generate All Filing Artefacts<\/button>/', $html) === 1);
     });

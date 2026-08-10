@@ -280,6 +280,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $authorityStatus = (array)($readiness['authority_readiness']['companies_house_accounts']
             ?? $readiness['companies_house_accounts']
             ?? []);
+        $authorityArtifact = (array)($authorityStatus['artifact'] ?? []);
         $authorityValidation = (array)($authorityStatus['display_validation'] ?? []);
         $arelleStatus = (array)($readiness['arelle_status'] ?? []);
         $revisedValidation = (array)($filing['revised_validation'] ?? []);
@@ -367,7 +368,10 @@ final class _ixbrl_generationCard extends CardBaseFramework
             . \eel_accounts\Support\Utf8::html($filingLabel) . '-accounts iXBRL artifact. It has not been transmitted by this page.</div>'
             . $activeSubmissionNotice
             . '<div class="summary-grid">'
-            . $this->metric('Generated At', (string)($submission['prepared_at'] ?? ''))
+            . $this->metric('Generated At', (string)($authorityArtifact['generated_at']
+                ?? $artifact['generated_at']
+                ?? $submission['prepared_at']
+                ?? ''))
             . $this->metric('Facts', (string)(int)($artifact['fact_count'] ?? $revisedValidation['fact_count'] ?? 0))
             . $this->metric('Export Type', 'Companies House')
             . $this->metric('Authority Profile', $this->profileLabel($authorityStatus, 'Companies House accounts'))

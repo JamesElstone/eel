@@ -957,8 +957,8 @@ final class IxbrlAccountingService
 html, body { margin: 0; padding: 0; }
 body {
     background: #e7e8ea;
-    color: #111;
-    font-family: "Times New Roman", Times, serif;
+    color: #000;
+    font-family: Arial, Helvetica, sans-serif;
     font-size: 10.5pt;
     line-height: 1.28;
 }

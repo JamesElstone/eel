@@ -231,14 +231,6 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $mode = strtoupper((string)($transmitForm['mode'] ?? 'TEST'));
         $disabled = !empty($transmitForm['disabled']);
         $filingLabel = ucfirst($filingKind);
-        $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
-        $live = $mode === 'LIVE'
-            ? '<label class="checkbox-row"><input type="checkbox" name="authority_confirmed" value="1" required> '
-                . '<span>I am authorised to file these statutory accounts.</span></label>'
-                . '<label><span>Type <strong>' . \eel_accounts\Support\Utf8::html($confirmationPhrase)
-                . '</strong> to confirm</span>'
-                . '<input class="input" type="text" name="live_confirmation_phrase" required autocomplete="off"></label>'
-            : '';
 
         return $html
             . '<form method="post" action="?page=transmit" data-ajax="true" '
@@ -246,11 +238,11 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . $this->hidden($companyId, $accountingPeriodId, 'submit_accounts')
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
             . $this->companyAuthenticationCodeField()
-            . $live
             . '<button class="button danger" type="submit" data-chicken-check="true" '
             . 'data-chicken-title="Send ' . \eel_accounts\Support\Utf8::html($filingLabel) . ' accounts" '
             . 'data-chicken-message="Send this immutable ' . \eel_accounts\Support\Utf8::html($filingKind) . '-accounts package to Companies House '
-            . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts"'
+            . \eel_accounts\Support\Utf8::html($mode) . '?" data-chicken-confirm-text="Send accounts" '
+            . 'data-chicken-button-class="button danger"'
             . ($disabled ? ' disabled aria-disabled="true"' : '') . '>'
             . 'Transmit Company Accounts</button></form></section>';
     }

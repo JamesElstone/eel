@@ -38,6 +38,39 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
+        'uses one danger chicken confirmation for LIVE transmission',
+        static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => ['id' => 49, 'accounting_period_id' => 80],
+                'services' => [
+                    'companies_house_transmit_context' => [
+                        'feature' => ['mode' => 'LIVE', 'credentials_configured' => true],
+                        'sequence' => ['next_number' => '000001'],
+                        'submission' => [
+                            'id' => 712,
+                            'lifecycle' => 'prepared',
+                            'filing_kind' => 'revised',
+                        ],
+                        'prepared_artifact' => ['state' => 'current', 'current' => true],
+                        'can_submit' => true,
+                        'submission_blockers' => [],
+                    ],
+                    'companies_house_schema_status' => ['state' => ['ready' => true]],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'class="button danger"'));
+            $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
+            $harness->assertTrue(str_contains($html, 'data-chicken-button-class="button danger"'));
+            $harness->assertFalse(str_contains($html, 'name="authority_confirmed"'));
+            $harness->assertFalse(str_contains($html, 'name="live_confirmation_phrase"'));
+            $harness->assertFalse(str_contains($html, 'SUBMIT LIVE REVISED ACCOUNTS'));
+            $harness->assertFalse(str_contains($html, 'I am authorised to file these statutory accounts.'));
+        }
+    );
+
+    $harness->check(
+        _companies_house_transmitCard::class,
         'shows an older active submission separately from the current prepared artifact',
         static function () use ($harness, $card): void {
             $html = $card->render([

@@ -367,15 +367,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         if (!in_array($mode, ['TEST', 'LIVE'], true)) {
             return ['success' => false, 'errors' => ['Companies House accounts filing is disabled.']];
         }
-        if ($mode === 'LIVE') {
-            if ((string)$request->input('authority_confirmed', '') !== '1') {
-                return ['success' => false, 'errors' => ['Confirm that you are authorised to file these statutory accounts.']];
-            }
-            $confirmationPhrase = 'SUBMIT LIVE ' . strtoupper($filingKind) . ' ACCOUNTS';
-            if (trim((string)$request->input('live_confirmation_phrase', '')) !== $confirmationPhrase) {
-                return ['success' => false, 'errors' => ['Type the exact LIVE submission confirmation phrase before filing.']];
-            }
-        }
 
         return $this->service()->submitAccounts(
             $submissionId,

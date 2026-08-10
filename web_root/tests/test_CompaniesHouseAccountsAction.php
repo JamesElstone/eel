@@ -216,39 +216,16 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         )));
     });
 
-    $harness->check(CompaniesHouseAccountsAction::class, 'requires authority and the exact phrase for LIVE submission', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'submits LIVE without duplicate authority fields after filing approval', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
         $service->context['feature'] = ['mode' => 'LIVE', 'enabled' => true];
         $service->context['submission'] = ['id' => 78, 'filing_kind' => 'revised'];
         $action = companiesHouseAccountsTestAction($service);
-        $base = [
+        $submitted = $action->handle(companiesHouseAccountsActionRequest([
             'intent' => 'submit_revised_accounts',
             'submission_id' => '78',
             'company_auth_code' => 'XYZ789',
-        ];
-
-        $missingAuthority = $action->handle(companiesHouseAccountsActionRequest($base), createTestPageServiceFramework());
-        $harness->assertSame(false, $missingAuthority->isSuccess());
-        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($missingAuthority), 'authorised'));
-
-        $wrongPhrase = $action->handle(companiesHouseAccountsActionRequest(array_merge($base, [
-            'authority_confirmed' => '1',
-            'live_confirmation_phrase' => 'SUBMIT',
-        ])), createTestPageServiceFramework());
-        $harness->assertSame(false, $wrongPhrase->isSuccess());
-        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($wrongPhrase), 'exact LIVE'));
-
-        $wrongFilingKind = $action->handle(companiesHouseAccountsActionRequest(array_merge($base, [
-            'authority_confirmed' => '1',
-            'live_confirmation_phrase' => 'SUBMIT LIVE ORIGINAL ACCOUNTS',
-        ])), createTestPageServiceFramework());
-        $harness->assertSame(false, $wrongFilingKind->isSuccess());
-        $harness->assertSame(true, str_contains(companiesHouseAccountsActionFlash($wrongFilingKind), 'exact LIVE'));
-
-        $submitted = $action->handle(companiesHouseAccountsActionRequest(array_merge($base, [
-            'authority_confirmed' => '1',
-            'live_confirmation_phrase' => 'SUBMIT LIVE REVISED ACCOUNTS',
-        ])), createTestPageServiceFramework());
+        ]), createTestPageServiceFramework());
         $harness->assertSame(true, $submitted->isSuccess());
         $submitCalls = array_values(array_filter($service->calls, static fn(array $call): bool => ($call['method'] ?? '') === 'submitAccounts'));
         $harness->assertCount(1, $submitCalls);

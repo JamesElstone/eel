@@ -557,9 +557,21 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             ? ' disabled aria-disabled="true"'
             : '';
         $approvalDisabled = !$canSubmitApproval ? ' disabled aria-disabled="true"' : '';
+        $accountsCurrent = !empty($accountsStatus['current']);
+        $hmrcCurrent = !empty($hmrcStatus['current']);
+        $hmrcOnlyApproval = $accountsCurrent && !$hmrcCurrent;
+        $approvalBadge = $bothCurrent
+            ? 'Current'
+            : ($hmrcOnlyApproval ? 'HMRC approval required' : 'Approval required');
+        $approvalButton = $hmrcOnlyApproval
+            ? 'Approve HMRC Corporation Tax Return'
+            : 'Approve Accounts and Corporation Tax Return';
+        $approvalConfirmation = $hmrcOnlyApproval
+            ? 'Approval confirms the current Corporation Tax return. The existing statutory-accounts approval remains unchanged. It creates filing evidence only; it does not transmit or send anything to HMRC.'
+            : 'Approval confirms that the information on this page is a true and accurate reflection of this business. It creates filing evidence only; it does not transmit or send anything to Companies House or HMRC.';
 
         return '<section class="panel-soft ixbrl-approval-panel">
-            <div class="status-head"><h3 class="card-title">Accounts and Corporation Tax Approval</h3><span class="badge ' . ($bothCurrent ? 'success' : 'warning') . '">' . ($bothCurrent ? 'Current' : 'Approval required') . '</span></div>
+            <div class="status-head"><h3 class="card-title">Accounts and Corporation Tax Approval</h3><span class="badge ' . ($bothCurrent ? 'success' : 'warning') . '">' . $approvalBadge . '</span></div>
             <div class="helper">The two filing approvals remain separate immutable evidence records even though they are confirmed together here.</div>
             <div class="form-row full table-scroll"><table><thead><tr><th>Filing basis</th><th>Status</th><th>Evidence</th></tr></thead><tbody>'
                 . $accounts . $hmrc . '
@@ -567,13 +579,13 @@ final class _ixbrl_accounts_disclosuresCard extends CardBaseFramework
             <div class="form-row full"><label for="ixbrl_filing_approval_note">Approval note (optional)</label>
                 <textarea class="input" id="ixbrl_filing_approval_note" name="approval_note" rows="2"' . (!$yearEndLocked ? ' disabled aria-disabled="true"' : '') . '>' . \eel_accounts\Support\Utf8::html($approvalNote) . '</textarea></div>
             <div class="helper">Save Draft records changes to the editable disclosures and Corporation Tax declaration only. It does not create filing approvals.</div>
-            <div class="helper ixbrl-approval-confirmation">Approval confirms that the information on this page is a true and accurate reflection of this business. It creates filing evidence only; it does not transmit or send anything to Companies House or HMRC.</div>
+            <div class="helper ixbrl-approval-confirmation">' . $approvalConfirmation . '</div>
             ' . $blockerHtml . '
             <div class="actions-row ixbrl-disclosure-edit-actions">
                 <button class="button primary" type="submit" name="intent" value="edit_ixbrl_approval_draft" formnovalidate data-ixbrl-disclosures-edit="true"' . $editDisabled . '>Edit</button>
                 <button class="button secondary" type="submit" name="intent" value="save_ixbrl_approval_draft" data-ixbrl-disclosures-save="true"' . $draftDisabled . '>Save Draft</button>
                 <button class="button secondary" type="submit" name="intent" value="cancel_ixbrl_approval_edit" formnovalidate data-ixbrl-disclosures-cancel="true"' . $cancelDisabled . '>Cancel</button>
-                <button class="button primary" type="submit" name="intent" value="approve_ixbrl_accounts_and_ct" data-ixbrl-approval-submit="true"' . $approvalDisabled . '>Approve Accounts and Corporation Tax Return</button>
+                <button class="button primary" type="submit" name="intent" value="approve_ixbrl_accounts_and_ct" data-ixbrl-approval-submit="true"' . $approvalDisabled . '>' . $approvalButton . '</button>
             </div>
         </section>';
     }

@@ -50,11 +50,36 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 foreach ($fixture['ct_period_ids'] as $ctPeriodId) {
                     $model = $service->build($fixture['company_id'], $fixture['accounting_period_id'], $ctPeriodId);
                     $h->assertSame(true, (bool)($model['available'] ?? false));
+                    $h->assertSame('ct-period-filing-model-v12', (string)($model['basis_version'] ?? ''));
                     $h->assertSame((int)$approval['approval_id'], (int)($model['approval']['id'] ?? 0));
                     $h->assertSame((string)$approval['approval_hash'], (string)($model['approval']['basis_hash'] ?? ''));
                     $h->assertSame($ctPeriodId, (int)($model['model']['ct_period']['id'] ?? 0));
                     $h->assertSame((string)$model['basis_hash'], (string)($model['seal']['basis_hash'] ?? ''));
+                    $storedCt600a = (array)($model['model']['ct600a'] ?? []);
+                    $h->assertFalse(array_key_exists('evidence_cutoff', (array)($storedCt600a['s455'] ?? [])));
+                    $h->assertFalse(array_key_exists(
+                        'evidence_cutoff',
+                        (array)(($storedCt600a['s455'] ?? [])['basis'] ?? [])
+                    ));
                 }
+                $ct600aService = new \eel_accounts\Service\Ct600aService();
+                $clockFirst = $ct600aService->build(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    (int)$fixture['ct_period_ids'][0],
+                    '2030-01-01'
+                );
+                $clockSecond = $ct600aService->build(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    (int)$fixture['ct_period_ids'][0],
+                    '2030-01-02'
+                );
+                $h->assertTrue(array_key_exists('evidence_cutoff', (array)($clockFirst['s455'] ?? [])));
+                $h->assertSame(
+                    $ct600aService->filingBasisProjection($clockFirst),
+                    $ct600aService->filingBasisProjection($clockSecond)
+                );
             }
         });
 
@@ -128,6 +153,46 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $basisIds
             );
             $h->assertSame(0, $legacyBindings);
+        });
+
+        $h->check($service::class, 'keeps accepted v11 filing evidence readable after v12 becomes current', static function () use ($h, $service): void {
+            $fixture = ctPeriodFilingModelFixture(1);
+            ctPeriodFilingModelConvertToV11($fixture, true);
+            \eel_accounts\Support\RequestCache::reset();
+
+            $status = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->status(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $model = $service->build(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (int)$fixture['ct_period_ids'][0]
+            );
+
+            $h->assertSame('current', (string)($status['state'] ?? ''));
+            $h->assertSame(true, (bool)($model['available'] ?? false));
+            $h->assertSame('ct-period-filing-model-v11', (string)($model['basis_version'] ?? ''));
+            $h->assertTrue(\eel_accounts\Service\CtPeriodFilingModelService::recognisesBasisVersion('ct-period-filing-model-v11'));
+            $h->assertTrue(\eel_accounts\Service\CtPeriodFilingModelService::recognisesBasisVersion('ct-period-filing-model-v12'));
+            $h->assertFalse(\eel_accounts\Service\CtPeriodFilingModelService::recognisesBasisVersion('ct-period-filing-model-v10'));
+        });
+
+        $h->check($service::class, 'requires an unsubmitted v11 basis to be approved once under v12', static function () use ($h): void {
+            $fixture = ctPeriodFilingModelFixture(1);
+            ctPeriodFilingModelConvertToV11($fixture, false);
+            \eel_accounts\Support\RequestCache::reset();
+
+            $status = (new \eel_accounts\Service\HmrcCtFilingApprovalService())->status(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $h->assertSame('stale', (string)($status['state'] ?? ''));
+            $h->assertSame(false, (bool)($status['current'] ?? true));
+            $h->assertTrue(str_contains(
+                implode(' ', array_map('strval', (array)($status['errors'] ?? []))),
+                'Approve the HMRC Corporation Tax return once under ct-period-filing-model-v12.'
+            ));
         });
 
         $h->check($service::class, 'seals a V2 Year End tax approval against the canonical computation manifest', static function () use ($h, $service): void {
@@ -1274,6 +1339,87 @@ function ctPeriodFilingModelBankLoanTransaction(
 }
 
 /** @return array<string, int> */
+/** @param array<string,mixed> $fixture */
+function ctPeriodFilingModelConvertToV11(array $fixture, bool $filed): void
+{
+    $filingApproval = (array)($fixture['filing_approval'] ?? []);
+    $accountsApprovalId = (int)($filingApproval['approval_id'] ?? 0);
+    $accountsApprovalHash = (string)($filingApproval['approval_hash'] ?? '');
+    $hmrcApprovalId = (int)($filingApproval['hmrc_approval_id'] ?? 0);
+    $basisIds = array_values(array_map('intval', (array)($filingApproval['ct_basis_ids'] ?? [])));
+    foreach ($basisIds as $basisId) {
+        $row = (array)(\InterfaceDB::fetchOne(
+            'SELECT * FROM ct_period_filing_bases WHERE id = :id',
+            ['id' => $basisId]
+        ) ?: []);
+        $model = json_decode((string)($row['basis_json'] ?? ''), true);
+        if (!is_array($model)) {
+            throw new RuntimeException('The CT-period test basis is unreadable.');
+        }
+        $model['ct600a']['s455']['evidence_cutoff'] = '2026-08-09 23:59:59';
+        $model['ct600a']['s455']['basis']['evidence_cutoff'] = '2026-08-09 23:59:59';
+        $basisJson = ctPeriodFilingModelCanonicalJson($model);
+        $basisHash = hash(
+            'sha256',
+            'ct-period-filing-model-v11|' . $accountsApprovalHash . '|'
+            . (string)($row['calculation_basis_hash'] ?? '') . '|' . $basisJson
+        );
+        \InterfaceDB::execute(
+            'UPDATE ct_period_filing_bases
+             SET basis_version = :basis_version, basis_hash = :basis_hash, basis_json = :basis_json
+             WHERE id = :id',
+            [
+                'basis_version' => 'ct-period-filing-model-v11',
+                'basis_hash' => $basisHash,
+                'basis_json' => $basisJson,
+                'id' => $basisId,
+            ]
+        );
+        \InterfaceDB::execute(
+            'UPDATE hmrc_ct_filing_approval_period_bases
+             SET basis_hash = :basis_hash
+             WHERE hmrc_ct_filing_approval_id = :approval_id
+               AND ct_period_filing_basis_id = :basis_id',
+            [
+                'basis_hash' => $basisHash,
+                'approval_id' => $hmrcApprovalId,
+                'basis_id' => $basisId,
+            ]
+        );
+    }
+
+    if (!$filed) {
+        return;
+    }
+    foreach ((array)($fixture['ct_period_ids'] ?? []) as $ctPeriodId) {
+        \InterfaceDB::execute(
+            'UPDATE corporation_tax_periods SET status = :status WHERE id = :id',
+            ['status' => 'accepted', 'id' => (int)$ctPeriodId]
+        );
+    }
+    \eel_accounts\Support\RequestCache::reset();
+    $hmrcService = new \eel_accounts\Service\HmrcCtFilingApprovalService();
+    $candidateMethod = new ReflectionMethod($hmrcService, 'candidate');
+    $candidateMethod->setAccessible(true);
+    $candidate = (array)$candidateMethod->invoke(
+        $hmrcService,
+        (int)$fixture['company_id'],
+        (int)$fixture['accounting_period_id'],
+        false
+    );
+    \InterfaceDB::execute(
+        'UPDATE hmrc_ct_filing_approvals
+         SET basis_hash = :basis_hash, basis_json = :basis_json
+         WHERE id = :id',
+        [
+            'basis_hash' => (string)$candidate['basis_hash'],
+            'basis_json' => (string)$candidate['basis_json'],
+            'id' => $hmrcApprovalId,
+        ]
+    );
+    \eel_accounts\Support\RequestCache::reset();
+}
+
 function ctPeriodFilingModelEvidenceCounts(): array
 {
     return [

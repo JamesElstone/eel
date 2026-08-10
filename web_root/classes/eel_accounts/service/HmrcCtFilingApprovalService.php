@@ -576,14 +576,31 @@ final class HmrcCtFilingApprovalService
                     . (string)($row['calculation_basis_hash'] ?? '') . '|' . $canonicalModel
                 )
                 : '';
+            $basisVersion = (string)($row['basis_version'] ?? '');
+            $filedBasis = in_array(
+                (string)($row['ct_period_status'] ?? ''),
+                ['submitted', 'accepted'],
+                true
+            );
+            $recognisedBasisVersion = $basisVersion === IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION
+                || ($filedBasis && CtPeriodFilingModelService::recognisesBasisVersion($basisVersion));
+            if (!$filedBasis
+                && $basisVersion !== IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION
+                && CtPeriodFilingModelService::recognisesBasisVersion($basisVersion)) {
+                throw new \RuntimeException(
+                    'CT period ' . (int)($row['sequence_no'] ?? 0)
+                    . ' uses the previous filing model ' . $basisVersion
+                    . '. Approve the HMRC Corporation Tax return once under '
+                    . IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION . '.'
+                );
+            }
             if ((int)($row['id'] ?? 0) <= 0
                 || (int)($row['active_ct_period_id'] ?? 0) !== (int)($row['ct_period_id'] ?? 0)
                 || (int)($row['filing_approval_id'] ?? 0) !== $accountsApprovalId
                 || (int)($row['company_id'] ?? 0) !== $companyId
                 || (int)($row['accounting_period_id'] ?? 0) !== $accountingPeriodId
                 || (int)($row['latest_computation_run_id'] ?? 0) !== (int)($row['computation_run_id'] ?? 0)
-                || (string)($row['basis_version'] ?? '')
-                    !== IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION
+                || !$recognisedBasisVersion
                 || !is_array($model)
                 || (int)($model['approval']['id'] ?? 0) !== $accountsApprovalId
                 || !hash_equals(
@@ -680,9 +697,10 @@ final class HmrcCtFilingApprovalService
                 ?? 'The current CT600A evidence is incomplete.'
             ));
         }
+        $ct600aService = new Ct600aService();
         if (!hash_equals(
-            $this->canonicalJson($currentCt600a),
-            $this->canonicalJson((array)($model['ct600a'] ?? []))
+            $this->canonicalJson($ct600aService->filingBasisProjection($currentCt600a)),
+            $this->canonicalJson($ct600aService->filingBasisProjection((array)($model['ct600a'] ?? [])))
         )) {
             throw new \RuntimeException(
                 'The CT600A evidence changed after the HMRC period basis was prepared. Approve the Corporation Tax return again.'

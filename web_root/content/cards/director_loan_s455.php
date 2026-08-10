@@ -52,7 +52,7 @@ final class _director_loan_s455Card extends CardBaseFramework
                     (string)$period['period_start'] . ' to ' . (string)$period['period_end']
                 )
                 . $this->stat('Close-Company Status', !empty($period['close_status_calculated']) ? 'Calculated' : 'Ownership data needed')
-                . $this->stat('Evidence cutoff', (string)$period['evidence_cutoff'])
+                . $this->stat('Evidence observed through', (string)$period['evidence_cutoff'])
                 . $this->stat(
                     's455 exposure',
                     $this->outcomeLabel($outcome),

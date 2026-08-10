@@ -524,6 +524,56 @@ $harness->run(_ixbrl_accounts_disclosuresCard::class, static function (Generated
         ));
     });
 
+    $harness->check(_ixbrl_accounts_disclosuresCard::class, 'labels an HMRC-only approval without asking to reapprove accounts', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => [
+                'ixbrl_accounts_disclosures' => [
+                    'available' => true,
+                    'complete' => true,
+                    'stored' => true,
+                    'year_end_locked' => true,
+                    'disclosures' => ['accounting_standard' => 'FRS_105'],
+                    'suggested_disclosures' => [],
+                    'suggestion_sources' => [],
+                    'director_suggestions' => [],
+                    'accounting_period' => ['period_end' => '2025-12-31'],
+                    'trading_status_evidence' => ['has_previous_trading_evidence' => false],
+                    'dormancy' => ['calculated' => false],
+                ],
+                'ixbrl_filing_approval_workflow' => [
+                    'can_approve' => true,
+                    'both_current' => false,
+                    'state_token' => 'hmrc-only-state',
+                    'form_blockers' => [],
+                    'external_blockers' => [],
+                    'blockers' => [],
+                    'accounts' => [
+                        'state' => 'current',
+                        'current' => true,
+                        'approval_id' => 68,
+                        'approval' => ['id' => 68, 'approved_at' => '2026-08-09 22:14:03'],
+                    ],
+                    'hmrc' => [
+                        'state' => 'stale',
+                        'current' => false,
+                        'approval_id' => 14,
+                        'errors' => ['The CT-period filing model version changed.'],
+                        'approval' => ['id' => 14, 'approved_at' => '2026-08-10 01:03:01'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '>HMRC approval required</span>'));
+        $harness->assertTrue(str_contains(
+            $html,
+            'data-ixbrl-approval-submit="true">Approve HMRC Corporation Tax Return</button>'
+        ));
+        $harness->assertTrue(str_contains($html, 'existing statutory-accounts approval remains unchanged'));
+        $harness->assertFalse(str_contains($html, '>Approve Accounts and Corporation Tax Return</button>'));
+    });
+
     $harness->check(_ixbrl_accounts_disclosuresCard::class, 'keeps matching approved disclosures locked when another filing-basis section is stale', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['id' => 49, 'accounting_period_id' => 79],

@@ -242,6 +242,35 @@ final class Ct600aService
         );
     }
 
+    /**
+     * Returns the stable CT600A evidence frozen into an HMRC filing basis.
+     *
+     * evidence_cutoff records when the live evidence read model was observed.
+     * It remains useful in audit and display output, but the timestamp is not
+     * itself a filing fact and must not make an unchanged return stale.
+     *
+     * @param array<string,mixed> $ct600a
+     * @return array<string,mixed>
+     */
+    public function filingBasisProjection(array $ct600a): array
+    {
+        $project = static function (mixed $value) use (&$project): mixed {
+            if (!is_array($value)) {
+                return $value;
+            }
+            foreach ($value as $key => $child) {
+                if ((string)$key === 'evidence_cutoff') {
+                    unset($value[$key]);
+                    continue;
+                }
+                $value[$key] = $project($child);
+            }
+            return $value;
+        };
+
+        return (array)$project($ct600a);
+    }
+
     /** @return array<string,mixed> */
     private function buildUncached(
         int $companyId,
@@ -363,14 +392,15 @@ final class Ct600aService
             return null;
         }
         $canonical = $this->filingBasisCanonicalJson($model);
+        $basisVersion = (string)($row['basis_version'] ?? '');
         $hash = hash(
             'sha256',
-            CtPeriodFilingModelService::BASIS_VERSION . '|'
+            $basisVersion . '|'
             . (string)($row['approval_basis_hash'] ?? '') . '|'
             . (string)($row['calculation_basis_hash'] ?? '') . '|'
             . $canonical
         );
-        if ((string)($row['basis_version'] ?? '') !== CtPeriodFilingModelService::BASIS_VERSION
+        if (!CtPeriodFilingModelService::recognisesBasisVersion($basisVersion)
             || !hash_equals((string)($row['basis_hash'] ?? ''), $hash)) {
             return null;
         }

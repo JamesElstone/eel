@@ -10,6 +10,46 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $review = ['current' => true, 'complete' => true, 'errors' => []];
         $base = ['errors' => [], 'window_status' => 'window_complete', 'lots' => [], 'repayment_allocations' => []];
 
+        $h->check($service::class, 'removes only the observation clock from the immutable filing projection', static function () use ($h, $service): void {
+            $first = [
+                'required' => false,
+                'window_status' => 'window_complete',
+                'repayment_window_end' => '2024-06-30',
+                'evidence_cutoff' => '2026-08-09 23:59:59',
+                's455' => [
+                    'evidence_cutoff' => '2026-08-09 23:59:59',
+                    'basis' => [
+                        'evidence_cutoff' => '2026-08-09 23:59:59',
+                        'gross_principal' => 0.0,
+                    ],
+                ],
+            ];
+            $second = $first;
+            $second['evidence_cutoff'] = '2026-08-10 23:59:59';
+            $second['s455']['evidence_cutoff'] = '2026-08-10 23:59:59';
+            $second['s455']['basis']['evidence_cutoff'] = '2026-08-10 23:59:59';
+
+            $firstProjection = $service->filingBasisProjection($first);
+            $secondProjection = $service->filingBasisProjection($second);
+            $h->assertSame($firstProjection, $secondProjection);
+            $h->assertSame(
+                hash('sha256', json_encode($firstProjection, JSON_THROW_ON_ERROR)),
+                hash('sha256', json_encode($secondProjection, JSON_THROW_ON_ERROR))
+            );
+            $h->assertFalse(array_key_exists('evidence_cutoff', $firstProjection));
+            $h->assertFalse(array_key_exists('evidence_cutoff', $firstProjection['s455']));
+            $h->assertFalse(array_key_exists('evidence_cutoff', $firstProjection['s455']['basis']));
+            $h->assertSame('2024-06-30', $firstProjection['repayment_window_end']);
+            $h->assertSame('window_complete', $firstProjection['window_status']);
+            $h->assertSame('2026-08-09 23:59:59', $first['evidence_cutoff']);
+
+            $changed = $second;
+            $changed['window_status'] = 'provisional_window_open';
+            $h->assertTrue(
+                $service->filingBasisProjection($changed) !== $firstProjection
+            );
+        });
+
         $h->check($service::class, 'records a complete negative section 464A position without emitting CT600A', static function () use ($h, $service, $period, $review, $base): void {
             $model = $service->buildFromEvidence($period, $base, [], $review, '2025-12-31');
             $h->assertSame(false, (bool)$model['required']);

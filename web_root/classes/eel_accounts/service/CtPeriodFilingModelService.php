@@ -8,6 +8,13 @@ namespace eel_accounts\Service;
 final class CtPeriodFilingModelService
 {
     public const BASIS_VERSION = IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION;
+    private const HISTORICAL_BASIS_VERSIONS = ['ct-period-filing-model-v11'];
+
+    public static function recognisesBasisVersion(string $basisVersion): bool
+    {
+        return $basisVersion === self::BASIS_VERSION
+            || in_array($basisVersion, self::HISTORICAL_BASIS_VERSIONS, true);
+    }
 
     public function build(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
     {
@@ -139,12 +146,13 @@ final class CtPeriodFilingModelService
             $errors[] = 'The frozen computation summary has changed since filing approval.';
         }
         $canonical = $this->canonicalJson($model);
+        $basisVersion = (string)($row['basis_version'] ?? '');
         $calculatedHash = hash(
             'sha256',
-            self::BASIS_VERSION . '|' . (string)$approval['basis_hash'] . '|'
+            $basisVersion . '|' . (string)$approval['basis_hash'] . '|'
             . (string)$row['calculation_basis_hash'] . '|' . $canonical
         );
-        if ((string)$row['basis_version'] !== self::BASIS_VERSION
+        if (!self::recognisesBasisVersion($basisVersion)
             || !hash_equals((string)$row['basis_hash'], $calculatedHash)
             || (int)($model['ct_period']['id'] ?? 0) !== $ctPeriodId
             || (int)($model['approval']['id'] ?? 0) !== (int)$approval['id']

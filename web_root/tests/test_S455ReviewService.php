@@ -139,6 +139,51 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $harness->check(get_class($service), 'changes the substantive basis when historical-window evidence is entered later', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = s455CorrectionAwareFixture();
+                $attribution = (new \eel_accounts\Service\DirectorLoanAttributionService())->assignJournalLine(
+                    $fixture['company_id'],
+                    $fixture['loan_line_id'],
+                    $fixture['party_id'],
+                    'test-suite',
+                    'Late-entered historical evidence fixture.'
+                );
+                $harness->assertSame(true, (bool)($attribution['success'] ?? false));
+                $createdAt = (string)InterfaceDB::fetchColumn(
+                    'SELECT created_at FROM transactions WHERE id = :id',
+                    ['id' => $fixture['transaction_id']]
+                );
+                $beforeCutoff = (new DateTimeImmutable($createdAt))->modify('-1 second')->format('Y-m-d H:i:s');
+                $afterCutoff = (new DateTimeImmutable($createdAt))->modify('+1 day')->format('Y-m-d H:i:s');
+
+                $before = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    $beforeCutoff
+                );
+                $after = $service->calculate(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $fixture['ct_period_id'],
+                    $afterCutoff
+                );
+
+                $harness->assertSame('0.00', number_format((float)($before['gross_principal'] ?? 0), 2, '.', ''));
+                $harness->assertSame('100.00', number_format((float)($after['gross_principal'] ?? 0), 2, '.', ''));
+                $harness->assertFalse(hash_equals(
+                    (string)($before['basis_hash'] ?? ''),
+                    (string)($after['basis_hash'] ?? '')
+                ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(get_class($service), 'does not treat debit-side control movements within a creditor balance as advances', static function () use ($harness, $service): void {
             InterfaceDB::beginTransaction();
             try {

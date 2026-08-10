@@ -21,6 +21,18 @@ $workflowFixture = UnifiedApprovalWorkflowTestFixture::seed();
             return $reflection->invoke($service, ...$arguments);
         };
 
+        $h->check($service::class, 'reports an HMRC-only approval without claiming the accounts were reapproved', static function () use ($h, $invoke): void {
+            $message = (string)$invoke('approvalCompletionMessage', false, true, 68);
+            $h->assertSame(
+                'HMRC Corporation Tax return approved. Statutory accounts approval #68 was reused. No filing was transmitted.',
+                $message
+            );
+            $h->assertSame(
+                'Accounts and Corporation Tax return approved. No filing was transmitted.',
+                (string)$invoke('approvalCompletionMessage', true, true, 69)
+            );
+        });
+
         /** @return array<string,mixed> */
         $ap79Input = static function () use ($companyId, $accountingPeriodId): array {
             $disclosure = (new \eel_accounts\Service\IxbrlAccountsDisclosureService())->fetch(

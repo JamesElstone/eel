@@ -490,12 +490,17 @@ final class IxbrlFilingApprovalWorkflowService
             );
 
             RequestCache::clear();
-            $this->report($progressClosure, 'Accounts and Corporation Tax approval complete.', 100);
+            $completionMessage = $this->approvalCompletionMessage(
+                $accountsCreated,
+                $hmrcCreated,
+                $accountsApprovalId
+            );
+            $this->report($progressClosure, $completionMessage, 100);
             return [
                 'success' => true,
                 'errors' => [],
                 'warnings' => [],
-                'messages' => ['Accounts and Corporation Tax return approved. No filing was transmitted.'],
+                'messages' => [$completionMessage],
                 'accounts_approval_id' => $accountsApprovalId,
                 'accounts_approval_hash' => strtolower($accountsApprovalHash),
                 'accounts_approval_created' => $accountsCreated,
@@ -517,6 +522,18 @@ final class IxbrlFilingApprovalWorkflowService
                 ),
             ];
         });
+    }
+
+    private function approvalCompletionMessage(
+        bool $accountsCreated,
+        bool $hmrcCreated,
+        int $accountsApprovalId
+    ): string {
+        if (!$accountsCreated && $hmrcCreated) {
+            return 'HMRC Corporation Tax return approved. Statutory accounts approval #'
+                . $accountsApprovalId . ' was reused. No filing was transmitted.';
+        }
+        return 'Accounts and Corporation Tax return approved. No filing was transmitted.';
     }
 
     /** @return array<string,mixed> */

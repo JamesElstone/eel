@@ -8,7 +8,7 @@ namespace eel_accounts\Service;
 final class IxbrlAccountsFilingApprovalService
 {
     public const BASIS_VERSION = 'accounts-filing-approval-v10';
-    public const CT_BASIS_VERSION = 'ct-period-filing-model-v11';
+    public const CT_BASIS_VERSION = 'ct-period-filing-model-v12';
     private const REQUIRED_AUDIT_AREAS = [
         'accounting_profit', 'expense_treatments', 'depreciation_capital',
         'capital_allowances', 'losses', 'tax_liability',
@@ -701,7 +701,7 @@ final class IxbrlAccountsFilingApprovalService
                 'summary' => $summary,
             ],
             'audit' => $areas,
-            'ct600a' => (array)$period['ct600a'],
+            'ct600a' => (new Ct600aService())->filingBasisProjection((array)$period['ct600a']),
         ];
         $json = $this->canonicalJson($model);
         return ['basis_json' => $json, 'basis_hash' => hash('sha256', self::CT_BASIS_VERSION . '|' . (string)$candidate['basis_hash'] . '|' . (string)$period['calculation_basis_hash'] . '|' . $json)];

@@ -34,7 +34,7 @@ final class _filing_evidence_loansCard extends CardBaseFramework
                 . (int)($period['sequence_no'] ?? 0) . ' · ' . \eel_accounts\Support\Utf8::html((string)($period['period_start'] ?? '') . ' to ' . (string)($period['period_end'] ?? ''))
                 . '</h3><div class="table-scroll"><table><tbody>'
                 . $this->row('Close-company status', (string)($s455['close_company_status'] ?? ''))
-                . $this->row('Evidence cut-off', (string)($s455['evidence_cutoff'] ?? ''))
+                . $this->row('Evidence observed through', (string)($s455['evidence_cutoff'] ?? ''))
                 . $this->row('Repayment deadline', (string)($s455['repayment_deadline'] ?? ''))
                 . $this->row('Gross principal', $this->money($context, $s455['gross_principal'] ?? 0))
                 . $this->row('Gross S455 tax', $this->money($context, $s455['gross_tax'] ?? 0))

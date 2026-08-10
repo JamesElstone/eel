@@ -1047,8 +1047,8 @@ h2 { margin: 0; font-size: 13.5pt; text-align: center; }
     font-size: 8pt;
     text-align: right;
 }
-.revision-page h2 { margin-bottom: 9mm; }
-.revision-statement { width: 92%; margin: 0 auto 7mm; }
+.revision-page h2 { margin-bottom: 3mm; }
+.revision-statement { width: 92%; margin: 0 auto 7mm; font-size: 9.5pt; }
 .revision-statement h3 { margin: 0 0 2mm; font-size: 10.5pt; }
 .revision-statement p { margin: 0; }
 @media print {

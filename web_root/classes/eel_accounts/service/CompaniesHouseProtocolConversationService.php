@@ -51,7 +51,7 @@ final class CompaniesHouseProtocolConversationService
         string $outputPresenterFingerprint,
         string $companyAuthenticationCode,
         string $actor,
-        bool $developerStep
+        bool $reusable
     ): array {
         return $this->beginAuthenticationCheck(
             $context,
@@ -59,7 +59,7 @@ final class CompaniesHouseProtocolConversationService
             $outputPresenterFingerprint,
             $companyAuthenticationCode,
             $actor,
-            $developerStep
+            $reusable
         );
     }
 
@@ -306,14 +306,14 @@ final class CompaniesHouseProtocolConversationService
         array $submission,
         string $companyAuthenticationCode,
         string $actor,
-        bool $developerStep
+        bool $requireBinding
     ): void {
         \InterfaceDB::transaction(function () use (
             $preflightId,
             $submission,
             $companyAuthenticationCode,
             $actor,
-            $developerStep
+            $requireBinding
         ): void {
             $lock = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
             $row = \InterfaceDB::fetchOne(
@@ -328,10 +328,10 @@ final class CompaniesHouseProtocolConversationService
                 || $row['consumed_at'] !== null) {
                 throw new \RuntimeException('A current successful CompanyData preflight is required.');
             }
-            if ($developerStep) {
+            if ($requireBinding) {
                 if ((string)$row['binding_actor'] !== $actor
                     || $this->utcTimestamp((string)$row['binding_expires_at']) < time()) {
-                    throw new \RuntimeException('The developer CompanyData preflight has expired.');
+                    throw new \RuntimeException('The Company Authentication Code check has expired.');
                 }
                 $expected = $this->bindingHmac(
                     (int)$submission['company_id'],
@@ -358,6 +358,23 @@ final class CompaniesHouseProtocolConversationService
                 ['preflight_id' => $preflightId, 'updated' => $now, 'id' => (int)$submission['id']]
             );
         });
+    }
+
+    public function authenticationCheckReady(?array $check, string $presenterFingerprint = ''): bool
+    {
+        $presenterFingerprint = strtolower(trim($presenterFingerprint));
+        return is_array($check)
+            && (string)($check['outcome'] ?? '') === 'verified'
+            && trim((string)($check['matched_company_number'] ?? '')) !== ''
+            && ($check['consumed_at'] ?? null) === null
+            && preg_match('/^[a-f0-9]{64}$/D', (string)($check['binding_hmac'] ?? '')) === 1
+            && trim((string)($check['binding_actor'] ?? '')) !== ''
+            && $this->utcTimestamp((string)($check['binding_expires_at'] ?? '')) >= time()
+            && ($presenterFingerprint === ''
+                || hash_equals(
+                    $presenterFingerprint,
+                    strtolower((string)($check['output_presenter_fingerprint'] ?? ''))
+                ));
     }
 
     public function latestPreflight(int $submissionId): ?array

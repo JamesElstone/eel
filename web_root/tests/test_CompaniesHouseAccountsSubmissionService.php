@@ -131,7 +131,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
-            'submits Accounts without running or consuming a CompanyData check',
+            'requires and consumes a verified CompanyData check without sending a second check',
             static function () use ($harness): void {
                 $method = new ReflectionMethod(
                     \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
@@ -146,8 +146,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $method->getEndLine() - $method->getStartLine() + 1
                 ));
                 $harness->assertFalse(str_contains($body, 'performCompanyDataPreflight('));
-                $harness->assertFalse(str_contains($body, 'consumePreflight('));
+                $harness->assertTrue(str_contains($body, 'authenticationCheckReady('));
+                $harness->assertTrue(str_contains($body, 'consumePreflight('));
                 $harness->assertFalse(str_contains($body, 'verifiedPreflightId'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'does not require an accepted TEST filing before LIVE accounts submission',
+            static function () use ($harness): void {
+                $path = (new ReflectionClass(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class
+                ))->getFileName();
+                $source = is_string($path) ? file_get_contents($path) : false;
+                $harness->assertTrue(is_string($source));
+                $harness->assertFalse(str_contains((string)$source, 'testAccepted('));
+                $harness->assertFalse(str_contains(
+                    (string)$source,
+                    'submission must be accepted before LIVE filing'
+                ));
+                $harness->assertFalse(str_contains(
+                    (string)$source,
+                    'is required before LIVE filing'
+                ));
             }
         );
 
@@ -172,6 +194,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'Checking the locked Year End, filing declarations and taxonomy compatibility.',
                     'Verifying the prepared iXBRL against the current approved filing basis.',
                     'Verified prepared ',
+                    'Verified the current presenter credentials and company authentication code with Companies House.',
                     'Allocated Companies House submission number ',
                     'Validated GovTalk transaction ',
                     'Archived the exact accounts iXBRL and validated GovTalk request',

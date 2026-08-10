@@ -194,6 +194,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ) === 1);
             $harness->assertTrue(str_contains($style, '.signature { width: 45%;'));
             $harness->assertTrue(str_contains($style, '.note { width: 92%; margin: 0 auto 7mm; }'));
+            $harness->assertTrue(str_contains($style, '.revision-page h2 { margin-bottom: 3mm; }'));
+            $harness->assertTrue(str_contains(
+                $style,
+                '.revision-statement { width: 92%; margin: 0 auto 7mm; font-size: 9.5pt; }'
+            ));
             $harness->assertTrue(preg_match(
                 '/\.evidence-footer\s*\{[^}]*\bmargin\s*:\s*0 auto 0\s*;/is',
                 $style

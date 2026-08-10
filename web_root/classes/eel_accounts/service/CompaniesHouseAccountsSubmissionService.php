@@ -84,7 +84,15 @@ final class CompaniesHouseAccountsSubmissionService
                 (string)($sequence['presenter_fingerprint'] ?? '')
             )
             : 'unknown';
-        $testAccepted = $this->testAccepted($companyId, $accountingPeriodId, $filingKind);
+        $authenticationCheck = $this->conversation()->latestAuthenticationCheck(
+            $companyId,
+            $accountingPeriodId,
+            $mode
+        );
+        $authenticationCheckReady = $this->conversation()->authenticationCheckReady(
+            $authenticationCheck,
+            (string)($sequence['presenter_fingerprint'] ?? '')
+        );
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
         $revisedReadiness = $needsRevision
             ? $this->revisedReadiness()->assess($companyId, $accountingPeriodId)
@@ -213,9 +221,13 @@ final class CompaniesHouseAccountsSubmissionService
         if (!$protocolReady) {
             $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
         }
-        if ($mode === 'LIVE' && !$testAccepted) {
-            $submissionBlockers[] = 'A Companies House TEST ' . ($filingKind !== '' ? $filingKind . '-accounts' : 'accounts')
-                . ' submission must be accepted before LIVE filing.';
+        if ($lifecycle === 'prepared'
+            && $featureEnabled
+            && $credentialsConfigured
+            && $protocolReady
+            && !$authenticationCheckReady) {
+            $submissionBlockers[] = 'A successful Company Authentication Code check against the selected '
+                . $mode . ' environment is required before submission. Use the verification panel on this page.';
         }
         $inFlightSubmissionId = (int)($sequence['in_flight_submission_id'] ?? 0);
         if ($inFlightSubmissionId > 0 && $inFlightSubmissionId !== (int)($submission['id'] ?? 0)) {
@@ -255,7 +267,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'developer_binding_configured' => $featureEnabled
                     && $this->conversation()->bindingConfigured($mode),
                 'company_data_capability' => $companyDataCapability,
-                'test_accepted' => $testAccepted,
+                'authentication_check_ready' => $authenticationCheckReady,
             ],
             'eligibility' => $eligibility,
             'filing_classification' => $filingClassification,
@@ -271,11 +283,7 @@ final class CompaniesHouseAccountsSubmissionService
             'active_submission' => $activeSubmission,
             'latest_submission' => $latestSubmission,
             'conversation_submission' => $conversationSubmission,
-            'preflight' => $this->conversation()->latestAuthenticationCheck(
-                $companyId,
-                $accountingPeriodId,
-                $mode
-            ),
+            'preflight' => $authenticationCheck,
             'status_cycle' => $conversationSubmission === null
                 ? null
                 : $this->conversation()->latestStatusCycle((int)$conversationSubmission['id']),
@@ -351,9 +359,20 @@ final class CompaniesHouseAccountsSubmissionService
         $preparedArtifact = $submission === null
             ? []
             : $this->preparedArtifactDisplayState($submission);
+        $protocolReady = $this->conversation()->schemaReady();
+        $authenticationCheck = $this->conversation()->latestAuthenticationCheck(
+            $companyId,
+            $accountingPeriodId,
+            $mode
+        );
+        $authenticationCheckReady = $this->conversation()->authenticationCheckReady(
+            $authenticationCheck,
+            (string)($sequence['presenter_fingerprint'] ?? '')
+        );
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
         $submissionBlockers = [];
-        if ($lifecycle !== 'prepared') {
+        if ($lifecycle !== 'prepared'
+            && trim((string)($submission['submission_number'] ?? '')) === '') {
             $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
         }
         if ($activeSubmission !== null
@@ -362,26 +381,29 @@ final class CompaniesHouseAccountsSubmissionService
                 . (trim((string)($activeSubmission['submission_number'] ?? '')) ?: '#' . (int)$activeSubmission['id'])
                 . ' is still active for an earlier prepared basis. Resolve it before transmitting another Companies House filing.';
         }
-        if (!$featureEnabled) {
-            $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
-        } elseif (!$credentialsConfigured) {
-            $submissionBlockers[] = 'Companies House accounts filing credentials are not configured for ' . $mode . '.';
-        }
-        if (!$this->conversation()->schemaReady()) {
-            $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
-        }
-        if ($mode === 'LIVE' && !$this->testAccepted($companyId, $accountingPeriodId, $filingKind)) {
-            $submissionBlockers[] = 'A Companies House TEST accounts submission must be accepted before LIVE filing.';
-        }
         $inFlightSubmissionId = (int)($sequence['in_flight_submission_id'] ?? 0);
         if ($inFlightSubmissionId > 0 && $inFlightSubmissionId !== (int)($submission['id'] ?? 0)) {
             $submissionBlockers[] = 'Another request for this Companies House presenter has an unresolved transport state.';
         }
-        if ($featureEnabled && $credentialsConfigured && empty($sequence['configured'])) {
-            $submissionBlockers[] = 'Run the Companies House submission-sequence migration before filing.';
-        }
-        if ($submission !== null && (string)($submission['environment'] ?? '') !== $mode) {
-            $submissionBlockers[] = 'The prepared artifact belongs to ' . (string)$submission['environment'] . '; prepare a new artifact for ' . $mode . '.';
+        if ($lifecycle === 'prepared') {
+            if (!$featureEnabled) {
+                $submissionBlockers[] = 'Companies House accounts filing is disabled until TEST credentials are issued.';
+            } elseif (!$credentialsConfigured) {
+                $submissionBlockers[] = 'Companies House accounts filing credentials are not configured for ' . $mode . '.';
+            }
+            if (!$protocolReady) {
+                $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
+            }
+            if ($featureEnabled && $credentialsConfigured && $protocolReady && !$authenticationCheckReady) {
+                $submissionBlockers[] = 'A successful Company Authentication Code check against the selected '
+                    . $mode . ' environment is required before submission. Use the verification panel on this page.';
+            }
+            if ($featureEnabled && $credentialsConfigured && empty($sequence['configured'])) {
+                $submissionBlockers[] = 'Run the Companies House submission-sequence migration before filing.';
+            }
+            if ((string)($submission['environment'] ?? '') !== $mode) {
+                $submissionBlockers[] = 'The prepared artifact belongs to ' . (string)$submission['environment'] . '; prepare a new artifact for ' . $mode . '.';
+            }
         }
         if ($submission !== null && $lifecycle === 'prepared' && empty($preparedArtifact['current'])) {
             $submissionBlockers[] = (string)(($preparedArtifact['errors'] ?? [])[0]
@@ -395,19 +417,20 @@ final class CompaniesHouseAccountsSubmissionService
                 'mode' => $mode,
                 'enabled' => $featureEnabled,
                 'credentials_configured' => $credentialsConfigured,
-                'protocol_ready' => $this->conversation()->schemaReady(),
+                'protocol_ready' => $protocolReady,
                 'company_data_capability' => $credentialsConfigured
                     ? $this->conversation()->companyDataCapability($mode, (string)($sequence['presenter_fingerprint'] ?? ''))
                     : 'unknown',
+                'authentication_check_ready' => $authenticationCheckReady,
             ],
             'filing_kind' => $filingKind,
             'submission' => $submission,
             'active_submission' => $activeSubmission,
             'latest_submission' => $latestSubmission,
             'prepared_artifact' => $preparedArtifact,
-            'preflight' => $this->conversation()->latestAuthenticationCheck($companyId, $accountingPeriodId, $mode),
+            'preflight' => $authenticationCheck,
             'sequence' => $sequence,
-            'can_submit' => $submissionBlockers === [],
+            'can_submit' => $lifecycle === 'prepared' && $submissionBlockers === [],
             'submission_blockers' => array_values(array_unique($submissionBlockers)),
             'blockers' => array_values(array_unique($submissionBlockers)),
         ];
@@ -1034,7 +1057,7 @@ final class CompaniesHouseAccountsSubmissionService
                 $actor,
                 $mode,
                 $schema,
-                false
+                true
             );
         } catch (\Throwable $exception) {
             return $this->failure(
@@ -1043,10 +1066,14 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
 
-        $success = !empty($result['success']);
+        $success = !empty($result['success']) && !empty($result['authenticated']);
+        $error = trim((string)($result['error'] ?? ''));
+        if (!$success && $error === '') {
+            $error = 'Companies House did not verify the company authentication code.';
+        }
         return [
             'success' => $success,
-            'errors' => $success ? [] : [(string)$result['error']],
+            'errors' => $success ? [] : [$error],
             'warnings' => !empty($result['transport_unknown'])
                 ? ['The authentication-check transport outcome is uncertain. Check the exchange history before retrying.']
                 : [],
@@ -1575,6 +1602,17 @@ final class CompaniesHouseAccountsSubmissionService
         if ($mode !== (string)$submission['environment']) {
             return $this->failure('The prepared submission environment does not match the server filing mode.');
         }
+        $authenticationCheck = $this->conversation()->latestAuthenticationCheck(
+            (int)$submission['company_id'],
+            (int)$submission['accounting_period_id'],
+            $mode
+        );
+        if (!$this->conversation()->authenticationCheckReady($authenticationCheck)) {
+            return $this->failure(
+                'Run a successful Company Authentication Code check against the selected '
+                . $mode . ' environment before submitting these accounts.'
+            );
+        }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
         $classificationError = $this->classificationProvenanceError($submission);
@@ -1622,13 +1660,6 @@ final class CompaniesHouseAccountsSubmissionService
                     . 'then regenerate the Accounting iXBRL and revised accounts.'
                 );
             }
-        }
-        if ($mode === 'LIVE' && !$this->testAccepted(
-            (int)$submission['company_id'],
-            (int)$submission['accounting_period_id'],
-            $filingKind
-        )) {
-            return $this->failure('An accepted TEST ' . $filingKind . '-accounts submission is required before LIVE filing.');
         }
         if ($filingKind === 'revised' && (string)($submission['eligibility_decision'] ?? '') !== 'eligible') {
             return $this->failure('The original filing is not recorded as eligible for electronic revision.');
@@ -1701,7 +1732,30 @@ final class CompaniesHouseAccountsSubmissionService
                     'Run the Companies House protocol-conversation migration before filing.'
                 );
             }
-            $this->reportProgress($progress, 'Installed Companies House filing schemas are ready.', 25);
+            $presenterFingerprint = hash(
+                'sha256',
+                strtoupper((string)$credentials['presenter_id'])
+            );
+            if (!$this->conversation()->authenticationCheckReady(
+                $authenticationCheck,
+                $presenterFingerprint
+            )) {
+                throw new \RuntimeException(
+                    'The successful Company Authentication Code check does not match the current presenter credentials.'
+                );
+            }
+            $this->conversation()->consumePreflight(
+                (int)$authenticationCheck['id'],
+                $submission,
+                $companyAuthCode,
+                $actor,
+                true
+            );
+            $this->reportProgress(
+                $progress,
+                'Verified the current presenter credentials and company authentication code with Companies House.',
+                25
+            );
             $allocation = $this->sequences()->allocate(
                 $submissionId,
                 $mode,
@@ -4150,29 +4204,6 @@ final class CompaniesHouseAccountsSubmissionService
         ];
     }
 
-    private function testAccepted(int $companyId, int $accountingPeriodId, string $filingKind): bool
-    {
-        return $companyId > 0
-            && $accountingPeriodId > 0
-            && in_array($filingKind, ['original', 'revised'], true)
-            && \InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)
-            && (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM ' . self::SUBMISSIONS_TABLE . '
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id
-                   AND filing_type = :filing_type
-                   AND environment = :environment
-                   AND lifecycle = :lifecycle',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'filing_type' => $filingKind,
-                    'environment' => 'TEST',
-                    'lifecycle' => 'accepted',
-                ]
-            ) > 0;
-    }
-
     public function submissionBelongsToContext(
         int $submissionId,
         int $companyId,
@@ -4801,7 +4832,7 @@ final class CompaniesHouseAccountsSubmissionService
         string $actor,
         string $environment,
         array $schemaInventory,
-        bool $developerStep
+        bool $reusable
     ): array {
         $presenterCredentials = $this->credentials()->load($environment);
         $authenticationContext = [
@@ -4817,7 +4848,7 @@ final class CompaniesHouseAccountsSubmissionService
             hash('sha256', strtoupper((string)$presenterCredentials['presenter_id'])),
             $companyAuthCode,
             $actor,
-            $developerStep
+            $reusable
         );
         $preflightId = (int)$preflight['id'];
         $gateway = $this->gatewayClient ?? new CompaniesHouseAccountsGatewayClient();
@@ -4836,7 +4867,7 @@ final class CompaniesHouseAccountsSubmissionService
         );
         $this->conversation()->finishPreflight($preflightId, $result);
         $result['preflight_id'] = $preflightId;
-        if (empty($result['success'])) {
+        if (empty($result['success']) || empty($result['authenticated'])) {
             $result['error'] = trim((string)($result['error'] ?? ''))
                 ?: 'Companies House CompanyData rejected the authentication preflight.';
         }
@@ -5137,7 +5168,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'protocol_ready' => false,
                 'developer_binding_configured' => false,
                 'company_data_capability' => 'unknown',
-                'test_accepted' => false,
+                'authentication_check_ready' => false,
             ],
             'eligibility' => ['decision' => 'pending', 'detected_channel' => 'unknown', 'original_document_id' => 0, 'evidence' => []],
             'filing_classification' => [

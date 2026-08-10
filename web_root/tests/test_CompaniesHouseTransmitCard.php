@@ -66,6 +66,11 @@ $harness->run(_companies_house_transmitCard::class, static function (
             $harness->assertFalse(str_contains($html, 'name="live_confirmation_phrase"'));
             $harness->assertFalse(str_contains($html, 'SUBMIT LIVE REVISED ACCOUNTS'));
             $harness->assertFalse(str_contains($html, 'I am authorised to file these statutory accounts.'));
+            $harness->assertTrue(str_contains($html, 'Verify Companies House Connection'));
+            $harness->assertTrue(str_contains(
+                $html,
+                'A successful check in the selected environment is required before transmission'
+            ));
         }
     );
 
@@ -111,7 +116,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
-        'keeps the transmit panel visible and nests warnings for an active submission',
+        'shows a sent submission once and does not offer it for transmission again',
         static function () use ($harness, $card): void {
             $html = $card->render([
                 'company' => ['id' => 49, 'accounting_period_id' => 80],
@@ -126,31 +131,20 @@ $harness->run(_companies_house_transmitCard::class, static function (
                             'submission_number' => '000002',
                         ],
                         'prepared_artifact' => ['state' => 'current'],
-                        'submission_blockers' => [
-                            'The currently generated Companies House iXBRL has already been submitted. '
-                            . 'To send a new submission regenerate the iXBRL on the Disclosure page.',
-                        ],
+                        'submission_blockers' => [],
                     ],
                     'companies_house_schema_status' => ['state' => ['ready' => true]],
                 ],
             ]);
 
-            $transmitPanel = strpos(
-                $html,
-                'Transmit Company accounts to Companies House Public Register.'
-            );
-            $warnings = strpos($html, 'Transmission warnings');
-            $harness->assertTrue($transmitPanel !== false && $warnings !== false && $transmitPanel < $warnings);
             $harness->assertTrue(str_contains(
                 $html,
-                'The currently generated Companies House iXBRL has already been submitted. '
-                . 'To send a new submission regenerate the iXBRL on the Disclosure page.'
+                '<strong>Companies House submission 000002 has been sent.</strong> '
+                . 'It cannot be transmitted again.'
             ));
-            $harness->assertFalse(str_contains(
-                $html,
-                'Enter the six-character company authentication code to transmit the prepared statutory accounts.'
-            ));
-            $harness->assertFalse(str_contains($html, 'Send / continue Companies House filing'));
+            $harness->assertTrue(str_contains($html, 'Continue Companies House Submission 000002'));
+            $harness->assertFalse(str_contains($html, 'Transmission warnings'));
+            $harness->assertFalse(str_contains($html, 'value="submit_accounts"'));
             $harness->assertFalse(str_contains($html, '>Transmit Company Accounts</button>'));
         }
     );
@@ -366,7 +360,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
 
     $harness->check(
         _companies_house_transmitCard::class,
-            'adds protocol controls only in developer mode',
+            'shows the required connection check while keeping low-level controls developer-only',
         static function () use ($harness, $card): void {
             $previous = AppConfigurationStore::get('developer_options', false);
             AppConfigurationStore::set('developer_options', true);
@@ -421,10 +415,11 @@ $harness->run(_companies_house_transmitCard::class, static function (
                 $harness->assertFalse(str_contains($html, 'CompanyData preflight'));
                 $harness->assertTrue(str_contains(
                     $html,
-                    '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
+                    '<section class="panel-soft"><h3 class="card-title">Verify Companies House Connection</h3>'
                     . '<div class="helper companies-house-transmit-section-helper">'
-                    . 'Optionally check the presenter and company authentication values with Companies House CompanyData. '
-                    . 'This diagnostic is not required before transmitting Accounts.'
+                    . 'Check the presenter credentials and company authentication code with Companies House CompanyData. '
+                    . 'This is separate from choosing the TEST or LIVE API environment. A successful check in the selected environment '
+                    . 'is required before transmission and remains valid for 30 minutes or until used.'
                     . '</div>'
                 ));
                 $harness->assertFalse(str_contains(
@@ -446,6 +441,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                     'matched_company_name' => 'MILLENNIUM STADIUM PLC',
                     'created_at' => '2026-07-31 16:45:00',
                 ];
+                $renderContext['services']['companies_house_transmit_context']['feature']['authentication_check_ready'] = true;
                 $fixture = $card->render($renderContext);
                 $harness->assertTrue(str_contains(
                     $fixture,
@@ -463,6 +459,7 @@ $harness->run(_companies_house_transmitCard::class, static function (
                     'error_summary' => 'Companies House CompanyData did not return the requested company identity.',
                     'created_at' => '2026-07-31 16:46:00',
                 ];
+                $renderContext['services']['companies_house_transmit_context']['feature']['authentication_check_ready'] = false;
                 $rejected = $card->render($renderContext);
                 $harness->assertTrue(str_contains(
                     $rejected,

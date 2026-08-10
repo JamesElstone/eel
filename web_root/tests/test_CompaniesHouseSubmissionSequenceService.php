@@ -178,6 +178,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'company_number' => (string)$companyIds[1],
                         'company_name' => 'Sequence Test ' . $companyIds[1],
                     ]);
+                    $readyCheck = $conversation->latestAuthenticationCheck(
+                        $companyIds[1],
+                        $periodIds[1],
+                        'TEST'
+                    );
+                    $h->assertSame(true, $conversation->authenticationCheckReady(
+                        $readyCheck,
+                        hash('sha256', 'OUTPUT-PRESENTER')
+                    ));
+                    $h->assertSame(false, $conversation->authenticationCheckReady(
+                        $readyCheck,
+                        hash('sha256', 'DIFFERENT-PRESENTER')
+                    ));
                     $wrongBindingBlocked = false;
                     try {
                         $conversation->consumePreflight(
@@ -205,6 +218,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     );
                     $h->assertSame(null, $stored['binding_hmac'] ?? null);
                     $h->assertSame(true, trim((string)($stored['consumed_at'] ?? '')) !== '');
+                    $h->assertSame(false, $conversation->authenticationCheckReady(
+                        $conversation->latestAuthenticationCheck(
+                            $companyIds[1],
+                            $periodIds[1],
+                            'TEST'
+                        ),
+                        hash('sha256', 'OUTPUT-PRESENTER')
+                    ));
                 } finally {
                     InterfaceDB::prepareExecute(
                         'DELETE FROM companies_house_submission_sequences WHERE presenter_fingerprint = :fingerprint',

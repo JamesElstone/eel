@@ -85,6 +85,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
         $preflight = is_array($model['preflight'] ?? null) ? (array)$model['preflight'] : null;
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? 'not_prepared')));
+        $submissionNumber = trim((string)($submission['submission_number'] ?? ''));
         $warningMessages = [];
         $transmitForm = null;
         $html = '<div class="settings-stack">'
@@ -101,7 +102,11 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . $this->metric('Last issued submission number', (string)($sequence['last_issued_number'] ?? 'None'))
             . '</div></section>';
 
-        $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">Prepared transmission</h3>'
+        $transmissionHeading = $submissionNumber !== '' && $lifecycle !== 'prepared'
+            ? 'Companies House submission'
+            : 'Prepared transmission';
+        $html .= '<section class="panel-soft"><div class="status-head"><h3 class="card-title">'
+            . $transmissionHeading . '</h3>'
             . '<span class="badge ' . $this->badge($lifecycle) . '">'
             . \eel_accounts\Support\Utf8::html(HelperFramework::labelFromKey($lifecycle, '_')) . '</span></div>';
         if ($submission === null) {
@@ -125,6 +130,7 @@ final class _companies_house_transmitCard extends CardBaseFramework
             }
             $html .= '<div class="summary-grid companies-house-prepared-transmission-summary-grid">'
                 . $this->metric('Filing classification', ucfirst($filingKind))
+                . ($submissionNumber !== '' ? $this->metric('Submission number', $submissionNumber) : '')
                 . $this->artifactDownloadMetric(
                     $companyId,
                     $accountingPeriodId,
@@ -138,6 +144,19 @@ final class _companies_house_transmitCard extends CardBaseFramework
                     'mode' => strtoupper((string)($feature['mode'] ?? 'TEST')),
                     'disabled' => empty($model['can_submit']) || !$schemaReady,
                 ];
+            } elseif ($submissionNumber !== '') {
+                $html .= '<div class="standout"><strong>Companies House submission '
+                    . \eel_accounts\Support\Utf8::html($submissionNumber)
+                    . ' has been sent.</strong> It cannot be transmitted again. '
+                    . 'Continue checking this submission for the Companies House filing result.</div>';
+            }
+            if (in_array($lifecycle, ['submitting', 'pending', 'transport_unknown', 'parked'], true)) {
+                $html .= $this->refreshForm(
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)$submission['id'],
+                    'Continue Companies House Submission ' . $submissionNumber
+                );
             } elseif ($lifecycle === 'accepted'
                 && trim((string)($submission['document_request_key'] ?? '')) !== ''
                 && trim((string)($submission['returned_document_sha256'] ?? '')) === '') {
@@ -183,20 +202,23 @@ final class _companies_house_transmitCard extends CardBaseFramework
                 . 'Continue checking it in GovTalk Transmission History. It blocks another Companies House transmission, '
                 . 'but does not block preparation of the current Companies House or HMRC artifacts.</div></section>';
         }
-        $html .= $this->submitForm(
-            $companyId,
-            $accountingPeriodId,
-            $filingKind,
-            is_array($transmitForm) ? $transmitForm : null,
-            $warningMessages
-        );
-        if ($developerOptions) {
-            $html .= $this->developerConnectionControls(
+        if ($submission === null || $lifecycle === 'prepared') {
+            $html .= $this->connectionCheckControls(
                 $companyId,
                 $accountingPeriodId,
                 $preflight,
+                !empty($feature['authentication_check_ready']),
                 $schemaReady,
                 $schemaError
+            );
+        }
+        if ($transmitForm !== null || $warningMessages !== []) {
+            $html .= $this->submitForm(
+                $companyId,
+                $accountingPeriodId,
+                $filingKind,
+                is_array($transmitForm) ? $transmitForm : null,
+                $warningMessages
             );
         }
         $html .= '</div>';
@@ -260,23 +282,27 @@ final class _companies_house_transmitCard extends CardBaseFramework
             . '<button class="button" type="submit">' . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
     }
 
-    private function developerConnectionControls(
+    private function connectionCheckControls(
         int $companyId,
         int $accountingPeriodId,
         ?array $preflight,
+        bool $authenticationCheckReady,
         bool $schemaReady,
         string $schemaError
     ): string {
-        $html = '<section class="panel-soft"><h3 class="card-title">Test Companies House Connection</h3>'
+        $html = '<section class="panel-soft"><h3 class="card-title">Verify Companies House Connection</h3>'
             . $this->sectionHelper(
-                'Optionally check the presenter and company authentication values with Companies House CompanyData. This diagnostic is not required before transmitting Accounts.'
+                'Check the presenter credentials and company authentication code with Companies House CompanyData. '
+                . 'This is separate from choosing the TEST or LIVE API environment. A successful check in the selected environment '
+                . 'is required before transmission and remains valid for 30 minutes or until used.'
             );
         if (!$schemaReady) {
             $html .= $this->warningPanel([
                 'The company authentication-code check is blocked because ' . $schemaError,
             ]);
         }
-        $verified = is_array($preflight)
+        $verified = $authenticationCheckReady
+            && is_array($preflight)
             && (string)($preflight['outcome'] ?? '') === 'verified'
             && trim((string)($preflight['matched_company_number'] ?? '')) !== '';
         if ($verified) {
@@ -292,6 +318,9 @@ final class _companies_house_transmitCard extends CardBaseFramework
         } elseif (is_array($preflight) && trim((string)($preflight['outcome'] ?? '')) !== '') {
             $outcome = HelperFramework::labelFromKey((string)$preflight['outcome'], '_');
             $error = trim((string)($preflight['error_summary'] ?? ''));
+            if ((string)$preflight['outcome'] === 'verified' && !$authenticationCheckReady) {
+                $error = 'This check has expired or has already been used. Run it again before transmission.';
+            }
             $html .= $this->authenticationCheckPanel(
                 'Latest authentication check: ' . $outcome
                     . ($error !== '' ? '. ' . $error : ''),

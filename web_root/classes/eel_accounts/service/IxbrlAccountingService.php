@@ -1030,15 +1030,15 @@ h2 { margin: 0; font-size: 13.5pt; text-align: center; }
 .statutory-statements { width: 92%; margin: 12mm auto 0; font-size: 9.5pt; }
 .statutory-statements p { margin: 0 0 3mm; }
 .approval { margin-top: 8mm; }
-.signature { width: 55mm; margin-top: 10mm !important; padding-top: 2mm; border-top: .25mm solid #111; }
-.note { width: 92%; margin: 0 auto 8mm; }
+.signature { width: 45%; margin-top: 10mm !important; padding-top: 2mm; border-top: .25mm solid #111; }
+.note { width: 92%; margin: 0 auto 7mm; }
 .note h3 { margin: 0 0 2mm; font-size: 10.5pt; }
 .note-number { display: inline-block; width: 7mm; }
 .note p { margin: 0 0 2mm; }
 .note-table { margin-top: 3mm; }
 .loan-term { margin-top: 2mm !important; }
 .evidence-footer {
-    margin: 12mm auto 0;
+    margin: 0 auto 0;
     padding-top: 3mm;
     width: 92%;
     border-top: .25mm solid #777;

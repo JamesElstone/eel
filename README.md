@@ -6,11 +6,11 @@
 -->
 # eel
 
-**eel** is an open-source bookkeeping and corporation tax preparation tool designed for UK micro-entity companies preparing accounts under FRS 105.
+**eel** is an open-source self hosted web based bookkeeping and corporation tax preparation tool designed for UK micro-entity companies preparing accounts under FRS 105.
 
 Its goal is simple:
 
-> Upload bank and trade supplier statements -> categorise transactions -> produce statutory accounts, Corporation Tax computations and the electronic filing payloads required for HMRC and Companies House.
+> Upload bank and trade supplier statements and expense claims -> categorise transactions -> produce statutory accounts - > Corporation Tax computations and the electronic filing to HMRC and Companies House.
 
 ## Documentation
 
@@ -21,33 +21,30 @@ Its goal is simple:
 - [Mathematical Basis](MATHEMATIC_BASIS.md)
 - [PHP Requirements](PHP_REQUIREMENTS.md)
 - [Architecture](ARCHITECTURE.md)
+- [Third Party API Credentials Required](CREDENTIALS_INFORMATION.md)
 - [Licence and Third-Party Notices](LICENSE)
 - [Terms](TERMS.md)
 
-## Transmission credentials
+## Background
 
-HMRC and Companies House transmission credentials are read from the private
-`secure/api.keys` CSV through the credential store. Companies House TEST
-accounts filing and HMRC CT600 XML use environment-specific Software Reference
-values alongside their authentication credentials. The canonical header is
-shown below; replace placeholder values locally and do not commit the file:
+eel turns raw bank and trade supplier statements and expense claims into structured financial outputs suitable for FRS 105 micro-entity statutory reporting to both Companies House and HMRC, using a repeatable, evidence-based approach. Todate, it has been successfuly used to submit to Companies House (LIVE) and HMRC Corporation Tax (TEST).
 
-```csv
-PROVIDER,GATEWAY,TAG,ENVIRONMENT,SCHEMA,URL,SOFTWARE_REFERENCE,API_IDENTITY,API_KEY
-COMPANIESHOUSE,XML,XML_PRESENTER_CREDENTIALS,TEST,HTTPS,xmlgw.companieshouse.gov.uk/v1-0/xmlgw/Gateway,{package-reference},{presenter-id},{authentication-value}
-HMRC,XML,CT600_XML,TEST,HTTPS,,{four-digit-vendor-id},{sender-id},{sender-password}
-```
+eel is a self hosted web application with built in security and two factor authentication.
 
-Software Reference is visible metadata in the API Keys Editor. API Identity and
-API Key remain write-only authentication values.
-
-## Requirements
-
-eel turns raw bank and trade supplier statements into structured financial outputs suitable for FRS 105 micro-entity statutory reporting to both Companies House and HMRC, using a repeatable, evidence-based approach.
+## CSV Input
 
 Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 
-eel now uses **eelKit** as its upstream application framework. eelKit provides the shared page, card, action, service, authentication, rendering, configuration, and AJAX plumbing. eel keeps the accounting-specific pages, cards, services, repositories, database schema, migrations, and selected company/accounting period context.
+As a minimum:
+- Bank and Trade account transaction CSVs must have the following columns:
+```csv
+Date, Description, Amount, Balance
+```
+
+- Expense Claims can be entered manually, but can be imported using the format of:
+```csv
+Date, Description, Amount
+```
 
 ---
 
@@ -61,12 +58,13 @@ EEL Accounts is currently designed for UK micro-entity companies with straightfo
   - Annual turnover not exceeding **GBP 1,000,000**
   - Balance sheet total not exceeding **GBP 500,000**
   - An average of **10 or fewer employees**
-- Have a valid HMRC Unique Taxpayer Reference (UTR).
+- Have a valid HMRC Unique Taxpayer Reference (UTR), linked to an active Government Gateway ID registered for Corporation Tax Returns.
 - Not be VAT registered.
 - Not require statutory disclosures that are not currently supported by EEL Accounts, including financial commitments, guarantees or contingent liabilities. Where unsupported disclosures are identified, statutory accounts generation and Corporation Tax filing are disabled. Director's loan disclosures are generated automatically from the chronological Director Loan Statement.
 - Have Companies House and HMRC developer credentials configured to enable electronic filing.
+- Does not support HMRC Service Agent Accounts.
 
-**EEL Accounts continuously validates whether a company remains within its supported scope. If the company falls outside that scope, statutory accounts generation and electronic filing are disabled rather than producing filings that may be incomplete or inaccurate. The software provides a clear explanation of the unsupported condition and the filing features that have been disabled, allowing the issue to be resolved before filing.**
+**EEL Accounts continuously validates whether a company remains within its supported scope. If the company falls outside that scope, statutory accounts generation and electronic filing are disabled rather than producing filings that may be incomplete or inaccurate. The software provides a clear explanation of the unsupported condition and the filing features that have been disabled, allowing the issue to be resolved before filing. If there is a scenario that is not supported that you would like to use, raise an issue and we will review if this can be implemented.**
 
 For details of the types of companies supported by EEL Accounts, see the [Supported Company Scope](SUPPORTED_COMPANY_SCOPE.md).
 
@@ -102,6 +100,8 @@ For details of the types of companies supported by EEL Accounts, see the [Suppor
    - Trial Balance
    - Profit & Loss
    - Balance Sheet
+   - Tax owed to HMRC
+   - Statutory Accounts generation
 
 6. **Produce iXBRL**
    - Structured output suitable for CT600 submission
@@ -114,20 +114,25 @@ For details of the types of companies supported by EEL Accounts, see the [Suppor
 - Transaction deduplication (file + row level)
 - Rule-based categorisation engine
 - Manual override with audit trail
-- Double-entry accounting model
-- Director's Loan support
+- Double-entry accounting model journal
+- Director's Loan support (s455, s464A and 464C support)
+- Prepayments over an arbitrary timespan crossing accounting periods
+- Charitable Donations
+- Company owned Vehicles
+- Dividends claimed
 - Expense claim support
 - Fixed asset depreciation support; amortisation is not currently modelled separately and can be considered later if a real use case appears
 - Tax year/accounting period management
-- iXBRL generation pipeline
+- iXBRL, XML and GovTalk generation pipeline
 
 ---
 
 ## Architecture
 
+- **OS:** Windows or FreeBSD
 - **Backend:** PHP
 - **Database:** MariaDB
-- **Framework:** eelKit
+- **Framework:** eelKit (included)
 - **Frontend:** Web UI (upload, categorise, review)
 - **API:** Self-hosted REST endpoints
 
@@ -137,15 +142,7 @@ The system is built around a central ledger model, with multiple input sources f
 
 ## Data Model Highlights
 
-- `statement_uploads` -> tracks uploaded files
-- `statement_import_rows` -> raw parsed data
-- `transactions` -> deduplicated records
-- `journals` + `journal_lines` -> double-entry ledger
-- `nominal_accounts` -> chart of accounts
-- `categorisation_rules` -> automation layer
-- `accounting_periods` -> accounting periods
-
-This structure enables a clean progression from raw data to statutory outputs.
+> Expense Claims and Transactions -> Categorise to Journal -> Year End approvals -> Accounting Facts -> iXBRL, XML and GovTalk generation -> Transmission to Test, Test in Live, and Live environments for both Companies House and HMRC -> Historic Evidence bundle when dealing with return queries.
 
 ---
 
@@ -155,8 +152,8 @@ To provide a transparent, developer-friendly alternative to traditional accounti
 
 - Keeping full control of financial data
 - Avoiding vendor lock-in
-- Making tax logic explicit and inspectable
-- Producing compliant outputs for HMRC submission
+- Making tax logic explicit, transparent and inspectable
+- Producing compliant outputs for HMRC and Companies House submissions
 
 ---
 
@@ -164,7 +161,9 @@ To provide a transparent, developer-friendly alternative to traditional accounti
 
 eelKit is maintained separately and imported into this repository as the upstream framework. Framework-level changes should be made in the eelKit project first, then merged back into eel.
 
-eel should keep accounting behaviour in app-owned services, repositories, pages, cards, actions, schema, and migrations. Generic framework behaviour belongs in eelKit.
+eelKit provides a secure AJAX framework with Two Factor Authentication, CSRF anti-replay and Session Authentication.
+
+eel keeps accounting behaviour in app-owned services, repositories, pages, cards, actions, schema, and migrations. Generic framework behaviour is in eelKit.
 
 ---
 
@@ -176,7 +175,7 @@ Run the full local suite with:
 php web_root/tests/index.php
 ```
 
-The runner returns JSON and exits with a non-zero code if any test fails.
+The runner returns JSON and exits with a non-zero code if any test fails. This can take up to 8 minutes to run over 3,000+ tests ranging from simple assertions to the processing of a test only Golden Company's Account and iXBRL, XML and GovTalk artefact generation.
 
 Skipped tests are reported separately and are never counted as passed. Test code can attach a machine-readable category when skipping:
 
@@ -224,4 +223,4 @@ This software is not accounting, tax, legal, or professional advice. Users are r
 
 This software is not authorised, endorsed, certified, or approved by HMRC. It has not yet been approved through a successful live submission to HMRC and should therefore be treated as early-stage software under active development. No representation is made that its outputs will be accepted by HMRC, Companies House, or any other authority.
 
-> This project is currently in **alpha**. Expect rough edges and ongoing changes.
+> This project is currently in **Pre-Release**. Expect slightly rough edges and ongoing changes.

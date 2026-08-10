@@ -225,6 +225,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                     $response,
                     $environment,
                     $submissionNumber,
+                    $credentials['presenter_id'],
                     $transactionId,
                     $redactedRequest,
                     $secrets
@@ -1095,6 +1096,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         array $response,
         string $environment,
         string $submissionNumber,
+        string $presenterId,
         string $transactionId,
         string $redactedRequest,
         array $secrets
@@ -1130,7 +1132,11 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
                 );
             }
 
-            $statuses = $this->submissionStatuses($document, $submissionNumber);
+            $statuses = $this->submissionStatuses(
+                $document,
+                $submissionNumber,
+                $presenterId
+            );
             if ($statuses === []) {
                 throw new \RuntimeException(
                     'Companies House XML Gateway returned no status for submission ' . $submissionNumber . '.'
@@ -1416,7 +1422,11 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         return $errors;
     }
 
-    private function submissionStatuses(\DOMDocument $document, string $submissionNumber): array
+    private function submissionStatuses(
+        \DOMDocument $document,
+        string $submissionNumber,
+        string $presenterId
+    ): array
     {
         $xpath = new \DOMXPath($document);
         $nodes = $xpath->query('//*[local-name()="SubmissionStatus"]/*[local-name()="Status"]');
@@ -1432,7 +1442,7 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
             }
 
             $number = $this->relativeText($xpath, $node, 'SubmissionNumber');
-            if ($number !== $submissionNumber) {
+            if (!$this->submissionNumberMatches($number, $submissionNumber, $presenterId)) {
                 continue;
             }
 
@@ -1477,6 +1487,27 @@ final class CompaniesHouseAccountsGatewayClient implements CompaniesHouseAccount
         }
 
         return $statuses;
+    }
+
+    private function submissionNumberMatches(
+        string $responseNumber,
+        string $submissionNumber,
+        string $presenterId
+    ): bool {
+        $responseNumber = trim($responseNumber);
+        $submissionNumber = trim($submissionNumber);
+        $presenterId = trim($presenterId);
+
+        if ($responseNumber === '' || $submissionNumber === '') {
+            return false;
+        }
+
+        if (hash_equals($submissionNumber, $responseNumber)) {
+            return true;
+        }
+
+        return $presenterId !== ''
+            && hash_equals($presenterId . '-' . $submissionNumber, $responseNumber);
     }
 
     private function firstText(\DOMDocument $document, string $localName): string

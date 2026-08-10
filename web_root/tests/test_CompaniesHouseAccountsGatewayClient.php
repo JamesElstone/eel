@@ -541,7 +541,7 @@ function companiesHouseGatewayTestConversation(
                     return [
                         'status_code' => 200,
                         'headers' => [],
-                        'body' => $statusResponse('000001', 'PENDING'),
+                        'body' => $statusResponse('LIVE-PRESENTER-000001', 'PENDING'),
                     ];
                 };
                 $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
@@ -572,6 +572,10 @@ function companiesHouseGatewayTestConversation(
                 $harness->assertSame(true, $result['success']);
                 $harness->assertSame('PENDING', $result['submission_status']);
                 $harness->assertSame('pending', $result['normalized_status']);
+                $harness->assertSame(
+                    'LIVE-PRESENTER-000001',
+                    $result['statuses'][0]['submission_number']
+                );
                 $harness->assertSame('GetSubmissionStatus', $xmlText($requestXml, 'Class'));
                 $harness->assertSame('0', $xmlText($requestXml, 'GatewayTest'));
                 $harness->assertSame('000001', $xmlText($requestXml, 'SubmissionNumber'));
@@ -579,12 +583,51 @@ function companiesHouseGatewayTestConversation(
                 $harness->assertTrue(str_contains($requestXml, 'GetSubmissionStatus-v2-9.xsd'));
                 $harness->assertSame($requestXml, (string)($capturedRequest['request_xml'] ?? ''));
                 $harness->assertSame(
-                    $statusResponse('000001', 'PENDING'),
+                    $statusResponse('LIVE-PRESENTER-000001', 'PENDING'),
                     (string)($capturedExchange['response_xml'] ?? '')
                 );
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-PRESENTER'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-CODE'));
                 $harness->assertFalse(str_contains((string)$result['request_xml'], 'LIVE-PACKAGE'));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Client\CompaniesHouseAccountsGatewayClient::class,
+            'does not accept a status qualified by another presenter ID',
+            static function () use (
+                $harness,
+                $credentials,
+                $transactionId,
+                $config,
+                $statusResponse,
+                $evidenceReceipt
+            ): void {
+                $client = new \eel_accounts\Client\CompaniesHouseAccountsGatewayClient(
+                    static fn(array $request): array => [
+                        'status_code' => 200,
+                        'headers' => [],
+                        'body' => $statusResponse('OTHER-PRESENTER-000001', 'ACCEPT'),
+                    ],
+                    $credentials,
+                    $transactionId,
+                    $config
+                );
+                $result = $client->getSubmissionStatus(
+                    '000001',
+                    'LIVE',
+                    companiesHouseGatewayTestConversation(
+                        $evidenceReceipt,
+                        $evidenceReceipt,
+                        'LIVE'
+                    )
+                );
+
+                $harness->assertSame(false, $result['success']);
+                $harness->assertSame(
+                    'Companies House XML Gateway returned no status for submission 000001.',
+                    $result['error']
+                );
             }
         );
 

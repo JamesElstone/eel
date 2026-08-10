@@ -84,7 +84,6 @@ final class CompaniesHouseAccountsSubmissionService
                 (string)($sequence['presenter_fingerprint'] ?? '')
             )
             : 'unknown';
-        $liveApproved = AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
         $testAccepted = $this->testAccepted($companyId, $accountingPeriodId, $filingKind);
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
         $revisedReadiness = $needsRevision
@@ -214,9 +213,6 @@ final class CompaniesHouseAccountsSubmissionService
         if (!$protocolReady) {
             $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
         }
-        if ($mode === 'LIVE' && !$liveApproved) {
-            $submissionBlockers[] = 'LIVE Companies House accounts filing has not been explicitly approved in server configuration.';
-        }
         if ($mode === 'LIVE' && !$testAccepted) {
             $submissionBlockers[] = 'A Companies House TEST ' . ($filingKind !== '' ? $filingKind . '-accounts' : 'accounts')
                 . ' submission must be accepted before LIVE filing.';
@@ -259,7 +255,6 @@ final class CompaniesHouseAccountsSubmissionService
                 'developer_binding_configured' => $featureEnabled
                     && $this->conversation()->bindingConfigured($mode),
                 'company_data_capability' => $companyDataCapability,
-                'live_approved' => $liveApproved,
                 'test_accepted' => $testAccepted,
             ],
             'eligibility' => $eligibility,
@@ -374,9 +369,6 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if (!$this->conversation()->schemaReady()) {
             $submissionBlockers[] = 'Run the Companies House protocol-conversation migration before filing.';
-        }
-        if ($mode === 'LIVE' && !AccountingConfigurationStore::companiesHouseAccountsLiveApproved()) {
-            $submissionBlockers[] = 'LIVE Companies House accounts filing has not been explicitly approved in server configuration.';
         }
         if ($mode === 'LIVE' && !$this->testAccepted($companyId, $accountingPeriodId, $filingKind)) {
             $submissionBlockers[] = 'A Companies House TEST accounts submission must be accepted before LIVE filing.';
@@ -1582,9 +1574,6 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ($mode !== (string)$submission['environment']) {
             return $this->failure('The prepared submission environment does not match the server filing mode.');
-        }
-        if ($mode === 'LIVE' && !AccountingConfigurationStore::companiesHouseAccountsLiveApproved()) {
-            return $this->failure('LIVE Companies House accounts filing has not been explicitly approved.');
         }
         $filingKind = (string)($submission['filing_type'] ?? 'revised');
         $filingKind = in_array($filingKind, ['original', 'revised'], true) ? $filingKind : 'accounts';
@@ -5148,7 +5137,6 @@ final class CompaniesHouseAccountsSubmissionService
                 'protocol_ready' => false,
                 'developer_binding_configured' => false,
                 'company_data_capability' => 'unknown',
-                'live_approved' => false,
                 'test_accepted' => false,
             ],
             'eligibility' => ['decision' => 'pending', 'detected_channel' => 'unknown', 'original_document_id' => 0, 'evidence' => []],

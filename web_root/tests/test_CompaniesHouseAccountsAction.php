@@ -33,7 +33,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertTrue(str_contains($body, 'nothing has been sent yet.'));
     });
 
-    $harness->check(CompaniesHouseAccountsAction::class, 'uses the namespaced accounting configuration store in production', static function () use ($harness): void {
+    $harness->check(CompaniesHouseAccountsAction::class, 'treats the selected filing mode as the server approval in production', static function () use ($harness): void {
         $source = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . '..'
             . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions'
             . DIRECTORY_SEPARATOR . 'CompaniesHouseAccountsAction.php');
@@ -41,10 +41,6 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
         $harness->assertTrue(str_contains(
             (string)$source,
             '\\eel_accounts\\Store\\AccountingConfigurationStore::companiesHouseAccountsFilingMode()'
-        ));
-        $harness->assertTrue(str_contains(
-            (string)$source,
-            '\\eel_accounts\\Store\\AccountingConfigurationStore::companiesHouseAccountsLiveApproved()'
         ));
     });
 
@@ -184,7 +180,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
 
     $harness->check(CompaniesHouseAccountsAction::class, 'keeps TEST submission separate from LIVE confirmation', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
-        $service->context['feature'] = ['mode' => 'TEST', 'enabled' => true, 'live_approved' => false];
+        $service->context['feature'] = ['mode' => 'TEST', 'enabled' => true];
         $service->context['submission'] = ['id' => 77, 'filing_kind' => 'revised'];
         $action = companiesHouseAccountsTestAction($service);
         $invalidCode = $action->handle(companiesHouseAccountsActionRequest([
@@ -222,7 +218,7 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
 
     $harness->check(CompaniesHouseAccountsAction::class, 'requires authority and the exact phrase for LIVE submission', static function () use ($harness): void {
         $service = new CompaniesHouseAccountsActionFakeService();
-        $service->context['feature'] = ['mode' => 'LIVE', 'enabled' => true, 'live_approved' => true];
+        $service->context['feature'] = ['mode' => 'LIVE', 'enabled' => true];
         $service->context['submission'] = ['id' => 78, 'filing_kind' => 'revised'];
         $action = companiesHouseAccountsTestAction($service);
         $base = [
@@ -326,7 +322,6 @@ $harness->run(CompaniesHouseAccountsAction::class, static function (
             $service->context['feature'] = [
                 'mode' => 'TEST',
                 'enabled' => true,
-                'live_approved' => false,
             ];
             $service->context['submission'] = ['id' => 77, 'filing_kind' => 'original'];
             $action = companiesHouseAccountsTestAction($service);
@@ -361,7 +356,7 @@ final class CompaniesHouseAccountsActionFakeService
     public array $calls = [];
 
     public array $context = [
-        'feature' => ['mode' => 'TEST', 'enabled' => true, 'live_approved' => false],
+        'feature' => ['mode' => 'TEST', 'enabled' => true],
         'can_prepare' => true,
         'can_prepare_after_accounts_generation' => true,
     ];
@@ -521,7 +516,6 @@ function companiesHouseAccountsTestAction(
                 'errors' => [],
             ],
         static fn(): string => (string)($service->context['feature']['mode'] ?? 'DISABLED'),
-        static fn(): bool => !empty($service->context['feature']['live_approved']),
     );
 }
 

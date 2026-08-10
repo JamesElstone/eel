@@ -70,17 +70,6 @@ final class AccountingConfigurationStore
         return \AppConfigurationStore::set('runtime.ch_accounts_filing_mode', $mode);
     }
 
-    public static function companiesHouseAccountsLiveApproved(bool $reload = false): bool
-    {
-        $value = \AppConfigurationStore::get(
-            'runtime.ch_accounts_filing_live_approved',
-            false,
-            $reload
-        );
-
-        return filter_var($value, FILTER_VALIDATE_BOOL);
-    }
-
     public static function setHmrcMode(string $mode): array
     {
         return \AppConfigurationStore::set('runtime.hmrc_mode', \HelperFramework::normaliseEnvironmentMode($mode));

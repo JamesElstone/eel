@@ -27,7 +27,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
     private ?Closure $accountingPrerequisite;
     private ?Closure $revisionPrerequisite;
     private ?Closure $filingModeResolver;
-    private ?Closure $liveApprovalResolver;
 
     public function __construct(
         private ?object $submissionService = null,
@@ -38,7 +37,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
         ?callable $accountingPrerequisite = null,
         ?callable $revisionPrerequisite = null,
         ?callable $filingModeResolver = null,
-        ?callable $liveApprovalResolver = null,
     ) {
         $this->securityCheck = $securityCheck !== null ? Closure::fromCallable($securityCheck) : null;
         $this->contextResolver = $contextResolver !== null ? Closure::fromCallable($contextResolver) : null;
@@ -52,9 +50,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             : null;
         $this->filingModeResolver = $filingModeResolver !== null
             ? Closure::fromCallable($filingModeResolver)
-            : null;
-        $this->liveApprovalResolver = $liveApprovalResolver !== null
-            ? Closure::fromCallable($liveApprovalResolver)
             : null;
     }
 
@@ -373,9 +368,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             return ['success' => false, 'errors' => ['Companies House accounts filing is disabled.']];
         }
         if ($mode === 'LIVE') {
-            if (!$this->liveFilingApproved()) {
-                return ['success' => false, 'errors' => ['Companies House LIVE accounts filing has not been approved.']];
-            }
             if ((string)$request->input('authority_confirmed', '') !== '1') {
                 return ['success' => false, 'errors' => ['Confirm that you are authorised to file these statutory accounts.']];
             }
@@ -626,13 +618,6 @@ final class CompaniesHouseAccountsAction implements ActionInterfaceFramework
             : \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsFilingMode();
 
         return strtoupper(trim($mode));
-    }
-
-    private function liveFilingApproved(): bool
-    {
-        return $this->liveApprovalResolver !== null
-            ? (bool)($this->liveApprovalResolver)()
-            : \eel_accounts\Store\AccountingConfigurationStore::companiesHouseAccountsLiveApproved();
     }
 
     private function isIsoDate(string $value): bool

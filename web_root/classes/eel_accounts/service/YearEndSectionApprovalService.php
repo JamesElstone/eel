@@ -1013,9 +1013,15 @@ final class YearEndSectionApprovalService
             ? $this->companiesHouseQuestions(true)
             : [];
         $bundle = $this->bundle($checkCode, $comparison, $questions, $display);
-        if (empty($comparison['reliable_closing_balance'])) {
+        $comparisonCanBeAcknowledged = !array_key_exists('can_acknowledge', $comparison)
+            || !empty($comparison['can_acknowledge']);
+        if (empty($comparison['reliable_closing_balance']) || !$comparisonCanBeAcknowledged) {
             $bundle['can_approve'] = false;
-            $bundle['approval_errors'] = [(string)(($comparison['warnings'] ?? [])[0] ?? 'The Companies House comparison is not reliable enough to approve.')];
+            $bundle['approval_errors'] = [(string)(
+                (($comparison['warnings'] ?? [])[0] ?? null)
+                ?? ($comparison['comparison_note'] ?? null)
+                ?? 'The Companies House comparison is not reliable enough to approve.'
+            )];
         }
         return $bundle;
     }

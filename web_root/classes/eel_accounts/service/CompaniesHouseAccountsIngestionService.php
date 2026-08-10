@@ -20,12 +20,19 @@ final class CompaniesHouseAccountsIngestionService
     public function __construct(
         private readonly string $environment = 'TEST',
         private readonly int $timeoutSeconds = 20,
+        ?CompaniesHouseFilingService $filingService = null,
+        ?CompaniesHouseDocumentService $documentService = null,
+        ?IxbrlParserService $ixbrlParser = null,
+        ?CompaniesHousePersistenceService $persistenceService = null,
     ) {
         $companiesHouseService = new \eel_accounts\Service\CompaniesHouseService($this->environment, $this->timeoutSeconds);
-        $this->filingService = new \eel_accounts\Service\CompaniesHouseFilingService($companiesHouseService);
-        $this->documentService = new \eel_accounts\Service\CompaniesHouseDocumentService($this->environment, $this->timeoutSeconds);
-        $this->ixbrlParser = new \eel_accounts\Service\IxbrlParserService();
-        $this->persistenceService = new \eel_accounts\Service\CompaniesHousePersistenceService();
+        $this->filingService = $filingService
+            ?? new \eel_accounts\Service\CompaniesHouseFilingService($companiesHouseService);
+        $this->documentService = $documentService
+            ?? new \eel_accounts\Service\CompaniesHouseDocumentService($this->environment, $this->timeoutSeconds);
+        $this->ixbrlParser = $ixbrlParser ?? new \eel_accounts\Service\IxbrlParserService();
+        $this->persistenceService = $persistenceService
+            ?? new \eel_accounts\Service\CompaniesHousePersistenceService();
     }
 
     public function ingestForCompany(int $companyId, string $companyNumber): array {
@@ -60,6 +67,8 @@ final class CompaniesHouseAccountsIngestionService
 
                 if (($result['parse_status'] ?? '') === 'parsed_latest_year') {
                     $parsedDocumentCount++;
+                } elseif (($result['parse_status'] ?? '') !== 'stored_document_only') {
+                    $failedDocumentCount++;
                 }
 
                 $results[] = $result;
@@ -69,6 +78,7 @@ final class CompaniesHouseAccountsIngestionService
                     'transaction_id' => (string)($candidate['transaction_id'] ?? ''),
                     'filing_date' => (string)($candidate['date'] ?? ''),
                     'filing_type' => (string)($candidate['type'] ?? ''),
+                    'significant_date' => $this->candidateSignificantDate($candidate),
                     'document_id' => $this->extractDocumentId((string)($candidate['document_metadata_path'] ?? '')),
                     'classification' => '',
                     'parse_status' => 'ingest_failed',
@@ -91,7 +101,23 @@ final class CompaniesHouseAccountsIngestionService
     }
 
     private function ingestCandidate(int $companyId, string $companyNumber, array $candidate): array {
-        $metadata = $this->documentService->fetchMetadata((string)($candidate['document_metadata_path'] ?? ''));
+        $metadataException = '';
+        try {
+            $metadata = $this->documentService->fetchMetadata(
+                (string)($candidate['document_metadata_path'] ?? '')
+            );
+        } catch (\Throwable $exception) {
+            $metadataException = $exception->getMessage();
+            $metadata = [
+                'status' => 0,
+                'url' => $this->documentService->absoluteUrl(
+                    (string)($candidate['document_metadata_path'] ?? '')
+                ),
+                'body' => '',
+                'content_types' => [],
+                'classification' => 'metadata_only_unknown',
+            ];
+        }
         $content = null;
         $parsed = null;
         $parseStatus = 'stored_document_only';
@@ -99,7 +125,10 @@ final class CompaniesHouseAccountsIngestionService
 
         if ((int)($metadata['status'] ?? 0) !== 200) {
             $parseStatus = 'metadata_fetch_failed';
-            $parseError = 'Document metadata request returned HTTP ' . (int)($metadata['status'] ?? 0) . '.';
+            $parseError = $metadataException !== ''
+                ? 'Document metadata request failed: ' . $metadataException
+                : 'Document metadata request returned HTTP ' . (int)($metadata['status'] ?? 0) . '.';
+            $metadata = $this->metadataFailurePlaceholder($metadata, $candidate, $parseError);
         } elseif (($metadata['classification'] ?? '') === 'digital_xhtml') {
             try {
                 $content = $this->documentService->fetchPreferredContent($metadata);
@@ -137,6 +166,14 @@ final class CompaniesHouseAccountsIngestionService
         }
 
         $preferredContentType = $this->documentService->choosePreferredContentType((array)($metadata['content_types'] ?? []));
+        $significantDate = \HelperFramework::normaliseDate((string)($metadata['significant_date'] ?? ''));
+        if (trim((string)$significantDate) === '') {
+            $significantDate = $this->candidateSignificantDate($candidate);
+        }
+        $significantDateType = trim((string)($metadata['significant_date_type'] ?? ''));
+        if ($significantDateType === '' && trim((string)$significantDate) !== '') {
+            $significantDateType = trim((string)($candidate['significant_date_type'] ?? 'made-up-date'));
+        }
         $documentRow = [
             'company_id' => $companyId,
             'company_number' => $companyNumber,
@@ -156,12 +193,12 @@ final class CompaniesHouseAccountsIngestionService
                 : $preferredContentType,
             'filename' => (string)($metadata['filename'] ?? ''),
             'classification' => (string)($metadata['classification'] ?? ''),
-            'significant_date' => \HelperFramework::normaliseDate((string)($metadata['significant_date'] ?? '')),
-            'significant_date_type' => (string)($metadata['significant_date_type'] ?? ''),
+            'significant_date' => $significantDate,
+            'significant_date_type' => $significantDateType,
             'pages' => $metadata['pages'] ?? $candidate['pages'] ?? null,
             'created_at_utc' => \HelperFramework::normaliseUtcDateTime((string)($metadata['created_at'] ?? '')),
             'fetched_at_utc' => gmdate('Y-m-d H:i:s'),
-            'raw_metadata_json' => (string)($metadata['body'] ?? ''),
+            'raw_metadata_json' => $this->metadataJsonForPersistence($metadata, $candidate),
             'raw_content_hash' => $content !== null ? hash('sha256', (string)($content['body'] ?? '')) : null,
             'parse_status' => $parseStatus,
             'parse_error' => $parseError,
@@ -173,6 +210,7 @@ final class CompaniesHouseAccountsIngestionService
             'transaction_id' => (string)($candidate['transaction_id'] ?? ''),
             'filing_date' => (string)($candidate['date'] ?? ''),
             'filing_type' => (string)($candidate['type'] ?? ''),
+            'significant_date' => (string)$significantDate,
             'document_id' => $documentId,
             'classification' => (string)($metadata['classification'] ?? ''),
             'parse_status' => $parseStatus,
@@ -208,6 +246,79 @@ final class CompaniesHouseAccountsIngestionService
         }
 
         return '';
+    }
+
+    /** @param array<string,mixed> $candidate */
+    private function candidateSignificantDate(array $candidate): string
+    {
+        $descriptionValues = is_array($candidate['description_values'] ?? null)
+            ? (array)$candidate['description_values']
+            : [];
+        return (string)(\HelperFramework::normaliseDate((string)(
+            $candidate['significant_date']
+            ?? $candidate['action_date']
+            ?? ($descriptionValues['made_up_date'] ?? '')
+        )) ?? '');
+    }
+
+    /** @param array<string,mixed> $metadata @param array<string,mixed> $candidate */
+    private function metadataJsonForPersistence(array $metadata, array $candidate): string
+    {
+        $body = (string)($metadata['body'] ?? '');
+        if (!array_key_exists('filing_history_order', $candidate)) {
+            return $body;
+        }
+
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            return $body;
+        }
+        $decoded['_eel_filing_history_order'] = max(0, (int)$candidate['filing_history_order']);
+        $decoded['_eel_filing_history_transaction_id'] = trim((string)($candidate['transaction_id'] ?? ''));
+
+        return \eel_accounts\Support\Utf8::json($decoded, JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Preserve the filing-history identity when the Document API is
+     * temporarily unavailable. The existing document table is sufficient for
+     * this placeholder; a later successful sync updates the same document id.
+     *
+     * @param array<string,mixed> $metadata
+     * @param array<string,mixed> $candidate
+     * @return array<string,mixed>
+     */
+    private function metadataFailurePlaceholder(array $metadata, array $candidate, string $error): array
+    {
+        $significantDate = $this->candidateSignificantDate($candidate);
+        $documentId = trim((string)($metadata['document_id'] ?? ''));
+        if ($documentId === '') {
+            $documentId = $this->extractDocumentId(
+                (string)($candidate['document_metadata_path'] ?? '')
+            );
+        }
+        $payload = [
+            'placeholder' => true,
+            'source' => 'filing_history',
+            'document_id' => $documentId,
+            'significant_date' => $significantDate,
+            'significant_date_type' => $significantDate !== '' ? 'made-up-date' : '',
+            'metadata_status' => (int)($metadata['status'] ?? 0),
+            'metadata_fetch_error' => $error,
+            'filing_history' => $candidate,
+        ];
+        $encoded = \eel_accounts\Support\Utf8::json($payload, JSON_UNESCAPED_SLASHES);
+
+        return array_replace($metadata, [
+            'document_id' => $documentId,
+            'significant_date' => $significantDate,
+            'significant_date_type' => $significantDate !== '' ? 'made-up-date' : '',
+            'body' => is_string($encoded) ? $encoded : '',
+            'classification' => (string)($metadata['classification'] ?? 'metadata_only_unknown'),
+            'content_types' => is_array($metadata['content_types'] ?? null)
+                ? $metadata['content_types']
+                : [],
+        ]);
     }
 
 }

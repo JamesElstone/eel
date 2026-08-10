@@ -25,6 +25,1013 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             $service::class,
+            'keeps the signed Revised classification when the live observation changes',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $basis = [
+                    'contract_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                    'check_code' => 'companies_house_mismatch_acknowledgement',
+                    'facts' => [
+                        'filing_kind' => 'revised',
+                        'filing_reason' => 'exact_period_filing_found',
+                        'mismatch_count' => 2,
+                        'filing_evidence' => ['document_row_id' => 90],
+                    ],
+                    'questions' => [],
+                    'answers' => [],
+                ];
+                $basisHash = (new \eel_accounts\Service\YearEndAcknowledgementService())
+                    ->hashBasis($basis);
+                $review = [
+                    'available' => true,
+                    'check_code' => 'companies_house_mismatch_acknowledgement',
+                    'acknowledgement_current' => true,
+                    'acknowledged_at' => '2026-08-01 10:00:00',
+                    'acknowledged_by' => 'reviewer',
+                    'acknowledgement' => [
+                        'basis_version' => \eel_accounts\Service\YearEndSectionApprovalService::CONTRACT_VERSION,
+                        'basis_hash' => $basisHash,
+                        'basis_json' => json_encode($basis, JSON_THROW_ON_ERROR),
+                    ],
+                    'display' => [
+                        'mismatch_count' => 0,
+                        'comparison' => [
+                            'filing_kind' => 'original',
+                            'filing_reason' => 'new_live_observation',
+                        ],
+                    ],
+                ];
+
+                $classification = $invokePrivate($service, 'classificationFromReview', $review);
+
+                $harness->assertSame('approved_basis', (string)$classification['source']);
+                $harness->assertSame('revised', (string)$classification['filing_kind']);
+                $harness->assertTrue((bool)$classification['correction_required']);
+                $harness->assertTrue((bool)$classification['approved']);
+                $harness->assertSame($basisHash, (string)$classification['approval_basis_hash']);
+
+                $review['acknowledgement']['basis_hash'] = hash('sha256', 'tampered-review-basis');
+                $fallback = $invokePrivate($service, 'classificationFromReview', $review);
+                $harness->assertSame('live_comparison', (string)$fallback['source']);
+                $harness->assertSame('original', (string)$fallback['filing_kind']);
+                $harness->assertFalse((bool)$fallback['approved']);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'clears filing outstanding only for a consistent verified revised observation',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $verified = $invokePrivate($service, 'filingReconciliation', true, true, [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'verified',
+                    'revision_reconciled' => true,
+                    'filing_outstanding' => false,
+                    'mismatch_count' => 0,
+                ]);
+                $harness->assertFalse((bool)$verified['filing_outstanding']);
+                $harness->assertTrue((bool)$verified['revision_reconciled']);
+
+                $unavailable = $invokePrivate($service, 'filingReconciliation', true, true, [
+                    'available' => false,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'verified',
+                    'revision_reconciled' => true,
+                    'filing_outstanding' => false,
+                    'mismatch_count' => 0,
+                ]);
+                $harness->assertTrue((bool)$unavailable['filing_outstanding']);
+                $harness->assertFalse((bool)$unavailable['revision_reconciled']);
+
+                $inconsistent = $invokePrivate($service, 'filingReconciliation', true, true, [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'verified',
+                    'revision_reconciled' => true,
+                    'filing_outstanding' => false,
+                ]);
+                $harness->assertTrue((bool)$inconsistent['filing_outstanding']);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'waits for each accepted LIVE amendment to appear in the Companies House register',
+            static function () use ($harness, $invokePrivate): void {
+                $accepted = [
+                    'id' => 65,
+                    'company_id' => 49,
+                    'accounting_period_id' => 79,
+                    'original_document_id' => 90,
+                    'filing_type' => 'revised',
+                    'lifecycle' => 'accepted',
+                    'environment' => 'LIVE',
+                    'filing_metadata' => [
+                        'original_document_id' => 90,
+                        'superseded_document_id' => 90,
+                    ],
+                ];
+                $acceptedLookups = 0;
+                $subject = new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService(
+                    acceptedSubmissionResolver: static function (
+                        int $companyId,
+                        int $accountingPeriodId,
+                        string $environment
+                    ) use (&$accepted, &$acceptedLookups): array {
+                        $acceptedLookups++;
+                        return $accepted;
+                    },
+                    periodFilingResolver: static fn(): array => [
+                        'original' => ['id' => 90, 'parse_status' => 'parsed_latest_year'],
+                        'latest_revision' => ['id' => 102, 'parse_status' => 'parsed_latest_year'],
+                    ]
+                );
+
+                $awaiting = [
+                    'available' => true,
+                    'has_revised_filing' => false,
+                    'reconciliation_state' => 'awaiting',
+                    'filing_outstanding' => true,
+                ];
+                $firstAmendmentBlocker = $invokePrivate(
+                    $subject,
+                    'acceptedFilingRegisterResyncBlocker',
+                    49,
+                    79,
+                    'LIVE',
+                    $awaiting
+                );
+                $harness->assertTrue(str_contains(
+                    (string)$firstAmendmentBlocker,
+                    'accepted revised accounts filing is awaiting Companies House register resync'
+                ));
+
+                $accepted['filing_metadata']['superseded_document_id'] = 101;
+                $sameRevision = [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'mismatch',
+                    'filing_outstanding' => true,
+                    'filing' => ['id' => 101],
+                ];
+                $furtherAmendmentBlocker = $invokePrivate(
+                    $subject,
+                    'acceptedFilingRegisterResyncBlocker',
+                    49,
+                    79,
+                    'LIVE',
+                    $sameRevision
+                );
+                $harness->assertTrue(str_contains(
+                    (string)$furtherAmendmentBlocker,
+                    'accepted revised accounts filing is awaiting Companies House register resync'
+                ));
+
+                $newRevision = $sameRevision;
+                $newRevision['filing']['id'] = 102;
+                $harness->assertSame(
+                    null,
+                    $invokePrivate(
+                        $subject,
+                        'acceptedFilingRegisterResyncBlocker',
+                        49,
+                        79,
+                        'LIVE',
+                        $newRevision
+                    )
+                );
+                unset($accepted['filing_metadata']['superseded_document_id']);
+                $harness->assertSame(
+                    null,
+                    $invokePrivate(
+                        $subject,
+                        'acceptedFilingRegisterResyncBlocker',
+                        49,
+                        79,
+                        'LIVE',
+                        $newRevision
+                    )
+                );
+                $accepted['filing_metadata'] = [];
+                $accepted['original_document_id'] = 0;
+                $harness->assertTrue(str_contains(
+                    (string)$invokePrivate(
+                        $subject,
+                        'acceptedFilingRegisterResyncBlocker',
+                        49,
+                        79,
+                        'LIVE',
+                        $newRevision
+                    ),
+                    'awaiting Companies House register resync'
+                ));
+                $accepted['filing_metadata'] = [
+                    'original_document_id' => 90,
+                    'superseded_document_id' => 101,
+                ];
+                $accepted['original_document_id'] = 90;
+                $context = [
+                    'company' => ['company_number' => '01234567'],
+                    'accounting_period' => ['period_end' => '2023-09-30'],
+                    'reconciliation' => $newRevision,
+                ];
+                $harness->assertSame(
+                    102,
+                    $invokePrivate(
+                        $subject,
+                        'supersededDocumentIdForPreparation',
+                        49,
+                        79,
+                        $context,
+                        90
+                    )
+                );
+
+                $harness->assertSame(
+                    null,
+                    $invokePrivate(
+                        $subject,
+                        'acceptedFilingRegisterResyncBlocker',
+                        49,
+                        79,
+                        'TEST',
+                        $awaiting
+                    )
+                );
+                $harness->assertSame(5, $acceptedLookups);
+
+                foreach (['fetchContext', 'fetchTransmissionContext', 'prepareRevision'] as $methodName) {
+                    $method = new ReflectionMethod($subject, $methodName);
+                    $source = file($method->getFileName());
+                    $harness->assertTrue(is_array($source));
+                    $body = implode('', array_slice(
+                        $source,
+                        $method->getStartLine() - 1,
+                        $method->getEndLine() - $method->getStartLine() + 1
+                    ));
+                    $harness->assertTrue(str_contains($body, 'acceptedFilingRegisterResyncBlocker('));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'blocks accepted LIVE register waits before gateway and sequence side effects',
+            static function () use ($harness): void {
+                $gatewayCalls = 0;
+                $sequenceCalls = 0;
+                $gateway = new class(static function () use (&$gatewayCalls): void {
+                    $gatewayCalls++;
+                }) implements \eel_accounts\Client\CompaniesHouseAccountsGatewayTransportInterface {
+                    public function __construct(private readonly Closure $record)
+                    {
+                    }
+
+                    public function checkCompanyAuthentication(
+                        string $companyNumber,
+                        string $companyAuthenticationCode,
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function prepareAccounts(
+                        array $payload,
+                        string $environment,
+                        array $schemaInventory
+                    ): \eel_accounts\Client\CompaniesHousePreparedAccountsRequest {
+                        ($this->record)();
+                        throw new RuntimeException('Gateway preparation must not run.');
+                    }
+
+                    public function sendPreparedAccounts(
+                        \eel_accounts\Client\CompaniesHousePreparedAccountsRequest $request,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function getSubmissionStatus(
+                        string $submissionNumber,
+                        string $environment,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation,
+                        array $schemaInventory = []
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function acknowledgeSubmissionStatus(
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function getDocument(
+                        string $documentRequestKey,
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+                };
+                $observation = [
+                    'available' => true,
+                    'has_revised_filing' => false,
+                    'reconciliation_state' => 'awaiting',
+                    'filing_outstanding' => true,
+                ];
+                $accepted = [
+                    'id' => 65,
+                    'original_document_id' => 90,
+                    'filing_metadata' => ['superseded_document_id' => 90],
+                ];
+                $submission = [
+                    'id' => 79,
+                    'company_id' => 49,
+                    'accounting_period_id' => 79,
+                    'original_document_id' => 90,
+                    'filing_type' => 'revised',
+                    'lifecycle' => 'prepared',
+                    'environment' => 'LIVE',
+                    'filing_metadata' => ['superseded_document_id' => 90],
+                ];
+                $subject = new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService(
+                    gatewayClient: $gateway,
+                    revisedObservationResolver: static function () use (&$observation): array {
+                        return $observation;
+                    },
+                    submissionResolver: static function () use (&$submission): array {
+                        return $submission;
+                    },
+                    sequenceAllocator: static function () use (&$sequenceCalls): array {
+                        $sequenceCalls++;
+                        return ['submission_number' => '999999'];
+                    },
+                    acceptedSubmissionResolver: static function () use (&$accepted): array {
+                        return $accepted;
+                    }
+                );
+
+                $firstResult = $subject->submitRevision(79, 'ABC123', 'tester');
+                $harness->assertFalse((bool)$firstResult['success']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$firstResult['errors']),
+                    'awaiting Companies House register resync'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+
+                $accepted['filing_metadata']['superseded_document_id'] = 101;
+                $submission['filing_metadata']['superseded_document_id'] = 101;
+                $observation = [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'mismatch',
+                    'filing_outstanding' => true,
+                    'mismatch_count' => 1,
+                    'filing' => ['id' => 101],
+                ];
+                $sameResult = $subject->submitRevision(79, 'ABC123', 'tester');
+                $harness->assertFalse((bool)$sameResult['success']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$sameResult['errors']),
+                    'awaiting Companies House register resync'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+
+                $submission['filing_metadata']['superseded_document_id'] = 102;
+                $observation['filing']['id'] = 102;
+                $newResult = $subject->submitRevision(79, 'ABC12', 'tester');
+                $harness->assertFalse((bool)$newResult['success']);
+                $harness->assertFalse(str_contains(
+                    implode(' ', (array)$newResult['errors']),
+                    'awaiting Companies House register resync'
+                ));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$newResult['errors']),
+                    'authentication code must contain exactly 6'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'blocks reconciled and stale-lineage prepared drafts in both transmission contexts',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $submission = [
+                    'filing_type' => 'revised',
+                    'lifecycle' => 'prepared',
+                    'original_document_id' => 90,
+                    'filing_metadata' => ['superseded_document_id' => 90],
+                ];
+                $blocker = $invokePrivate($service, 'draftLineageSubmissionBlocker', $submission, [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'verified',
+                    'revision_reconciled' => true,
+                    'filing_outstanding' => false,
+                ]);
+                $harness->assertTrue(is_string($blocker));
+                $harness->assertTrue(str_contains((string)$blocker, 'no further filing is outstanding'));
+                $harness->assertFalse((bool)$invokePrivate(
+                    $service,
+                    'transmissionCanSubmit',
+                    'prepared',
+                    [(string)$blocker]
+                ));
+                foreach (['fetchContext', 'fetchTransmissionContext'] as $methodName) {
+                    $method = new ReflectionMethod($service, $methodName);
+                    $source = file($method->getFileName());
+                    $harness->assertTrue(is_array($source));
+                    $body = implode('', array_slice(
+                        $source,
+                        $method->getStartLine() - 1,
+                        $method->getEndLine() - $method->getStartLine() + 1
+                    ));
+                    $harness->assertTrue(str_contains($body, 'draftLineageSubmissionBlocker('));
+                    $harness->assertTrue(str_contains($body, 'transmissionCanSubmit('));
+                }
+
+                $mismatch = [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'mismatch',
+                    'filing_outstanding' => true,
+                    'filing' => ['id' => 101],
+                ];
+                $stale = $invokePrivate($service, 'draftLineageSubmissionBlocker', $submission, $mismatch);
+                $harness->assertTrue(str_contains((string)$stale, 'changed the superseded filing source'));
+                $submission['filing_metadata']['superseded_document_id'] = 101;
+                $harness->assertSame(
+                    null,
+                    $invokePrivate($service, 'draftLineageSubmissionBlocker', $submission, $mismatch)
+                );
+                $unverifiable = $mismatch;
+                $unverifiable['available'] = false;
+                $unverifiable['reconciliation_state'] = 'unverifiable';
+                $harness->assertTrue(str_contains(
+                    (string)$invokePrivate($service, 'draftLineageSubmissionBlocker', $submission, $unverifiable),
+                    'cannot be verified'
+                ));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'direct submission fails before gateway or sequence side effects after reconciliation',
+            static function () use ($harness): void {
+                $gatewayCalls = 0;
+                $sequenceCalls = 0;
+                $recordGatewayCall = static function () use (&$gatewayCalls): void {
+                    $gatewayCalls++;
+                };
+                $gateway = new class($recordGatewayCall) implements
+                    \eel_accounts\Client\CompaniesHouseAccountsGatewayTransportInterface {
+                    public function __construct(private readonly Closure $record)
+                    {
+                    }
+
+                    public function checkCompanyAuthentication(
+                        string $companyNumber,
+                        string $companyAuthenticationCode,
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function prepareAccounts(
+                        array $payload,
+                        string $environment,
+                        array $schemaInventory
+                    ): \eel_accounts\Client\CompaniesHousePreparedAccountsRequest {
+                        ($this->record)();
+                        throw new RuntimeException('Gateway preparation must not run.');
+                    }
+
+                    public function sendPreparedAccounts(
+                        \eel_accounts\Client\CompaniesHousePreparedAccountsRequest $request,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function getSubmissionStatus(
+                        string $submissionNumber,
+                        string $environment,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation,
+                        array $schemaInventory = []
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function acknowledgeSubmissionStatus(
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+
+                    public function getDocument(
+                        string $documentRequestKey,
+                        string $environment,
+                        array $schemaInventory,
+                        \eel_accounts\Client\GovTalkConversationContext $conversation
+                    ): array {
+                        ($this->record)();
+                        return [];
+                    }
+                };
+                $observation = [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'verified',
+                    'revision_reconciled' => true,
+                    'filing_outstanding' => false,
+                    'mismatch_count' => 0,
+                ];
+                $submission = [
+                    'id' => 79,
+                    'company_id' => 49,
+                    'accounting_period_id' => 79,
+                    'original_document_id' => 90,
+                    'filing_type' => 'revised',
+                    'lifecycle' => 'prepared',
+                    'environment' => 'TEST',
+                    'filing_metadata' => ['superseded_document_id' => 90],
+                ];
+                $subject = new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService(
+                    gatewayClient: $gateway,
+                    revisedObservationResolver: static function () use (&$observation): array {
+                        return $observation;
+                    },
+                    submissionResolver: static function () use (&$submission): array {
+                        return $submission;
+                    },
+                    sequenceAllocator: static function () use (&$sequenceCalls): array {
+                        $sequenceCalls++;
+                        return ['submission_number' => '999999'];
+                    },
+                );
+
+                $result = $subject->submitRevision(79, 'ABC123', 'tester');
+                $harness->assertFalse((bool)$result['success']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$result['errors']),
+                    'no further filing is outstanding'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+
+                $observation = [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'mismatch',
+                    'revision_reconciled' => false,
+                    'filing_outstanding' => true,
+                    'mismatch_count' => 1,
+                    'filing' => ['id' => 101],
+                ];
+                $staleResult = $subject->submitRevision(79, 'ABC123', 'tester');
+                $harness->assertFalse((bool)$staleResult['success']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$staleResult['errors']),
+                    'changed the superseded filing source'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+
+                $observation['available'] = false;
+                $observation['reconciliation_state'] = 'unverifiable';
+                $unverifiableResult = $subject->submitRevision(79, 'ABC123', 'tester');
+                $harness->assertFalse((bool)$unverifiableResult['success']);
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$unverifiableResult['errors']),
+                    'cannot be verified'
+                ));
+                $harness->assertSame(0, $gatewayCalls);
+                $harness->assertSame(0, $sequenceCalls);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'uses latest parsed AAMD as the superseded source without rebasing the original',
+            static function () use ($harness, $invokePrivate): void {
+                $parseStatus = 'parsed_latest_year';
+                $resolverCalls = 0;
+                $subject = new \eel_accounts\Service\CompaniesHouseAccountsSubmissionService(
+                    periodFilingResolver: static function () use (&$parseStatus, &$resolverCalls): array {
+                        $resolverCalls++;
+                        return [
+                            'original' => ['id' => 90, 'parse_status' => 'parsed_latest_year'],
+                            'latest_revision' => ['id' => 101, 'parse_status' => $parseStatus],
+                        ];
+                    }
+                );
+                $baseContext = [
+                    'company' => ['company_number' => '01234567'],
+                    'accounting_period' => ['period_end' => '2023-09-30'],
+                ];
+                $awaiting = $baseContext + ['reconciliation' => [
+                    'available' => true,
+                    'has_revised_filing' => false,
+                    'reconciliation_state' => 'awaiting',
+                ]];
+                $harness->assertSame(
+                    90,
+                    $invokePrivate($subject, 'supersededDocumentIdForPreparation', 49, 79, $awaiting, 90)
+                );
+                $harness->assertSame(0, $resolverCalls);
+
+                $mismatch = $baseContext + ['reconciliation' => [
+                    'available' => true,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'mismatch',
+                    'filing' => ['id' => 101],
+                ]];
+                $harness->assertSame(
+                    101,
+                    $invokePrivate($subject, 'supersededDocumentIdForPreparation', 49, 79, $mismatch, 90)
+                );
+                $harness->assertSame(1, $resolverCalls);
+
+                $parseStatus = 'parse_failed';
+                $thrown = false;
+                try {
+                    $invokePrivate($subject, 'supersededDocumentIdForPreparation', 49, 79, $mismatch, 90);
+                } catch (RuntimeException $exception) {
+                    $thrown = str_contains($exception->getMessage(), 'has not been parsed successfully');
+                }
+                $harness->assertTrue($thrown);
+
+                $unverifiable = $baseContext + ['reconciliation' => [
+                    'available' => false,
+                    'has_revised_filing' => true,
+                    'reconciliation_state' => 'unverifiable',
+                ]];
+                $thrown = false;
+                try {
+                    $invokePrivate($subject, 'supersededDocumentIdForPreparation', 49, 79, $unverifiable, 90);
+                } catch (RuntimeException $exception) {
+                    $thrown = str_contains($exception->getMessage(), 'cannot be verified and parsed');
+                }
+                $harness->assertTrue($thrown);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'builds further-amendment disclosure rows from latest AAMD facts',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $model = [
+                    'current' => ['buckets' => ['current_assets' => 250.0]],
+                    'disclosures' => ['profit_loss_not_delivered_section_444' => 1],
+                    'director_loan_disclosure' => [],
+                ];
+                $facts = [[
+                    'concept' => 'core:CurrentAssets',
+                    'context_ref' => 'current_period_end_superseded',
+                    'value' => 200.0,
+                    'source_short_name' => 'CurrentAssets',
+                    'source_document_id' => 101,
+                ]];
+                $rows = $invokePrivate($service, 'supersededComparisonRows', $model, $facts);
+                $harness->assertSame(1, count($rows));
+                $harness->assertSame(200.0, (float)$rows[0]['filed_value']);
+                $harness->assertSame(250.0, (float)$rows[0]['app_value']);
+                $harness->assertSame('fail', (string)$rows[0]['status']);
+
+                $texts = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    ['variance_explanation' => 'Initial-AA explanation must not be reused.'],
+                    [],
+                    ['rows' => $rows],
+                    $model,
+                    $facts,
+                    true
+                );
+                $combined = (string)$texts['non_compliance_explanation'] . ' '
+                    . (string)$texts['significant_amendments'];
+                $harness->assertTrue(str_contains($combined, 'superseded revised accounts reported current assets'));
+                $harness->assertFalse(str_contains($combined, 'Initial-AA explanation must not be reused.'));
+                $harness->assertFalse(str_contains($combined, 'original accounts reported current assets'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'does not repeat unchanged AAMD prepayment current-asset or director-loan narratives',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $model = [
+                    'disclosures' => ['profit_loss_not_delivered_section_444' => 1],
+                    'current' => [
+                        'buckets' => [
+                            'fixed_assets' => 50.0,
+                            'current_assets' => 100.0,
+                            'prepayments_accrued_income' => 20.0,
+                        ],
+                        'director_loan_reporting_presentation' => [
+                            'applicable' => true,
+                            'classification' => 'within_one_year',
+                        ],
+                    ],
+                    'director_loan_disclosure' => [
+                        'has_company_to_director_exposure' => true,
+                        'total_advances' => 25.0,
+                        'disclosures' => [['director_name' => 'Test Director']],
+                    ],
+                ];
+                $facts = [
+                    [
+                        'concept' => 'core:FixedAssets',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 0.0,
+                        'source_short_name' => 'FixedAssets',
+                    ],
+                    [
+                        'concept' => 'core:CurrentAssets',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 100.0,
+                        'source_short_name' => 'CurrentAssets',
+                    ],
+                    [
+                        'concept' => 'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 20.0,
+                        'source_short_name' => 'PrepaymentsAccruedIncome',
+                    ],
+                ];
+                $rows = $invokePrivate($service, 'supersededComparisonRows', $model, $facts);
+                $statuses = [];
+                foreach ($rows as $row) {
+                    $statuses[(string)$row['metric_key']] = (string)$row['status'];
+                }
+                $harness->assertSame('fail', $statuses['fixed_assets'] ?? '');
+                $harness->assertSame('ok', $statuses['current_assets'] ?? '');
+                $harness->assertSame('ok', $statuses['prepayments_accrued_income'] ?? '');
+
+                $further = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    [],
+                    [],
+                    ['rows' => $rows],
+                    $model,
+                    $facts,
+                    true
+                );
+                $furtherText = mb_strtolower(
+                    (string)$further['non_compliance_explanation'] . ' '
+                        . (string)$further['significant_amendments']
+                );
+                $harness->assertTrue(str_contains($furtherText, 'fixed assets'));
+                foreach (['prepayments', 'current assets', 'director-loan', 'participator-loan'] as $unrelated) {
+                    $harness->assertFalse(str_contains($furtherText, $unrelated));
+                }
+
+                $firstAmendment = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    [],
+                    [],
+                    ['rows' => $rows],
+                    $model,
+                    $facts,
+                    false
+                );
+                $legacyText = mb_strtolower(
+                    (string)$firstAmendment['non_compliance_explanation'] . ' '
+                        . (string)$firstAmendment['significant_amendments']
+                );
+                $harness->assertTrue(str_contains($legacyText, 'prepayments'));
+                $harness->assertTrue(str_contains($legacyText, 'current assets'));
+                $harness->assertTrue(str_contains($legacyText, 'director-loan'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'does not infer a director-loan note defect from a non-director creditor delta',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $model = [
+                    'disclosures' => ['profit_loss_not_delivered_section_444' => 1],
+                    'current' => [
+                        'buckets' => [
+                            'creditors_within_one_year' => 100.0,
+                            'creditors_after_more_than_one_year' => 0.0,
+                        ],
+                        'director_loan_reporting_presentation' => [
+                            'applicable' => true,
+                            'classification' => 'within_one_year',
+                        ],
+                    ],
+                    'director_loan_disclosure' => [
+                        'has_company_to_director_exposure' => true,
+                        'total_advances' => 25.0,
+                        'disclosures' => [['director_name' => 'Test Director']],
+                    ],
+                ];
+                $facts = [
+                    [
+                        'concept' => 'core:Creditors',
+                        'context_ref' => 'current_period_end_superseded_creditors_within_one_year',
+                        'value' => 80.0,
+                        'source_short_name' => 'Creditors',
+                    ],
+                    [
+                        'concept' => 'core:Creditors',
+                        'context_ref' => 'current_period_end_superseded_creditors_after_one_year',
+                        'value' => 0.0,
+                        'source_short_name' => 'Creditors',
+                    ],
+                ];
+                $rows = $invokePrivate($service, 'supersededComparisonRows', $model, $facts);
+                $texts = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    [],
+                    [],
+                    ['rows' => $rows],
+                    $model,
+                    $facts,
+                    true
+                );
+                $combined = mb_strtolower(
+                    (string)$texts['non_compliance_explanation'] . ' '
+                        . (string)$texts['significant_amendments']
+                );
+                $harness->assertTrue(str_contains($combined, 'creditors'));
+                $harness->assertTrue(str_contains($combined, '£80.00'));
+                $harness->assertTrue(str_contains($combined, '£100.00'));
+                foreach (['director-loan', 'participator-loan', 'director loan'] as $unsupported) {
+                    $harness->assertFalse(str_contains($combined, $unsupported));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'keeps further-amendment wording to filed-to-app deltas without unsupported causes',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $model = [
+                    'disclosures' => ['profit_loss_not_delivered_section_444' => 1],
+                    'current' => ['buckets' => [
+                        'fixed_assets' => 50.0,
+                        'depreciation_write_offs' => 25.0,
+                        'current_assets' => 100.0,
+                        'prepayments_accrued_income' => 20.0,
+                        'net_assets_liabilities' => 100.0,
+                        'equity_capital_reserves' => 100.0,
+                    ]],
+                    'director_loan_disclosure' => [],
+                ];
+                $facts = [
+                    [
+                        'concept' => 'core:FixedAssets',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 40.0,
+                        'source_short_name' => 'FixedAssets',
+                    ],
+                    [
+                        'concept' => 'core:CurrentAssets',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 100.0,
+                        'source_short_name' => 'CurrentAssets',
+                    ],
+                    [
+                        'concept' => 'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 10.0,
+                        'source_short_name' => 'PrepaymentsAccruedIncome',
+                    ],
+                    [
+                        'concept' => 'core:NetAssetsLiabilities',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 90.0,
+                        'source_short_name' => 'NetAssetsLiabilities',
+                    ],
+                    [
+                        'concept' => 'core:Equity',
+                        'context_ref' => 'current_period_end_superseded',
+                        'value' => 100.0,
+                        'source_short_name' => 'Equity',
+                    ],
+                ];
+                $rows = $invokePrivate($service, 'supersededComparisonRows', $model, $facts);
+                $texts = $invokePrivate(
+                    $service,
+                    'revisionDisclosureTexts',
+                    [],
+                    [],
+                    ['rows' => $rows],
+                    $model,
+                    $facts,
+                    true
+                );
+                $combined = mb_strtolower(
+                    (string)$texts['non_compliance_explanation'] . ' '
+                        . (string)$texts['significant_amendments']
+                );
+                foreach (['fixed assets', 'prepayments and accrued income', 'net assets/liabilities'] as $delta) {
+                    $harness->assertTrue(str_contains($combined, $delta));
+                }
+                foreach ([
+                    'depreciation',
+                    'did not separately identify',
+                    'presented separately',
+                    'capital and reserves corrected',
+                    'net assets and capital and reserves',
+                ] as $unsupported) {
+                    $harness->assertFalse(str_contains($combined, $unsupported));
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'pins revised-account preparation to the resolver original document',
+            static function () use ($harness): void {
+                $method = new ReflectionMethod(
+                    \eel_accounts\Service\CompaniesHouseAccountsSubmissionService::class,
+                    'exactOriginalDocument'
+                );
+                $source = file($method->getFileName());
+                $harness->assertTrue(is_array($source));
+                $body = implode('', array_slice(
+                    $source,
+                    $method->getStartLine() - 1,
+                    $method->getEndLine() - $method->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains($body, 'CompaniesHousePeriodFilingResolverService'));
+                $harness->assertTrue(str_contains($body, "\$resolution['original']"));
+                $harness->assertFalse(str_contains($body, 'ORDER BY d.filing_date DESC'));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'retains an integrity-checked accepted Revised artifact after reconciliation',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $path = tempnam(test_tmp_directory(), 'eel-accepted-revised-');
+                $harness->assertTrue(is_string($path));
+                file_put_contents((string)$path, '<html xmlns="http://www.w3.org/1999/xhtml"><body>accepted</body></html>');
+                try {
+                    $sha256 = hash_file('sha256', (string)$path);
+                    $state = $invokePrivate($service, 'retainedAcceptedArtifactState', [
+                        'lifecycle' => 'accepted',
+                        'artifact_path' => $path,
+                        'artifact_sha256' => $sha256,
+                        'filing_type' => 'revised',
+                        'ixbrl_generation_run_id' => 75,
+                        'filing_metadata' => [
+                            'presentation_version' => 'historic-accepted-presentation',
+                        ],
+                    ]);
+                    $harness->assertSame('retained', (string)$state['state']);
+                    $harness->assertTrue((bool)$state['current']);
+                    $harness->assertTrue((bool)$state['reusable']);
+                    $harness->assertTrue((bool)$state['accepted']);
+                    $harness->assertSame(
+                        'historic-accepted-presentation',
+                        (string)$state['presentation_version']
+                    );
+
+                    $tampered = $invokePrivate($service, 'retainedAcceptedArtifactState', [
+                        'lifecycle' => 'accepted',
+                        'artifact_path' => $path,
+                        'artifact_sha256' => hash('sha256', 'different-bytes'),
+                    ]);
+                    $harness->assertSame('tampered', (string)$tampered['state']);
+                    $harness->assertFalse((bool)$tampered['reusable']);
+                } finally {
+                    @unlink((string)$path);
+                }
+            }
+        );
+
+        $harness->check(
+            $service::class,
             'explains how to create a replacement after a numbered submission',
             static function () use ($harness): void {
                 $source = file_get_contents(__DIR__ . DIRECTORY_SEPARATOR . '..'

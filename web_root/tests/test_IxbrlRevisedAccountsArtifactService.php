@@ -34,6 +34,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $body,
                     "'render_model_sha256' => \$basisHash"
                 ));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    "\$input['superseded_document_id'] ?? \$input['original_document_id']"
+                ));
+                $harness->assertTrue(str_contains(
+                    $body,
+                    "'superseded_document_id' => \$supersededDocumentId"
+                ));
             }
         );
 
@@ -71,6 +79,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(str_contains(
                 implode(' ', $validClassificationErrors),
                 'approved Revised Companies House filing classification'
+            ));
+
+            $invalidSupersededSource = (array)$method->invoke($service, 49, 80, [
+                'original_document_id' => 89,
+                'superseded_document_id' => 0,
+                'original_approval_date' => '2025-06-28',
+                'revision_approval_date' => '2026-07-21',
+                'non_compliance_explanation' => 'The prior report contained an error.',
+                'significant_amendments' => 'The reported amounts were corrected.',
+                'filing_classification' => [
+                    'filing_kind' => 'revised',
+                    'approval_basis_hash' => str_repeat('a', 64),
+                ],
+            ]);
+            $harness->assertTrue(str_contains(
+                implode(' ', $invalidSupersededSource),
+                'filing superseded by this amendment'
             ));
         });
 
@@ -329,6 +354,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $xpath = new DOMXPath($document);
             $xpath->registerNamespace('xhtml', 'http://www.w3.org/1999/xhtml');
             $xpath->registerNamespace('ix', 'http://www.xbrl.org/2013/inlineXBRL');
+            $xpath->registerNamespace('xbrli', 'http://www.xbrl.org/2003/instance');
+            $xpath->registerNamespace('xbrldi', 'http://xbrl.org/2006/xbrldi');
             $amendments = $xpath->query(
                 '//ix:nonNumeric[@name="bus:StatementSignificantAmendmentsToPreviouslyFiledReport"]'
             );
@@ -350,6 +377,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(1, $xpath->query('//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_creditors_after_one_year"]')->length);
             $harness->assertSame(1, $xpath->query('//ix:hidden//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_superseded_creditors_within_one_year"]')->length);
             $harness->assertSame(1, $xpath->query('//ix:hidden//ix:nonFraction[@name="core:Creditors" and @contextRef="current_period_end_superseded_creditors_after_one_year"]')->length);
+            foreach ([
+                'current_period_end_superseded_creditors_within_one_year',
+                'current_period_end_superseded_creditors_after_one_year',
+            ] as $contextId) {
+                $harness->assertSame(1, $xpath->query(
+                    '//xbrli:context[@id="' . $contextId . '"]'
+                    . '//xbrldi:explicitMember[@dimension="bus:OriginalRevisedDataDimension"'
+                    . ' and normalize-space(.)="bus:Superseded"]'
+                )->length);
+                $harness->assertSame(1, $xpath->query(
+                    '//xbrli:context[@id="' . $contextId . '"]'
+                    . '//xbrldi:explicitMember[contains(@dimension,"MaturitiesOrExpirationPeriodsDimension")]'
+                )->length);
+            }
             $harness->assertSame(
                 0,
                 $xpath->query(

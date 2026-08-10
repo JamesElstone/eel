@@ -133,15 +133,16 @@ final class IxbrlFilingSetGenerationService
         try {
             $companiesHouseContext = $this->companiesHouseContext($companyId, $accountingPeriodId);
             $companiesHouse = $this->companiesHouseStage($companiesHouseContext);
-            $revisionReadiness = $this->revisionReadiness($companyId, $accountingPeriodId);
-            if (!empty($companiesHouseContext['filing_required'])
-                && !empty($revisionReadiness['applicable'])
-                && empty($revisionReadiness['ready'])) {
-                $revisionErrors = (array)($revisionReadiness['errors'] ?? [
-                    'The Companies House revised-accounts prerequisites are incomplete.',
-                ]);
-                $companiesHouse = ['filing_kind' => (string)($companiesHouseContext['filing_kind'] ?? 'revised')]
-                    + $this->stage('blocked', $revisionErrors);
+            if ($this->filingOutstanding($companiesHouseContext)) {
+                $revisionReadiness = $this->revisionReadiness($companyId, $accountingPeriodId);
+                if (!empty($revisionReadiness['applicable'])
+                    && empty($revisionReadiness['ready'])) {
+                    $revisionErrors = (array)($revisionReadiness['errors'] ?? [
+                        'The Companies House revised-accounts prerequisites are incomplete.',
+                    ]);
+                    $companiesHouse = ['filing_kind' => (string)($companiesHouseContext['filing_kind'] ?? 'revised')]
+                        + $this->stage('blocked', $revisionErrors);
+                }
             }
         } catch (\Throwable $exception) {
             $companiesHouseContext = [];
@@ -523,16 +524,17 @@ final class IxbrlFilingSetGenerationService
         try {
             $companiesHouseContext = $this->companiesHouseContext($companyId, $accountingPeriodId);
             $companiesHouseStage = $this->companiesHouseStage($companiesHouseContext);
-            $revisionReadiness = $this->revisionReadiness($companyId, $accountingPeriodId);
-            if (!empty($companiesHouseContext['filing_required'])
-                && !empty($revisionReadiness['applicable'])
-                && empty($revisionReadiness['ready'])) {
-                $companiesHouseStage = $this->stage(
-                    'blocked',
-                    (array)($revisionReadiness['errors'] ?? [
-                        'The Companies House revised-accounts prerequisites are incomplete.',
-                    ])
-                );
+            if ($this->filingOutstanding($companiesHouseContext)) {
+                $revisionReadiness = $this->revisionReadiness($companyId, $accountingPeriodId);
+                if (!empty($revisionReadiness['applicable'])
+                    && empty($revisionReadiness['ready'])) {
+                    $companiesHouseStage = $this->stage(
+                        'blocked',
+                        (array)($revisionReadiness['errors'] ?? [
+                            'The Companies House revised-accounts prerequisites are incomplete.',
+                        ])
+                    );
+                }
             }
 
             if ((string)$companiesHouseStage['state'] === 'blocked') {
@@ -552,6 +554,42 @@ final class IxbrlFilingSetGenerationService
                     [],
                     [$message],
                     ['filing_kind' => (string)($companiesHouseContext['filing_kind'] ?? '')]
+                );
+            } elseif ((string)$companiesHouseStage['state'] === 'reconciled') {
+                $kind = (string)($companiesHouseContext['filing_kind'] ?? 'revised');
+                $reconciliationState = (string)(
+                    ($companiesHouseContext['reconciliation'] ?? [])['reconciliation_state']
+                    ?? 'verified'
+                );
+                $artifact = (array)($companiesHouseContext['prepared_artifact'] ?? []);
+                $artifactReusable = $this->reconciledArtifactReusable($companiesHouseContext);
+                $attentionWarnings = $this->reconciledArtifactWarnings($companiesHouseContext);
+                $message = 'Companies House ' . ucfirst($kind)
+                    . ' accounts are reconciled with the latest imported filing; the accepted filing lineage is retained.';
+                $messages[] = $message;
+                $details = [
+                    'filing_kind' => $kind,
+                    'filing_outstanding' => false,
+                    'reconciliation_state' => $reconciliationState,
+                    'artifact_reused' => $artifactReusable,
+                ];
+                if ($artifactReusable) {
+                    $details['artifact'] = $this->artifactDescriptor(
+                        'companies_house_accounts_ixbrl',
+                        'COMPANIES_HOUSE',
+                        $companyId,
+                        $accountingPeriodId,
+                        null,
+                        $artifact,
+                        (array)($companiesHouseContext['revised_validation'] ?? [])
+                    );
+                }
+                $stageResults['companies_house_accounts'] = $this->executionStage(
+                    'succeeded',
+                    [],
+                    $attentionWarnings,
+                    [$message],
+                    $details
                 );
             } else {
                 $kind = (string)($companiesHouseContext['filing_kind'] ?? '');
@@ -622,6 +660,18 @@ final class IxbrlFilingSetGenerationService
             return ['filing_kind' => (string)($context['filing_kind'] ?? '')]
                 + $this->stage('not_required');
         }
+        if (!$this->filingOutstanding($context)) {
+            return [
+                'filing_kind' => (string)($context['filing_kind'] ?? ''),
+                'filing_outstanding' => false,
+                'reconciliation_state' => (string)(
+                    ($context['reconciliation'] ?? [])['reconciliation_state']
+                    ?? 'verified'
+                ),
+                'artifact_reused' => $this->reconciledArtifactReusable($context),
+                'warnings' => $this->reconciledArtifactWarnings($context),
+            ] + $this->stage('reconciled');
+        }
         $artifact = (array)($context['prepared_artifact'] ?? []);
         $filingKind = strtolower(trim((string)($context['filing_kind'] ?? '')));
         $validationCurrent = $filingKind !== 'revised'
@@ -641,6 +691,54 @@ final class IxbrlFilingSetGenerationService
             + $this->stage('blocked', (array)($context['preparation_blockers'] ?? [
                 'The Companies House accounts iXBRL is not ready to prepare.',
             ]));
+    }
+
+    /**
+     * Older callers predate the reconciliation contract. Preserve their prior
+     * behaviour by treating a required filing as outstanding unless the new
+     * field is explicitly present and false.
+     */
+    private function filingOutstanding(array $context): bool
+    {
+        return array_key_exists('filing_outstanding', $context)
+            ? !empty($context['filing_outstanding'])
+            : !empty($context['filing_required']);
+    }
+
+    private function reconciledArtifactReusable(array $context): bool
+    {
+        $submission = (array)($context['submission'] ?? []);
+        $artifact = (array)($context['prepared_artifact'] ?? []);
+
+        return strtolower(trim((string)($submission['lifecycle'] ?? ''))) === 'accepted'
+            && strtolower(trim((string)($artifact['state'] ?? ''))) === 'retained'
+            && !empty($artifact['accepted'])
+            && !empty($artifact['current'])
+            && !empty($artifact['reusable'])
+            && trim((string)($artifact['filename'] ?? '')) !== ''
+            && trim((string)($artifact['path'] ?? '')) !== ''
+            && (array)($artifact['errors'] ?? []) === [];
+    }
+
+    /** @return list<string> */
+    private function reconciledArtifactWarnings(array $context): array
+    {
+        if ($this->reconciledArtifactReusable($context)) {
+            return [];
+        }
+        $artifact = (array)($context['prepared_artifact'] ?? []);
+        $reason = trim((string)(($artifact['errors'] ?? [])[0] ?? ''));
+        if ($reason === '') {
+            $state = strtolower(trim((string)($artifact['state'] ?? 'missing')));
+            $reason = $state === 'tampered'
+                ? 'The retained local artifact failed its integrity check.'
+                : 'The retained local artifact is missing or unavailable.';
+        }
+
+        return [
+            'Attention: the Companies House filing remains reconciled and no duplicate filing will be generated, '
+                . 'but the local accepted revised artifact is not reusable. ' . $reason,
+        ];
     }
 
     private function stage(string $state, array $errors = []): array

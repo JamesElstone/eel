@@ -67,7 +67,7 @@ final class CompaniesHouseFilingService
         $filingHistory = $this->fetchFullFilingHistory($companyId);
         $candidates = [];
 
-        foreach ($filingHistory['items'] as $item) {
+        foreach ($filingHistory['items'] as $historyIndex => $item) {
             $documentMetadataPath = trim((string)($item['links']['document_metadata'] ?? ''));
 
             if ($documentMetadataPath === '') {
@@ -78,15 +78,30 @@ final class CompaniesHouseFilingService
                 continue;
             }
 
+            $descriptionValues = is_array($item['description_values'] ?? null)
+                ? (array)$item['description_values']
+                : [];
+            $significantDate = trim((string)(
+                $descriptionValues['made_up_date']
+                ?? $item['action_date']
+                ?? ''
+            ));
+
             $candidates[] = [
                 'transaction_id' => trim((string)($item['transaction_id'] ?? '')),
                 'type' => trim((string)($item['type'] ?? '')),
                 'category' => trim((string)($item['category'] ?? '')),
                 'description' => trim((string)($item['description'] ?? '')),
                 'date' => trim((string)($item['date'] ?? '')),
+                'significant_date' => $significantDate,
+                'significant_date_type' => $significantDate !== '' ? 'made-up-date' : '',
                 'paper_filed' => !empty($item['paper_filed']),
                 'pages' => isset($item['pages']) ? (int)$item['pages'] : null,
                 'document_metadata_path' => $documentMetadataPath,
+                // Filing history is returned newest-first. Preserve that API
+                // position before filtering; transaction_id is opaque and is
+                // not a chronology signal.
+                'filing_history_order' => (int)$historyIndex,
             ];
         }
 
@@ -96,6 +111,12 @@ final class CompaniesHouseFilingService
 
             if ($leftDate !== $rightDate) {
                 return strcmp($rightDate, $leftDate);
+            }
+
+            $leftOrder = $left['filing_history_order'] ?? null;
+            $rightOrder = $right['filing_history_order'] ?? null;
+            if (is_int($leftOrder) && is_int($rightOrder) && $leftOrder !== $rightOrder) {
+                return $leftOrder <=> $rightOrder;
             }
 
             return strcmp((string)($right['transaction_id'] ?? ''), (string)($left['transaction_id'] ?? ''));

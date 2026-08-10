@@ -12,20 +12,51 @@ namespace eel_accounts\Service;
 
 final class CompaniesHousePersistenceService
 {
-    public function __construct() {
+    private const RAW_VALUE_MAX_BYTES = 255;
+    private const RAW_VALUE_HASH_MARKER = '[sha256=';
+
+    private readonly ?\Closure $beforePersistenceRecheck;
+
+    public function __construct(?callable $beforePersistenceRecheck = null) {
+        $this->beforePersistenceRecheck = $beforePersistenceRecheck !== null
+            ? \Closure::fromCallable($beforePersistenceRecheck)
+            : null;
     }
 
     public function persistDocument(array $document, ?array $parsedDocument = null): array {
-        \InterfaceDB::beginTransaction();
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        $savepoint = '';
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        } else {
+            $savepoint = 'ch_document_persist_' . bin2hex(random_bytes(6));
+            \InterfaceDB::execute('SAVEPOINT ' . $savepoint);
+        }
 
         try {
+            if ($this->beforePersistenceRecheck !== null) {
+                ($this->beforePersistenceRecheck)();
+            }
+
+            $preserved = $this->successfullyParsedDocumentToPreserve($document, $parsedDocument);
+            if ($preserved !== null) {
+                $this->completeTransaction($ownsTransaction, $savepoint);
+
+                return [
+                    'document_row_id' => (int)$preserved['id'],
+                    'latest_year_context_count' => (int)$preserved['latest_year_context_count'],
+                    'latest_year_fact_count' => (int)$preserved['latest_year_fact_count'],
+                    'preserved_existing_parse' => true,
+                ];
+            }
+
             $documentRowId = $this->upsertDocumentRow($document);
 
             if ($parsedDocument !== null) {
                 $this->replaceDocumentContextsAndFacts($documentRowId, $parsedDocument);
             }
 
-            \InterfaceDB::commit();
+            $this->completeTransaction($ownsTransaction, $savepoint);
 
             return [
                 'document_row_id' => $documentRowId,
@@ -33,12 +64,103 @@ final class CompaniesHousePersistenceService
                 'latest_year_fact_count' => (int)($parsedDocument['summary']['latest_year_fact_count'] ?? 0),
             ];
         } catch (\Throwable $e) {
-            if (\InterfaceDB::inTransaction()) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();
+            } elseif ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
             }
 
             throw $e;
         }
+    }
+
+    private function completeTransaction(bool $ownsTransaction, string $savepoint): void {
+        if ($ownsTransaction) {
+            \InterfaceDB::commit();
+            return;
+        }
+        if ($savepoint !== '') {
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    /**
+     * A transient metadata/content/parse failure must not downgrade an already
+     * parsed immutable Companies House document. New failed documents are
+     * still inserted as placeholders so the latest AAMD remains visible.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function successfullyParsedDocumentToPreserve(
+        array $document,
+        ?array $parsedDocument
+    ): ?array {
+        if ($this->incomingParseIsComplete($document, $parsedDocument)) {
+            return null;
+        }
+        $documentId = trim((string)($document['document_id'] ?? ''));
+        if ($documentId === '' || !\InterfaceDB::tableExists('companies_house_documents')) {
+            return null;
+        }
+        $lock = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT id, parse_status
+             FROM companies_house_documents
+             WHERE document_id = :document_id
+             LIMIT 1' . $lock,
+            ['document_id' => $documentId]
+        );
+        if (!is_array($existing)
+            || !in_array(strtolower(trim((string)($existing['parse_status'] ?? ''))), [
+                'parsed',
+                'parsed_latest_year',
+            ], true)) {
+            return null;
+        }
+
+        $existing['latest_year_context_count'] = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM companies_house_document_contexts
+             WHERE document_fk = :document_id AND is_latest_year_context = 1',
+            ['document_id' => (int)$existing['id']]
+        );
+        $existing['latest_year_fact_count'] = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM companies_house_document_facts
+             WHERE document_fk = :document_id AND is_latest_year_fact = 1',
+            ['document_id' => (int)$existing['id']]
+        );
+        if ((int)$existing['latest_year_fact_count'] <= 0) {
+            return null;
+        }
+
+        return $existing;
+    }
+
+    private function incomingParseIsComplete(array $document, ?array $parsedDocument): bool {
+        $incomingStatus = strtolower(trim((string)($document['parse_status'] ?? '')));
+        if ($parsedDocument === null
+            || !in_array($incomingStatus, ['parsed', 'parsed_latest_year'], true)
+            || (int)($parsedDocument['summary']['latest_year_context_count'] ?? 0) <= 0
+            || (int)($parsedDocument['summary']['latest_year_fact_count'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $latestContextRefs = [];
+        foreach ((array)($parsedDocument['contexts'] ?? []) as $context) {
+            $contextRef = trim((string)($context['context_ref'] ?? ''));
+            if ($contextRef !== '' && !empty($context['is_latest_year_context'])) {
+                $latestContextRefs[$contextRef] = true;
+            }
+        }
+
+        foreach ((array)($parsedDocument['facts'] ?? []) as $fact) {
+            $contextRef = trim((string)($fact['context_ref'] ?? ''));
+            if (!empty($fact['is_latest_year_fact']) && isset($latestContextRefs[$contextRef])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function upsertDocumentRow(array $document): int {
@@ -90,8 +212,32 @@ final class CompaniesHousePersistenceService
                     :raw_content_hash,
                     :parse_status,
                     :parse_error
-                )
-                ON DUPLICATE KEY UPDATE
+                )';
+        $sql .= \InterfaceDB::driverName() === 'sqlite'
+            ? ' ON CONFLICT(document_id) DO UPDATE SET
+                    company_id = excluded.company_id,
+                    company_number = excluded.company_number,
+                    transaction_id = excluded.transaction_id,
+                    filing_date = excluded.filing_date,
+                    filing_type = excluded.filing_type,
+                    filing_category = excluded.filing_category,
+                    filing_description = excluded.filing_description,
+                    metadata_url = excluded.metadata_url,
+                    content_url = excluded.content_url,
+                    final_content_url = excluded.final_content_url,
+                    content_type = excluded.content_type,
+                    filename = excluded.filename,
+                    classification = excluded.classification,
+                    significant_date = excluded.significant_date,
+                    significant_date_type = excluded.significant_date_type,
+                    pages = excluded.pages,
+                    created_at_utc = excluded.created_at_utc,
+                    fetched_at_utc = excluded.fetched_at_utc,
+                    raw_metadata_json = excluded.raw_metadata_json,
+                    raw_content_hash = excluded.raw_content_hash,
+                    parse_status = excluded.parse_status,
+                    parse_error = excluded.parse_error'
+            : ' ON DUPLICATE KEY UPDATE
                     company_id = VALUES(company_id),
                     company_number = VALUES(company_number),
                     transaction_id = VALUES(transaction_id),
@@ -220,7 +366,7 @@ final class CompaniesHousePersistenceService
                 $contextIdsByRef[$contextRef],
                 $conceptId,
                 $this->nullableString($fact['fact_name'] ?? null),
-                $this->nullableString($fact['raw_value'] ?? null),
+                $this->rawValueForStorage($fact['raw_value'] ?? null),
                 $this->nullableDecimal($fact['normalised_numeric'] ?? null),
                 $this->nullableString($fact['normalised_text'] ?? null),
                 $this->nullableString($fact['normalised_date'] ?? null),
@@ -235,19 +381,24 @@ final class CompaniesHousePersistenceService
     }
 
     private function upsertConcept(array $concept): int {
-        $stmt = \InterfaceDB::prepare(
-            'INSERT INTO companies_house_taxonomy_concepts (
+        $sql = 'INSERT INTO companies_house_taxonomy_concepts (
                 concept_name,
                 short_name,
                 friendly_label,
                 value_type,
                 created_at_utc
             ) VALUES (?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
+            ';
+        $sql .= \InterfaceDB::driverName() === 'sqlite'
+            ? 'ON CONFLICT(concept_name) DO UPDATE SET
+                short_name = COALESCE(NULLIF(excluded.short_name, \'\'), short_name),
+                friendly_label = COALESCE(NULLIF(excluded.friendly_label, \'\'), friendly_label),
+                value_type = COALESCE(NULLIF(excluded.value_type, \'\'), value_type)'
+            : 'ON DUPLICATE KEY UPDATE
                 short_name = COALESCE(NULLIF(VALUES(short_name), \'\'), short_name),
                 friendly_label = COALESCE(NULLIF(VALUES(friendly_label), \'\'), friendly_label),
-                value_type = COALESCE(NULLIF(VALUES(value_type), \'\'), value_type)'
-        );
+                value_type = COALESCE(NULLIF(VALUES(value_type), \'\'), value_type)';
+        $stmt = \InterfaceDB::prepare($sql);
 
         $stmt->execute([
             $this->requiredString($concept['concept_name'] ?? null, 'concept_name'),
@@ -306,6 +457,20 @@ final class CompaniesHousePersistenceService
         $value = trim((string)$value);
 
         return $value === '' ? null : $value;
+    }
+
+    /**
+     * raw_value is part of a VARCHAR(255) uniqueness key. Text facts retain
+     * their complete value in normalised_text. ODBC bindings may enforce this
+     * boundary in bytes, so oversized values use an ASCII-only full digest.
+     */
+    private function rawValueForStorage(mixed $value): ?string {
+        $value = $this->nullableString($value);
+        if ($value === null || strlen($value) <= self::RAW_VALUE_MAX_BYTES) {
+            return $value;
+        }
+
+        return self::RAW_VALUE_HASH_MARKER . hash('sha256', $value) . ']';
     }
 
     private function nullableInt(mixed $value): ?int {

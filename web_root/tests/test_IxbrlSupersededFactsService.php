@@ -9,7 +9,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         GeneratedServiceClassTestHarness $harness,
         \eel_accounts\Service\IxbrlSupersededFactsService $service
     ): void {
-        $harness->check($service::class, 'maps the stored original Elstone filing to current superseded fact definitions', static function () use ($harness, $service): void {
+        $harness->check($service::class, 'maps the latest AAMD current facts with authoritative inline signs', static function () use ($harness, $service): void {
             ixbrlSupersededFactsRequireTables($harness);
             \InterfaceDB::beginTransaction();
             try {
@@ -42,7 +42,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]['value']
                 );
                 $harness->assertSame(
-                    211.0,
+                    70.0,
+                    (float)$indexed[
+                        'core:Creditors|current_period_end_superseded_creditors_after_one_year'
+                    ]['value']
+                );
+                $harness->assertSame(
+                    -25.0,
+                    (float)$indexed['core:NetCurrentAssetsLiabilities|current_period_end_superseded']['value']
+                );
+                $harness->assertSame(
+                    -211.0,
+                    (float)$indexed['core:NetAssetsLiabilities|current_period_end_superseded']['value']
+                );
+                $harness->assertSame(
+                    -211.0,
                     (float)$indexed['core:Equity|current_period_end_superseded']['value']
                 );
                 $harness->assertSame(
@@ -92,6 +106,10 @@ function ixbrlSupersededFactsSeed(): array
     $instantContextId = $seed + 2;
     $creditorContextId = $seed + 3;
     $durationContextId = $seed + 4;
+    $supersededInstantContextId = $seed + 5;
+    $creditorAfterContextId = $seed + 6;
+    $supersededCreditorWithinContextId = $seed + 7;
+    $supersededCreditorAfterContextId = $seed + 8;
     $companyNumber = 'SX' . substr((string)$seed, -6);
 
     \InterfaceDB::execute(
@@ -113,7 +131,7 @@ function ixbrlSupersededFactsSeed(): array
             'company_number' => $companyNumber,
             'transaction_id' => 'superseded-txn-' . $seed,
             'filing_date' => '2025-05-29',
-            'filing_type' => 'AA',
+            'filing_type' => 'AAMD',
             'document_id' => 'superseded-document-' . $seed,
             'metadata_url' => 'https://example.invalid/superseded',
             'classification' => 'accounts',
@@ -134,6 +152,68 @@ function ixbrlSupersededFactsSeed(): array
             ]], JSON_THROW_ON_ERROR),
         ],
         [$durationContextId, 'original-duration', '2022-09-05', '2023-09-30', null, null],
+        [
+            $supersededInstantContextId,
+            'aaa-old-instant',
+            null,
+            null,
+            '2023-09-30',
+            json_encode([[
+                'dimension' => 'bus:OriginalRevisedDataDimension',
+                'member' => 'bus:Superseded',
+            ]], JSON_THROW_ON_ERROR),
+        ],
+        [
+            $creditorAfterContextId,
+            'revision-current-creditors-after',
+            null,
+            null,
+            '2023-09-30',
+            json_encode([
+                [
+                    'dimension' => 'uk-core:MaturitiesOrExpirationPeriodsDimension',
+                    'member' => 'uk-core:AfterMoreThanOneYear',
+                ],
+                [
+                    'dimension' => 'bus:OriginalRevisedDataDimension',
+                    'member' => 'bus:Revised',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ],
+        [
+            $supersededCreditorWithinContextId,
+            'aaa-old-creditors-within',
+            null,
+            null,
+            '2023-09-30',
+            json_encode([
+                [
+                    'dimension' => 'uk-core:MaturitiesOrExpirationPeriodsDimension',
+                    'member' => 'uk-core:WithinOneYear',
+                ],
+                [
+                    'dimension' => 'bus:OriginalRevisedDataDimension',
+                    'member' => 'bus:Superseded',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ],
+        [
+            $supersededCreditorAfterContextId,
+            'aaa-old-creditors-after',
+            null,
+            null,
+            '2023-09-30',
+            json_encode([
+                [
+                    'dimension' => 'uk-core:MaturitiesOrExpirationPeriodsDimension',
+                    'member' => 'uk-core:AfterOneYear',
+                ],
+                [
+                    'dimension' => 'bus:OriginalRevisedDataDimension',
+                    'member' => 'bus:Superseded',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ],
     ] as [$id, $reference, $start, $end, $instant, $dimensions]) {
         \InterfaceDB::execute(
             'INSERT INTO companies_house_document_contexts (
@@ -158,9 +238,15 @@ function ixbrlSupersededFactsSeed(): array
     $factDefinitions = [
         ['FixedAssets', 0.0, '-', $instantContextId, 'GBP', 'zero_dash'],
         ['CurrentAssets', 275.0, '275', $instantContextId, 'GBP', ''],
-        ['Creditors', -64.0, '64', $creditorContextId, 'GBP', 'presentation_parentheses'],
-        ['Equity', 211.0, '211', $instantContextId, 'GBP', ''],
+        ['Creditors', 64.0, '64', $creditorContextId, 'GBP', 'ix_sign+presentation_parentheses'],
+        ['NetCurrentAssetsLiabilities', -25.0, '25', $instantContextId, 'GBP', 'IX_SIGN'],
+        ['NetAssetsLiabilities', 211.0, '211', $instantContextId, 'GBP', 'ix_sign+inline_parentheses'],
+        ['Equity', 211.0, '211', $instantContextId, 'GBP', 'ix_sign+presentation_parentheses'],
         ['AverageNumberEmployeesDuringPeriod', 1.0, '1', $durationContextId, 'GBP', ''],
+        ['CurrentAssets', 100.0, '100', $supersededInstantContextId, 'GBP', ''],
+        ['Creditors', 70.0, '70', $creditorAfterContextId, 'GBP', 'ix_sign+presentation_parentheses'],
+        ['Creditors', 999.0, '999', $supersededCreditorWithinContextId, 'GBP', 'ix_sign+presentation_parentheses'],
+        ['Creditors', 888.0, '888', $supersededCreditorAfterContextId, 'GBP', 'ix_sign+presentation_parentheses'],
     ];
     foreach ($factDefinitions as $index => [$shortName, $value, $raw, $contextId, $unit, $signHint]) {
         $conceptId = $seed + 20 + $index;
@@ -173,7 +259,7 @@ function ixbrlSupersededFactsSeed(): array
              )',
             [
                 'id' => $conceptId,
-                'concept_name' => 'fixture:' . $shortName . $seed,
+                'concept_name' => 'fixture:' . $shortName . $seed . '_' . $index,
                 'short_name' => $shortName,
                 'friendly_label' => $shortName,
                 'value_type' => 'monetary',

@@ -34,6 +34,11 @@ final class CompaniesHouseAccountsSubmissionService
         private readonly ?IxbrlTaxonomyCompatibilityService $taxonomyCompatibilityService = null,
         private readonly ?IxbrlOriginalAccountsArtifactService $originalArtifactService = null,
         private readonly ?CompaniesHouseRevisedAccountsReadinessService $revisedReadinessService = null,
+        private readonly ?\Closure $revisedObservationResolver = null,
+        private readonly ?\Closure $submissionResolver = null,
+        private readonly ?\Closure $sequenceAllocator = null,
+        private readonly ?\Closure $periodFilingResolver = null,
+        private readonly ?\Closure $acceptedSubmissionResolver = null,
     ) {
     }
 
@@ -52,11 +57,28 @@ final class CompaniesHouseAccountsSubmissionService
         $correctionRequired = !empty($filingClassification['correction_required']);
         $filingRequired = $filingKind === 'original'
             || ($filingKind === 'revised' && $correctionRequired);
+        $needsRevision = $filingKind === 'revised' && $correctionRequired;
+        $reconciliation = $this->filingReconciliation(
+            $filingRequired,
+            $needsRevision,
+            $needsRevision
+                ? $this->revisedFilingObservation($companyId, $accountingPeriodId)
+                : []
+        );
+        $filingOutstanding = !empty($reconciliation['filing_outstanding']);
         $original = $this->exactOriginalDocument($selection);
         $eligibility = $this->eligibility($selection, $original);
         $readiness = $this->readiness($companyId, $accountingPeriodId);
         $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
         $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
+        $acceptedRegisterResyncBlocker = $needsRevision
+            ? $this->acceptedFilingRegisterResyncBlocker(
+                $companyId,
+                $accountingPeriodId,
+                $environment,
+                $reconciliation
+            )
+            : null;
         $latestSubmission = $this->latestSubmission($companyId, $accountingPeriodId, $filingKind);
         $featureEnabled = in_array($mode, ['TEST', 'LIVE'], true);
         $credentialsConfigured = $featureEnabled && $this->credentialsConfigured($mode);
@@ -93,15 +115,22 @@ final class CompaniesHouseAccountsSubmissionService
             $authenticationCheck,
             (string)($sequence['presenter_fingerprint'] ?? '')
         );
-        $needsRevision = $filingKind === 'revised' && $correctionRequired;
-        $revisedReadiness = $needsRevision
+        $revisedReadiness = $needsRevision && $filingOutstanding
             ? $this->revisedReadiness()->assess($companyId, $accountingPeriodId)
+            : ($needsRevision
+                ? [
+                    'applicable' => true,
+                    'ready' => true,
+                    'reconciled' => true,
+                    'checks' => [],
+                    'errors' => [],
+                ]
             : [
                 'applicable' => false,
                 'ready' => true,
                 'checks' => [],
                 'errors' => [],
-            ];
+            ]);
         $taxonomyCompatibility = $this->taxonomyCompatibilityForPeriod(
             (array)$selection['accounting_period'],
             date('Y-m-d')
@@ -127,6 +156,18 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ($filingKind === 'revised' && !$correctionRequired) {
             $preparationBlockers[] = 'An exact-period filing already exists and no reportable difference requires a duplicate filing.';
+        }
+        if ($filingRequired && !$filingOutstanding) {
+            $preparationBlockers[] = 'The latest revised Companies House filing reconciles with the approved correction; no further filing is outstanding.';
+        }
+        $revisionSourceBlocker = $needsRevision && $filingOutstanding
+            ? $this->revisionSourcePreparationBlocker($reconciliation)
+            : null;
+        if ($revisionSourceBlocker !== null) {
+            $preparationBlockers[] = $revisionSourceBlocker;
+        }
+        if ($acceptedRegisterResyncBlocker !== null) {
+            $preparationBlockers[] = $acceptedRegisterResyncBlocker;
         }
         foreach ((array)($taxonomyCompatibility['errors'] ?? []) as $compatibilityError) {
             $preparationBlockers[] = 'Accounts taxonomy compatibility: ' . (string)$compatibilityError;
@@ -201,6 +242,16 @@ final class CompaniesHouseAccountsSubmissionService
 
         $submissionBlockers = [];
         $lifecycle = (string)($submission['lifecycle'] ?? '');
+        $draftLineageBlocker = $this->draftLineageSubmissionBlocker(
+            (array)($submission ?? []),
+            $reconciliation
+        );
+        if ($draftLineageBlocker !== null) {
+            $submissionBlockers[] = $draftLineageBlocker;
+        }
+        if ($acceptedRegisterResyncBlocker !== null) {
+            $submissionBlockers[] = $acceptedRegisterResyncBlocker;
+        }
         if ($lifecycle !== 'prepared') {
             $submissionBlockers[] = trim((string)($submission['submission_number'] ?? '')) !== ''
                 ? 'The currently generated Companies House iXBRL has already been submitted. '
@@ -243,7 +294,9 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $preparedArtifact = $submission === null
             ? null
-            : $this->preparedArtifactState($submission);
+            : (!$filingOutstanding && (string)($submission['lifecycle'] ?? '') === 'accepted'
+                ? $this->retainedAcceptedArtifactState($submission)
+                : $this->preparedArtifactState($submission));
         if ($submission !== null && (string)($submission['lifecycle'] ?? '') === 'prepared'
             && empty($preparedArtifact['current'])) {
             $submissionBlockers[] = (string)(($preparedArtifact['errors'] ?? [])[0]
@@ -273,7 +326,10 @@ final class CompaniesHouseAccountsSubmissionService
             'filing_classification' => $filingClassification,
             'filing_kind' => $filingKind,
             'filing_required' => $filingRequired,
+            'filing_outstanding' => $filingOutstanding,
             'correction_required' => $correctionRequired,
+            'reconciliation' => $reconciliation,
+            'revised_filing_observation' => $reconciliation,
             'taxonomy_compatibility' => $taxonomyCompatibility,
             'revision_required' => $needsRevision,
             'revised_accounts_readiness' => $revisedReadiness,
@@ -295,7 +351,7 @@ final class CompaniesHouseAccountsSubmissionService
             'sequence' => $sequence,
             'can_prepare' => $preparationBlockers === [],
             'can_prepare_after_accounts_generation' => $canPrepareAfterAccountsGeneration,
-            'can_submit' => $submissionBlockers === [],
+            'can_submit' => $this->transmissionCanSubmit($lifecycle, $submissionBlockers),
             'preparation_blockers' => array_values(array_unique($preparationBlockers)),
             'submission_blockers' => array_values(array_unique($submissionBlockers)),
             'blockers' => array_values(array_unique(array_merge($preparationBlockers, $submissionBlockers))),
@@ -339,7 +395,26 @@ final class CompaniesHouseAccountsSubmissionService
 
         $classification = $this->filingClassification($companyId, $accountingPeriodId);
         $filingKind = strtolower(trim((string)($classification['filing_kind'] ?? '')));
+        $correctionRequired = !empty($classification['correction_required']);
+        $filingRequired = $filingKind === 'original'
+            || ($filingKind === 'revised' && $correctionRequired);
+        $needsRevision = $filingKind === 'revised' && $correctionRequired;
+        $reconciliation = $this->filingReconciliation(
+            $filingRequired,
+            $needsRevision,
+            $needsRevision
+                ? $this->revisedFilingObservation($companyId, $accountingPeriodId)
+                : []
+        );
         $environment = $mode === 'LIVE' ? 'LIVE' : 'TEST';
+        $acceptedRegisterResyncBlocker = $needsRevision
+            ? $this->acceptedFilingRegisterResyncBlocker(
+                $companyId,
+                $accountingPeriodId,
+                $environment,
+                $reconciliation
+            )
+            : null;
         $approvalStatus = (new IxbrlAccountsFilingApprovalService())
             ->statusForReadModel($companyId, $accountingPeriodId);
         $submission = $this->currentArtifactSubmission(
@@ -371,6 +446,16 @@ final class CompaniesHouseAccountsSubmissionService
         );
         $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
         $submissionBlockers = [];
+        $draftLineageBlocker = $this->draftLineageSubmissionBlocker(
+            (array)($submission ?? []),
+            $reconciliation
+        );
+        if ($draftLineageBlocker !== null) {
+            $submissionBlockers[] = $draftLineageBlocker;
+        }
+        if ($acceptedRegisterResyncBlocker !== null) {
+            $submissionBlockers[] = $acceptedRegisterResyncBlocker;
+        }
         if ($lifecycle !== 'prepared'
             && trim((string)($submission['submission_number'] ?? '')) === '') {
             $submissionBlockers[] = 'Prepare and validate the Companies House accounts artifact before submission.';
@@ -423,14 +508,21 @@ final class CompaniesHouseAccountsSubmissionService
                     : 'unknown',
                 'authentication_check_ready' => $authenticationCheckReady,
             ],
+            'filing_classification' => $classification,
             'filing_kind' => $filingKind,
+            'filing_required' => $filingRequired,
+            'filing_outstanding' => !empty($reconciliation['filing_outstanding']),
+            'correction_required' => $correctionRequired,
+            'revision_required' => $needsRevision,
+            'reconciliation' => $reconciliation,
+            'revised_filing_observation' => $reconciliation,
             'submission' => $submission,
             'active_submission' => $activeSubmission,
             'latest_submission' => $latestSubmission,
             'prepared_artifact' => $preparedArtifact,
             'preflight' => $authenticationCheck,
             'sequence' => $sequence,
-            'can_submit' => $lifecycle === 'prepared' && $submissionBlockers === [],
+            'can_submit' => $this->transmissionCanSubmit($lifecycle, $submissionBlockers),
             'submission_blockers' => array_values(array_unique($submissionBlockers)),
             'blockers' => array_values(array_unique($submissionBlockers)),
         ];
@@ -781,7 +873,7 @@ final class CompaniesHouseAccountsSubmissionService
         $actor = $this->actor($actor);
         $original = $this->exactOriginalDocument($selection);
         if ($original === null || (int)$original['id'] !== $originalDocumentId) {
-            return $this->failure('The selected document is not the newest exact-period original Companies House filing.');
+            return $this->failure('The selected document is not the pinned exact-period original Companies House filing.');
         }
 
         $existing = \InterfaceDB::fetchOne(
@@ -898,7 +990,7 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $original = $this->exactOriginalDocument($selection);
         if ($original === null || (int)$original['id'] !== $originalDocumentId) {
-            return $this->failure('The selected document is not the newest exact-period original Companies House filing.');
+            return $this->failure('The selected document is not the pinned exact-period original Companies House filing.');
         }
         if (!$this->comparisonNeedsRevision($companyId, $accountingPeriodId)) {
             return $this->failure('No Companies House variance explanation is required for this accounting period.');
@@ -1098,12 +1190,29 @@ final class CompaniesHouseAccountsSubmissionService
         if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
             return $this->failure('The Companies House accounts-filing migration has not been applied.');
         }
-        $revisedReadiness = $this->revisedReadiness()->assess($companyId, $accountingPeriodId);
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        $mode = AccountingConfigurationStore::companiesHouseAccountsFilingMode();
+        $acceptedRegisterResyncBlocker = $this->acceptedFilingRegisterResyncBlocker(
+            $companyId,
+            $accountingPeriodId,
+            $mode === 'LIVE' ? 'LIVE' : 'TEST',
+            (array)($context['reconciliation'] ?? [])
+        );
+        if ($acceptedRegisterResyncBlocker !== null) {
+            return $this->failure($acceptedRegisterResyncBlocker);
+        }
+        if (!empty($context['filing_required'])
+            && array_key_exists('filing_outstanding', $context)
+            && empty($context['filing_outstanding'])) {
+            return $this->failure(
+                'The latest revised Companies House filing reconciles with the approved correction; no further filing is outstanding.'
+            );
+        }
+        $revisedReadiness = (array)($context['revised_accounts_readiness'] ?? []);
         if (!empty($revisedReadiness['applicable']) && empty($revisedReadiness['ready'])) {
             return $this->failure((string)(($revisedReadiness['errors'] ?? [])[0]
                 ?? 'The revised accounts approval date is not ready.'));
         }
-        $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['can_prepare'])) {
             return $this->failure((string)(($context['preparation_blockers'] ?? [])[0] ?? 'Revised accounts cannot be prepared yet.'));
         }
@@ -1117,7 +1226,16 @@ final class CompaniesHouseAccountsSubmissionService
             );
         }
         $eligibility = (array)$context['eligibility'];
+        $originalDocumentId = (int)($eligibility['original_document_id'] ?? 0);
         try {
+            $supersededDocumentId = $this->supersededDocumentIdForPreparation(
+                $companyId,
+                $accountingPeriodId,
+                $context,
+                $originalDocumentId
+            );
+            $input['original_document_id'] = $originalDocumentId;
+            $input['superseded_document_id'] = $supersededDocumentId;
             $input = $this->savedRevisionDeclarations($companyId, $accountingPeriodId, $context, $input);
             $input['filing_classification'] = [
                 'filing_kind' => 'revised',
@@ -1127,9 +1245,12 @@ final class CompaniesHouseAccountsSubmissionService
         } catch (\Throwable $exception) {
             return $this->failure($exception->getMessage());
         }
-        $originalDocumentId = (int)($input['original_document_id'] ?? 0);
-        if ($originalDocumentId <= 0 || $originalDocumentId !== (int)($eligibility['original_document_id'] ?? 0)) {
+        if ($originalDocumentId <= 0
+            || (int)($input['original_document_id'] ?? 0) !== $originalDocumentId) {
             return $this->failure('The revised accounts must use the exact original filing covered by the Companies House decision.');
+        }
+        if ((int)($input['superseded_document_id'] ?? 0) !== $supersededDocumentId) {
+            return $this->failure('The revised accounts superseded-filing source changed during preparation. Resynchronise Companies House and retry.');
         }
 
         $actor = $this->actor($actor);
@@ -1145,6 +1266,7 @@ final class CompaniesHouseAccountsSubmissionService
                 null,
                 [
                     'original_document_id' => $originalDocumentId,
+                    'superseded_document_id' => $supersededDocumentId,
                     'filing_kind' => 'revised',
                     'classification_approval_hash' => $classificationHash,
                 ]
@@ -1166,7 +1288,11 @@ final class CompaniesHouseAccountsSubmissionService
             $evidenceService->failArtifact(
                 (int)$evidenceArtifact['id'],
                 (string)(($artifact['errors'] ?? [])[0] ?? 'Revised accounts preparation failed.'),
-                $validation === [] ? [] : ['arelle_validation' => $validation]
+                array_filter([
+                    'original_document_id' => $originalDocumentId,
+                    'superseded_document_id' => $supersededDocumentId,
+                    'arelle_validation' => $validation === [] ? null : $validation,
+                ], static fn(mixed $value): bool => $value !== null)
             );
             return [
                 'success' => false,
@@ -1196,7 +1322,9 @@ final class CompaniesHouseAccountsSubmissionService
                 (int)($artifact['accounts_validation_run_id'] ?? 0),
                 (string)($artifact['authority_profile_fingerprint'] ?? ''),
                 'revised',
-                $classificationHash
+                $classificationHash,
+                $originalDocumentId,
+                $supersededDocumentId
             ),
         ]);
 
@@ -1207,6 +1335,7 @@ final class CompaniesHouseAccountsSubmissionService
             'accounting_period_id' => $accountingPeriodId,
             'eligibility_id' => (int)$eligibility['id'],
             'original_document_id' => $originalDocumentId,
+            'superseded_document_id' => $supersededDocumentId,
             'environment' => $environment,
             'filing_kind' => 'revised',
             'classification_approval_hash' => $classificationHash,
@@ -1247,7 +1376,9 @@ final class CompaniesHouseAccountsSubmissionService
             $companyId,
             $accountingPeriodId,
             $evidenceBundle,
-            $classification
+            $classification,
+            $originalDocumentId,
+            $supersededDocumentId
         ): void {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO ' . self::SUBMISSIONS_TABLE . ' (
@@ -1290,6 +1421,8 @@ final class CompaniesHouseAccountsSubmissionService
                     'filing_metadata' => \eel_accounts\Support\PersistentJson::encode([
                         'filing_kind' => 'revised',
                         'classification' => $classification,
+                        'original_document_id' => $originalDocumentId,
+                        'superseded_document_id' => $supersededDocumentId,
                         'declarations' => (array)$artifact['declarations'],
                         'presentation_version' => (string)($artifact['presentation_version']
                             ?? IxbrlRevisedAccountsArtifactService::PRESENTATION_VERSION),
@@ -1321,7 +1454,12 @@ final class CompaniesHouseAccountsSubmissionService
                 null,
                 'A revised-accounts artifact was prepared and validated.',
                 $actor,
-                ['artifact_sha256' => (string)$artifact['sha256'], 'basis_hash' => (string)$artifact['basis_hash']]
+                [
+                    'artifact_sha256' => (string)$artifact['sha256'],
+                    'basis_hash' => (string)$artifact['basis_hash'],
+                    'original_document_id' => $originalDocumentId,
+                    'superseded_document_id' => $supersededDocumentId,
+                ]
             );
             (new FilingEvidenceService())->recordEvent(
                 (int)$evidenceBundle['id'],
@@ -1329,7 +1467,12 @@ final class CompaniesHouseAccountsSubmissionService
                 'success',
                 $actor,
                 'A Companies House revised-accounts artifact was prepared.',
-                ['submission_id' => (int)$row['id'], 'environment' => $environment]
+                [
+                    'submission_id' => (int)$row['id'],
+                    'environment' => $environment,
+                    'original_document_id' => $originalDocumentId,
+                    'superseded_document_id' => $supersededDocumentId,
+                ]
             );
         });
 
@@ -1590,6 +1733,10 @@ final class CompaniesHouseAccountsSubmissionService
         if ((string)$submission['lifecycle'] !== 'prepared') {
             return $this->failure('Only a prepared Companies House accounts artifact can be submitted.');
         }
+        $reconciliationBlocker = $this->directSubmissionReconciliationBlocker($submission);
+        if ($reconciliationBlocker !== null) {
+            return $this->failure($reconciliationBlocker);
+        }
         if (preg_match('/^[A-Za-z0-9]{6}$/D', $companyAuthCode) !== 1) {
             return $this->failure(
                 'The company authentication code must contain exactly 6 letters or numbers.'
@@ -1756,7 +1903,7 @@ final class CompaniesHouseAccountsSubmissionService
                 'Verified the current presenter credentials and company authentication code with Companies House.',
                 25
             );
-            $allocation = $this->sequences()->allocate(
+            $allocation = $this->allocateSubmissionSequence(
                 $submissionId,
                 $mode,
                 (string)$credentials['presenter_id']
@@ -2816,51 +2963,57 @@ final class CompaniesHouseAccountsSubmissionService
 
     private function exactOriginalDocument(array $selection): ?array
     {
-        foreach (['companies_house_documents', 'companies_house_document_facts', 'companies_house_taxonomy_concepts'] as $table) {
-            if (!\InterfaceDB::tableExists($table)) {
-                return null;
-            }
-        }
         $company = (array)$selection['company'];
         $period = (array)$selection['accounting_period'];
         $companyNumber = strtoupper(trim((string)($company['company_number'] ?? '')));
-        if ($companyNumber === '') {
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($period['id'] ?? 0);
+        $periodEnd = trim((string)($period['period_end'] ?? ''));
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $companyNumber === ''
+            || $periodEnd === ''
+            || !\InterfaceDB::tableExists('companies_house_documents')) {
             return null;
         }
+
+        try {
+            $resolution = (new CompaniesHousePeriodFilingResolverService())->resolve(
+                $companyId,
+                $accountingPeriodId,
+                $companyNumber,
+                $periodEnd
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+        $resolvedOriginal = is_array($resolution['original'] ?? null)
+            ? (array)$resolution['original']
+            : null;
+        $documentRowId = (int)($resolvedOriginal['id'] ?? $resolvedOriginal['document_row_id'] ?? 0);
+        if ($documentRowId <= 0) {
+            return null;
+        }
+
         $row = \InterfaceDB::fetchOne(
-            'SELECT d.*
-             FROM companies_house_documents d
-             WHERE (d.company_id = :company_id OR UPPER(d.company_number) = :company_number)
-               AND EXISTS (
-                   SELECT 1
-                   FROM companies_house_document_facts period_fact
-                   INNER JOIN companies_house_taxonomy_concepts period_concept
-                     ON period_concept.id = period_fact.concept_fk
-                   WHERE period_fact.document_fk = d.id
-                     AND period_concept.short_name IN (:period_end_concept, :balance_sheet_concept)
-                     AND period_fact.normalised_date = :period_end
-               )
-             ORDER BY d.filing_date DESC, d.id DESC
-             LIMIT 1',
-            [
-                'company_id' => (int)$company['id'],
-                'company_number' => $companyNumber,
-                'period_end_concept' => 'EndDateForPeriodCoveredByReport',
-                'balance_sheet_concept' => 'BalanceSheetDate',
-                'period_end' => (string)$period['period_end'],
-            ]
+            'SELECT d.* FROM companies_house_documents d WHERE d.id = :id LIMIT 1',
+            ['id' => $documentRowId]
         );
         if (!is_array($row)) {
             return null;
         }
-        $productionSoftware = (string)(\InterfaceDB::fetchColumn(
-            'SELECT COALESCE(NULLIF(f.normalised_text, :empty), f.raw_value)
-             FROM companies_house_document_facts f
-             INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
-             WHERE f.document_fk = :document_id AND c.short_name = :concept
-             ORDER BY f.id ASC LIMIT 1',
-            ['empty' => '', 'document_id' => (int)$row['id'], 'concept' => 'NameProductionSoftware']
-        ) ?: '');
+        $productionSoftware = '';
+        if (\InterfaceDB::tableExists('companies_house_document_facts')
+            && \InterfaceDB::tableExists('companies_house_taxonomy_concepts')) {
+            $productionSoftware = (string)(\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(NULLIF(f.normalised_text, :empty), f.raw_value)
+                 FROM companies_house_document_facts f
+                 INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
+                 WHERE f.document_fk = :document_id AND c.short_name = :concept
+                 ORDER BY f.id ASC LIMIT 1',
+                ['empty' => '', 'document_id' => (int)$row['id'], 'concept' => 'NameProductionSoftware']
+            ) ?: '');
+        }
         $metadata = json_decode((string)($row['raw_metadata_json'] ?? ''), true);
         $paperFiled = is_array($metadata) && !empty($metadata['paper_filed']);
         $detectedChannel = $paperFiled
@@ -2957,32 +3110,7 @@ final class CompaniesHouseAccountsSubmissionService
                 $companyId,
                 $accountingPeriodId
             );
-            $comparison = (array)(($review['display'] ?? [])['comparison'] ?? []);
-            $kind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
-            if (empty($review['available']) || !in_array($kind, ['original', 'revised'], true)) {
-                return [
-                    'available' => false,
-                    'approved' => false,
-                    'filing_kind' => '',
-                    'correction_required' => false,
-                    'errors' => (array)($review['errors'] ?? ['Companies House filing classification is unavailable.']),
-                ];
-            }
-            $acknowledgement = (array)($review['acknowledgement'] ?? []);
-            return [
-                'available' => true,
-                'approved' => !empty($review['acknowledgement_current']),
-                'filing_kind' => $kind,
-                'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
-                'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
-                'correction_required' => (int)(($review['display'] ?? [])['mismatch_count'] ?? 0) > 0,
-                'check_code' => (string)($review['check_code'] ?? ''),
-                'approval_basis_version' => (string)($acknowledgement['basis_version'] ?? ''),
-                'approval_basis_hash' => (string)($acknowledgement['basis_hash'] ?? ''),
-                'approved_at' => (string)($review['acknowledged_at'] ?? ''),
-                'approved_by' => (string)($review['acknowledged_by'] ?? ''),
-                'errors' => [],
-            ];
+            return $this->classificationFromReview($review);
         } catch (\Throwable $exception) {
             return [
                 'available' => false,
@@ -2992,6 +3120,399 @@ final class CompaniesHouseAccountsSubmissionService
                 'errors' => [$exception->getMessage()],
             ];
         }
+    }
+
+    /**
+     * Resolves filing lineage from the immutable signed review basis. The live
+     * comparison is only a pre-approval fallback, so importing an AAMD filing
+     * cannot silently turn an approved Revised correction into Original or
+     * remove the requirement for the revised-accounts presentation.
+     *
+     * @param array<string,mixed> $review
+     * @return array<string,mixed>
+     */
+    private function classificationFromReview(array $review): array
+    {
+        $acknowledgement = (array)($review['acknowledgement'] ?? []);
+        $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
+        $basisHash = strtolower(trim((string)($acknowledgement['basis_hash'] ?? '')));
+        $basisVersion = trim((string)($acknowledgement['basis_version'] ?? ''));
+        $signedBasisValid = false;
+        if (is_array($basis)
+            && $basisVersion === YearEndSectionApprovalService::CONTRACT_VERSION
+            && preg_match('/^[a-f0-9]{64}$/D', $basisHash) === 1) {
+            try {
+                $signedBasisValid = hash_equals(
+                    $basisHash,
+                    strtolower((new YearEndAcknowledgementService())->hashBasis($basis))
+                );
+            } catch (\Throwable) {
+                $signedBasisValid = false;
+            }
+        }
+
+        $signedFacts = $signedBasisValid ? (array)($basis['facts'] ?? []) : [];
+        $signedKind = strtolower(trim((string)($signedFacts['filing_kind'] ?? '')));
+        if ($signedBasisValid && in_array($signedKind, ['original', 'revised'], true)) {
+            return [
+                'available' => true,
+                'approved' => !empty($review['acknowledgement_current']),
+                'source' => 'approved_basis',
+                'filing_kind' => $signedKind,
+                'filing_reason' => (string)($signedFacts['filing_reason'] ?? ''),
+                'filing_evidence' => (array)($signedFacts['filing_evidence'] ?? []),
+                'correction_required' => (int)($signedFacts['mismatch_count'] ?? 0) > 0,
+                'check_code' => (string)($basis['check_code'] ?? $review['check_code'] ?? ''),
+                'approval_basis_version' => $basisVersion,
+                'approval_basis_hash' => $basisHash,
+                'approved_at' => (string)($review['acknowledged_at'] ?? ''),
+                'approved_by' => (string)($review['acknowledged_by'] ?? ''),
+                'errors' => [],
+            ];
+        }
+
+        $display = (array)($review['display'] ?? []);
+        $comparison = (array)($display['comparison'] ?? []);
+        $liveKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
+        if (empty($review['available']) || !in_array($liveKind, ['original', 'revised'], true)) {
+            $errors = (array)($review['errors'] ?? []);
+            if ($errors === []) {
+                $errors[] = $acknowledgement !== []
+                    ? 'The stored Companies House filing-classification approval basis could not be verified.'
+                    : 'Companies House filing classification is unavailable.';
+            }
+            return [
+                'available' => false,
+                'approved' => false,
+                'source' => 'unavailable',
+                'filing_kind' => '',
+                'correction_required' => false,
+                'errors' => $errors,
+            ];
+        }
+
+        return [
+            'available' => true,
+            'approved' => false,
+            'source' => 'live_comparison',
+            'filing_kind' => $liveKind,
+            'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
+            'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
+            'correction_required' => (int)($display['mismatch_count'] ?? 0) > 0,
+            'check_code' => (string)($review['check_code'] ?? ''),
+            'approval_basis_version' => '',
+            'approval_basis_hash' => '',
+            'approved_at' => '',
+            'approved_by' => '',
+            'errors' => [],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function revisedFilingObservation(int $companyId, int $accountingPeriodId): array
+    {
+        try {
+            if ($this->revisedObservationResolver !== null) {
+                return (array)($this->revisedObservationResolver)(
+                    $companyId,
+                    $accountingPeriodId
+                );
+            }
+            return (new YearEndCompaniesHouseComparisonService())->fetchRevisedObservation(
+                $companyId,
+                $accountingPeriodId
+            );
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'reconciliation_state' => 'unverifiable',
+                'revision_reconciled' => false,
+                'filing_outstanding' => true,
+                'errors' => [$exception->getMessage()],
+            ];
+        }
+    }
+
+    /**
+     * Treat reconciliation as verified only when every observation flag agrees.
+     * Incomplete or contradictory sync data fails safe and leaves the filing
+     * outstanding.
+     *
+     * @param array<string,mixed> $observation
+     * @return array<string,mixed>
+     */
+    private function filingReconciliation(
+        bool $filingRequired,
+        bool $needsRevision,
+        array $observation
+    ): array {
+        if (!$needsRevision) {
+            return [
+                'available' => true,
+                'reconciliation_state' => 'not_applicable',
+                'revision_reconciled' => false,
+                'filing_outstanding' => $filingRequired,
+                'action_required' => $filingRequired,
+                'errors' => [],
+            ];
+        }
+
+        $available = !empty($observation['available']);
+        $state = strtolower(trim((string)($observation['reconciliation_state'] ?? 'unverifiable')));
+        $verified = $available
+            && $state === 'verified'
+            && !empty($observation['has_revised_filing'])
+            && !empty($observation['revision_reconciled'])
+            && array_key_exists('filing_outstanding', $observation)
+            && empty($observation['filing_outstanding'])
+            && array_key_exists('mismatch_count', $observation)
+            && (int)$observation['mismatch_count'] === 0;
+        $filingOutstanding = $filingRequired && !$verified;
+
+        $observation['available'] = $available;
+        $observation['reconciliation_state'] = $state !== '' ? $state : 'unverifiable';
+        $observation['revision_reconciled'] = $verified;
+        $observation['filing_outstanding'] = $filingOutstanding;
+        $observation['action_required'] = $filingOutstanding;
+        $observation['errors'] = array_values((array)($observation['errors'] ?? []));
+
+        return $observation;
+    }
+
+    /** @param array<string,mixed> $reconciliation */
+    private function revisionSourcePreparationBlocker(array $reconciliation): ?string
+    {
+        $available = !empty($reconciliation['available']);
+        $hasRevision = !empty($reconciliation['has_revised_filing']);
+        $state = strtolower(trim((string)($reconciliation['reconciliation_state'] ?? 'unverifiable')));
+        if ($available
+            && (($state === 'awaiting' && !$hasRevision)
+                || ($state === 'mismatch' && $hasRevision))) {
+            return null;
+        }
+
+        if ($hasRevision) {
+            return 'The latest revised Companies House filing cannot be verified and parsed as the source for a further amendment. Resynchronise Companies House before preparing iXBRL.';
+        }
+
+        return 'The Companies House filing history cannot be verified. Resynchronise Companies House before preparing revised iXBRL.';
+    }
+
+    /**
+     * Keep original_document_id immutable while choosing the exact filing that
+     * the next amendment supersedes. A first amendment uses the original AA;
+     * a further amendment uses the newest parsed AAMD.
+     *
+     * @param array<string,mixed> $context
+     */
+    private function supersededDocumentIdForPreparation(
+        int $companyId,
+        int $accountingPeriodId,
+        array $context,
+        int $originalDocumentId
+    ): int {
+        if ($originalDocumentId <= 0) {
+            throw new \RuntimeException('The exact original Companies House filing is unavailable.');
+        }
+        $reconciliation = (array)($context['reconciliation'] ?? []);
+        $blocker = $this->revisionSourcePreparationBlocker($reconciliation);
+        if ($blocker !== null) {
+            throw new \RuntimeException($blocker);
+        }
+        $state = strtolower(trim((string)($reconciliation['reconciliation_state'] ?? '')));
+        if ($state === 'awaiting') {
+            return $originalDocumentId;
+        }
+
+        $company = (array)($context['company'] ?? []);
+        $period = (array)($context['accounting_period'] ?? []);
+        $companyNumber = trim((string)($company['company_number'] ?? ''));
+        $periodEnd = trim((string)($period['period_end'] ?? ''));
+        if ($companyNumber === '' || !$this->validStatutoryDate($periodEnd)) {
+            throw new \RuntimeException('The company number or accounting-period end is unavailable for resolving the latest revised filing.');
+        }
+        $resolution = $this->periodFilingResolver !== null
+            ? (array)($this->periodFilingResolver)(
+                $companyId,
+                $accountingPeriodId,
+                $companyNumber,
+                $periodEnd
+            )
+            : (new CompaniesHousePeriodFilingResolverService())->resolve(
+                $companyId,
+                $accountingPeriodId,
+                $companyNumber,
+                $periodEnd
+            );
+        if ((int)(($resolution['original'] ?? [])['id'] ?? 0) !== $originalDocumentId) {
+            throw new \RuntimeException('The immutable original Companies House filing lineage could not be confirmed.');
+        }
+        $latestRevision = (array)($resolution['latest_revision'] ?? []);
+        $latestRevisionId = (int)($latestRevision['id'] ?? 0);
+        if ($latestRevisionId <= 0) {
+            throw new \RuntimeException('The latest revised Companies House filing could not be resolved.');
+        }
+        if (!in_array((string)($latestRevision['parse_status'] ?? ''), ['parsed', 'parsed_latest_year'], true)) {
+            throw new \RuntimeException('The latest revised Companies House filing has not been parsed successfully; it cannot be superseded by another amendment.');
+        }
+        $observedFiling = (array)($reconciliation['filing'] ?? []);
+        $observedId = (int)($observedFiling['id'] ?? $observedFiling['document_row_id'] ?? 0);
+        if ($observedId > 0 && $observedId !== $latestRevisionId) {
+            throw new \RuntimeException('The latest revised Companies House filing changed during reconciliation. Resynchronise before preparing another amendment.');
+        }
+
+        return $latestRevisionId;
+    }
+
+    /**
+     * A prepared draft freezes the Companies House document whose current
+     * facts will be tagged as superseded. Any later AAMD changes that source,
+     * so the old draft must be regenerated before it can be transmitted.
+     *
+     * @param array<string,mixed> $submission
+     * @param array<string,mixed> $reconciliation
+     */
+    private function draftLineageSubmissionBlocker(
+        array $submission,
+        array $reconciliation
+    ): ?string {
+        if (strtolower(trim((string)($submission['filing_type'] ?? ''))) !== 'revised'
+            || strtolower(trim((string)($submission['lifecycle'] ?? ''))) !== 'prepared') {
+            return null;
+        }
+
+        $available = !empty($reconciliation['available']);
+        $hasRevision = !empty($reconciliation['has_revised_filing']);
+        $state = strtolower(trim((string)($reconciliation['reconciliation_state'] ?? 'unverifiable')));
+        if (!$available || $state === 'unverifiable') {
+            return 'The latest Companies House filing cannot be verified, so this prepared draft cannot be submitted. '
+                . 'Resynchronise Companies House and regenerate the revised accounts if another amendment is required.';
+        }
+        if ($state === 'verified'
+            && !empty($reconciliation['revision_reconciled'])
+            && array_key_exists('filing_outstanding', $reconciliation)
+            && empty($reconciliation['filing_outstanding'])) {
+            return 'The latest revised Companies House filing is verified and reconciled; '
+                . 'no further filing is outstanding, so this prepared draft cannot be submitted.';
+        }
+
+        $originalDocumentId = (int)($submission['original_document_id'] ?? 0);
+        $expectedSupersededDocumentId = 0;
+        if ($state === 'awaiting' && !$hasRevision) {
+            $expectedSupersededDocumentId = $originalDocumentId;
+        } elseif ($state === 'mismatch' && $hasRevision) {
+            $filing = (array)($reconciliation['filing'] ?? []);
+            $expectedSupersededDocumentId = (int)($filing['id'] ?? $filing['document_row_id'] ?? 0);
+        }
+        if ($expectedSupersededDocumentId <= 0) {
+            return 'The latest Companies House filing lineage is incomplete, so this prepared draft cannot be submitted. '
+                . 'Resynchronise Companies House and regenerate the revised accounts.';
+        }
+
+        $metadata = is_array($submission['filing_metadata'] ?? null)
+            ? (array)$submission['filing_metadata']
+            : json_decode((string)($submission['filing_metadata_json'] ?? ''), true);
+        $metadata = is_array($metadata) ? $metadata : [];
+        $frozenSupersededDocumentId = (int)($metadata['superseded_document_id'] ?? 0);
+        if ($frozenSupersededDocumentId !== $expectedSupersededDocumentId) {
+            return 'A newer Companies House filing changed the superseded filing source for this prepared draft. '
+                . 'Regenerate the revised accounts before submission.';
+        }
+
+        return null;
+    }
+
+    /** @param list<string> $blockers */
+    private function transmissionCanSubmit(string $lifecycle, array $blockers): bool
+    {
+        return strtolower(trim($lifecycle)) === 'prepared' && $blockers === [];
+    }
+
+    /** @param array<string,mixed> $submission */
+    private function directSubmissionReconciliationBlocker(array $submission): ?string
+    {
+        $filingKind = strtolower(trim((string)($submission['filing_type'] ?? '')));
+        $lifecycle = strtolower(trim((string)($submission['lifecycle'] ?? '')));
+        if ($filingKind !== 'revised' || $lifecycle !== 'prepared') {
+            return null;
+        }
+        $companyId = (int)($submission['company_id'] ?? 0);
+        $accountingPeriodId = (int)($submission['accounting_period_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+        $reconciliation = $this->filingReconciliation(
+            true,
+            true,
+            $this->revisedFilingObservation($companyId, $accountingPeriodId)
+        );
+
+        $acceptedRegisterResyncBlocker = $this->acceptedFilingRegisterResyncBlocker(
+            $companyId,
+            $accountingPeriodId,
+            (string)($submission['environment'] ?? ''),
+            $reconciliation
+        );
+        if ($acceptedRegisterResyncBlocker !== null) {
+            return $acceptedRegisterResyncBlocker;
+        }
+
+        return $this->draftLineageSubmissionBlocker($submission, $reconciliation);
+    }
+
+    /**
+     * A LIVE acceptance is not available as a superseding source until the
+     * accepted filing has appeared in the imported Companies House register.
+     * Keep the accepted artifact immutable and wait for a different latest
+     * revision row before another amendment can be prepared or transmitted.
+     * TEST acceptances are deliberately excluded because they never appear on
+     * the public register.
+     *
+     * @param array<string,mixed> $reconciliation
+     */
+    private function acceptedFilingRegisterResyncBlocker(
+        int $companyId,
+        int $accountingPeriodId,
+        string $environment,
+        array $reconciliation
+    ): ?string {
+        $environment = strtoupper(trim($environment));
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $environment !== 'LIVE') {
+            return null;
+        }
+
+        $accepted = $this->latestAcceptedRevisedSubmission(
+            $companyId,
+            $accountingPeriodId,
+            $environment
+        );
+        if ($accepted === null) {
+            return null;
+        }
+
+        $metadata = is_array($accepted['filing_metadata'] ?? null)
+            ? (array)$accepted['filing_metadata']
+            : json_decode((string)($accepted['filing_metadata_json'] ?? ''), true);
+        $metadata = is_array($metadata) ? $metadata : [];
+        // Legacy accepted first-amendment rows predate the explicit field; in
+        // those rows the immutable original is the filing that was superseded.
+        $frozenSupersededDocumentId = (int)($metadata['superseded_document_id']
+            ?? $metadata['original_document_id']
+            ?? $accepted['original_document_id']
+            ?? 0);
+
+        $filing = (array)($reconciliation['filing'] ?? []);
+        $observedRevisionId = !empty($reconciliation['has_revised_filing'])
+            ? (int)($filing['id'] ?? $filing['document_row_id'] ?? 0)
+            : 0;
+        if ($frozenSupersededDocumentId > 0
+            && $observedRevisionId > 0
+            && $observedRevisionId !== $frozenSupersededDocumentId) {
+            return null;
+        }
+
+        return 'The last accepted revised accounts filing is awaiting Companies House register resync. '
+            . 'Resynchronise Companies House before preparing or submitting another amendment.';
     }
 
     private function accountsApprovalDateFromCurrentFilingApproval(
@@ -3050,6 +3571,10 @@ final class CompaniesHouseAccountsSubmissionService
         }
         $supersededFacts = [];
         $originalDocumentId = (int)$dateBasis['original_document_id'];
+        $supersededDocumentId = (int)($input['superseded_document_id'] ?? $originalDocumentId);
+        if ($supersededDocumentId <= 0) {
+            throw new \RuntimeException('The exact Companies House filing superseded by this amendment is unavailable.');
+        }
         $periodEnd = trim((string)\InterfaceDB::fetchColumn(
             'SELECT period_end FROM accounting_periods WHERE id = :id AND company_id = :company_id LIMIT 1',
             ['id' => $accountingPeriodId, 'company_id' => $companyId]
@@ -3063,22 +3588,35 @@ final class CompaniesHouseAccountsSubmissionService
             try {
                 $supersededFacts = (new IxbrlSupersededFactsService())->facts(
                     $companyId,
-                    $originalDocumentId,
+                    $supersededDocumentId,
                     $periodEnd
                 );
             } catch (\Throwable) {
             }
+        }
+        $furtherAmendment = $supersededDocumentId !== $originalDocumentId;
+        if ($furtherAmendment) {
+            if ($supersededFacts === []) {
+                throw new \RuntimeException(
+                    'The latest revised Companies House filing could not supply the current facts required for a further amendment.'
+                );
+            }
+            $comparison = [
+                'rows' => $this->supersededComparisonRows($model, $supersededFacts),
+            ];
         }
         $disclosures = $this->revisionDisclosureTexts(
             $eligibility,
             $input,
             $comparison,
             $model,
-            $supersededFacts
+            $supersededFacts,
+            $furtherAmendment
         );
 
         return array_replace($input, [
             'original_document_id' => $originalDocumentId,
+            'superseded_document_id' => $supersededDocumentId,
             'non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'original_non_compliance_explanation' => $disclosures['non_compliance_explanation'],
             'significant_amendments' => $disclosures['significant_amendments'],
@@ -3095,7 +3633,8 @@ final class CompaniesHouseAccountsSubmissionService
         array $input,
         array $comparison,
         array $model,
-        array $supersededFacts = []
+        array $supersededFacts = [],
+        bool $furtherAmendment = false
     ): array {
         $omitPublicProfitLoss = (int)(($model['disclosures'] ?? [])['profit_loss_not_delivered_section_444'] ?? 1) === 1;
         $publicBalanceSheetMetrics = [
@@ -3115,10 +3654,12 @@ final class CompaniesHouseAccountsSubmissionService
         ];
         $nonCompliance = [];
         $amendments = [];
-        $this->appendRevisionDisclosurePart(
-            $nonCompliance,
-            (string)($eligibility['variance_explanation'] ?? '')
-        );
+        if (!$furtherAmendment) {
+            $this->appendRevisionDisclosurePart(
+                $nonCompliance,
+                (string)($eligibility['variance_explanation'] ?? '')
+            );
+        }
         $this->appendRevisionDisclosurePart(
             $nonCompliance,
             (string)($input['non_compliance_explanation']
@@ -3148,6 +3689,7 @@ final class CompaniesHouseAccountsSubmissionService
             $buckets
         );
         $changedMetrics = [];
+        $directorLoanNoteEvidenceChanged = false;
         foreach ((array)($comparison['rows'] ?? []) as $row) {
             if (!is_array($row)) {
                 continue;
@@ -3163,13 +3705,17 @@ final class CompaniesHouseAccountsSubmissionService
             }
             $key = trim((string)($row['metric_key'] ?? ''));
             $label = trim((string)($row['label'] ?? ''));
+            if ($this->isDirectorLoanNoteEvidenceRow($row)) {
+                $directorLoanNoteEvidenceChanged = true;
+            }
             if ($omitPublicProfitLoss && !in_array($key, $publicBalanceSheetMetrics, true)) {
                 continue;
             }
             if ($key !== '') {
                 $changedMetrics[$key] = true;
             }
-            if ($creditorCorrection !== []
+            if (!$furtherAmendment
+                && $creditorCorrection !== []
                 && in_array($key, [
                     'creditors_within_one_year',
                     'creditors_after_more_than_one_year',
@@ -3183,7 +3729,10 @@ final class CompaniesHouseAccountsSubmissionService
 
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original accounts reported ' . lcfirst($label) . ' of '
+                ($furtherAmendment
+                    ? 'The superseded revised accounts reported '
+                    : 'The original accounts reported ')
+                    . lcfirst($label) . ' of '
                     . $this->revisionMoney($filedValue)
                     . ', whereas the current accounting records support '
                     . $this->revisionMoney($appValue) . '.'
@@ -3197,23 +3746,32 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $fixedAssetsChanged = isset($changedMetrics['fixed_assets']);
-        $prepaymentsApplicable = isset($changedMetrics['prepayments_accrued_income'])
-            || abs((float)($buckets['prepayments_accrued_income'] ?? 0)) >= 0.005;
-        $currentAssetsApplicable = isset($changedMetrics['current_assets'])
-            || $prepaymentsApplicable;
-        $creditorMaturityChanged = isset($changedMetrics['creditors_within_one_year'])
+        $prepaymentsChanged = isset($changedMetrics['prepayments_accrued_income']);
+        $currentAssetsChanged = isset($changedMetrics['current_assets']);
+        $prepaymentsApplicable = $prepaymentsChanged
+            || (!$furtherAmendment
+                && abs((float)($buckets['prepayments_accrued_income'] ?? 0)) >= 0.005);
+        $currentAssetsApplicable = $currentAssetsChanged
+            || (!$furtherAmendment && $prepaymentsApplicable);
+        $creditorMetricsChanged = isset($changedMetrics['creditors_within_one_year'])
             || isset($changedMetrics['creditors_after_more_than_one_year'])
-            || isset($changedMetrics['creditors_after_one_year'])
+            || isset($changedMetrics['creditors_after_one_year']);
+        $creditorMaturityChanged = $creditorMetricsChanged
             || $creditorCorrection !== []
             || $creditorMaturityAmendment !== '';
         $netAssetsChanged = isset($changedMetrics['net_assets_liabilities']);
         $equityChanged = isset($changedMetrics['equity_capital_reserves']);
         $depreciation = round((float)($buckets['depreciation_write_offs'] ?? 0), 2);
 
-        if ($fixedAssetsChanged && abs($depreciation) >= 0.005 && !$omitPublicProfitLoss) {
+        if (!$furtherAmendment
+            && $fixedAssetsChanged
+            && abs($depreciation) >= 0.005
+            && !$omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original fixed assets presentation did not reflect the depreciation charge supported by the accounting records.'
+                $furtherAmendment
+                    ? "The superseded revised accounts' fixed assets presentation did not reflect the depreciation charge supported by the accounting records."
+                    : 'The original fixed assets presentation did not reflect the depreciation charge supported by the accounting records.'
             );
             $this->appendRevisionDisclosurePart(
                 $amendments,
@@ -3222,10 +3780,12 @@ final class CompaniesHouseAccountsSubmissionService
                     . ' after recognising depreciation of ' . $this->revisionMoney($depreciation) . '.'
             );
         }
-        if ($fixedAssetsChanged && $omitPublicProfitLoss) {
+        if (!$furtherAmendment && $fixedAssetsChanged && $omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original fixed assets balance did not agree with the current accounting records.'
+                $furtherAmendment
+                    ? "The superseded revised accounts' fixed assets balance did not agree with the current accounting records."
+                    : 'The original fixed assets balance did not agree with the current accounting records.'
             );
             $this->appendRevisionDisclosurePart(
                 $amendments,
@@ -3233,13 +3793,15 @@ final class CompaniesHouseAccountsSubmissionService
                     . $this->revisionMoney($buckets['fixed_assets'] ?? 0) . '.'
             );
         }
-        if ($prepaymentsApplicable) {
+        if (!$furtherAmendment && $prepaymentsApplicable) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original current assets presentation did not separately identify prepayments outside the current-assets subtotal.'
+                $furtherAmendment
+                    ? "The superseded revised accounts' current assets presentation did not separately identify prepayments outside the current-assets subtotal."
+                    : 'The original current assets presentation did not separately identify prepayments outside the current-assets subtotal.'
             );
         }
-        if ($currentAssetsApplicable) {
+        if (!$furtherAmendment && $currentAssetsApplicable) {
             $this->appendRevisionDisclosurePart(
                 $amendments,
                 'Current assets were corrected to '
@@ -3253,12 +3815,16 @@ final class CompaniesHouseAccountsSubmissionService
             if ($creditorMaturityAmendment !== '') {
                 $this->appendRevisionDisclosurePart($amendments, $creditorMaturityAmendment);
             }
-            if ($creditorCorrection !== []) {
+            if (!$furtherAmendment && $creditorCorrection !== []) {
                 $this->appendRevisionDisclosurePart(
                     $nonCompliance,
-                    'Creditors falling due within one year were originally reported as '
+                    ($furtherAmendment
+                        ? 'Creditors falling due within one year were reported in the superseded revised accounts as '
+                        : 'Creditors falling due within one year were originally reported as ')
                         . $this->revisionMoney($creditorCorrection['original_within_one_year'])
-                        . '; the original liability presentation did not reflect the on-demand maturity '
+                        . ($furtherAmendment
+                            ? '; that liability presentation did not reflect the on-demand maturity '
+                            : '; the original liability presentation did not reflect the on-demand maturity ')
                         . 'of the net participator-loan liability.'
                 );
                 $this->appendRevisionDisclosurePart(
@@ -3282,10 +3848,12 @@ final class CompaniesHouseAccountsSubmissionService
                         . '. The maturity-classification correction changes the classification '
                         . 'and presentation of liabilities but does not change the company’s total net assets.'
                 );
-            } else {
+            } elseif (!$furtherAmendment) {
                 $this->appendRevisionDisclosurePart(
                     $nonCompliance,
-                    'The original accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
+                    $furtherAmendment
+                        ? 'The superseded revised accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
+                        : 'The original accounts did not present creditors using the maturity classification supported by the current accounting evidence.'
                 );
                 $this->appendRevisionDisclosurePart(
                     $amendments,
@@ -3301,10 +3869,12 @@ final class CompaniesHouseAccountsSubmissionService
                 );
             }
         }
-        if ($netAssetsChanged || $equityChanged) {
+        if (!$furtherAmendment && ($netAssetsChanged || $equityChanged)) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The resulting net assets and capital and reserves in the original accounts were incorrect.'
+                $furtherAmendment
+                    ? 'The resulting net assets and capital and reserves in the superseded revised accounts were incorrect.'
+                    : 'The resulting net assets and capital and reserves in the original accounts were incorrect.'
             );
             $this->appendRevisionDisclosurePart(
                 $amendments,
@@ -3326,10 +3896,14 @@ final class CompaniesHouseAccountsSubmissionService
                 'total_amounts_written_off',
                 'total_amounts_waived',
             ]);
+        $directorLoanApplicable = $directorLoanApplicable
+            && (!$furtherAmendment || $directorLoanNoteEvidenceChanged);
         if ($directorLoanApplicable && $creditorCorrection === [] && !$omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
+                $furtherAmendment
+                    ? 'The superseded revised accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
+                    : 'The original accounts did not clearly distinguish director-loan movements and their effect on creditor maturity.'
             );
             $movementParts = [];
             foreach ([
@@ -3359,7 +3933,9 @@ final class CompaniesHouseAccountsSubmissionService
         if ($directorLoanApplicable && $creditorCorrection === [] && $omitPublicProfitLoss) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                'The original accounts did not clearly present the director-loan balance as an asset or liability at the balance-sheet date.'
+                $furtherAmendment
+                    ? 'The superseded revised accounts did not clearly present the director-loan balance as an asset or liability at the balance-sheet date.'
+                    : 'The original accounts did not clearly present the director-loan balance as an asset or liability at the balance-sheet date.'
             );
             $this->appendRevisionDisclosurePart(
                 $amendments,
@@ -3370,9 +3946,13 @@ final class CompaniesHouseAccountsSubmissionService
         if ($nonCompliance === []) {
             $this->appendRevisionDisclosurePart(
                 $nonCompliance,
-                $omitPublicProfitLoss
-                    ? 'The originally filed accounts contained incorrect asset, liability or reserve classifications or balances.'
-                    : 'The originally filed accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.'
+                $furtherAmendment
+                    ? ($omitPublicProfitLoss
+                        ? 'The superseded revised accounts contained incorrect asset, liability or reserve classifications or balances.'
+                        : 'The superseded revised accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.')
+                    : ($omitPublicProfitLoss
+                        ? 'The originally filed accounts contained incorrect asset, liability or reserve classifications or balances.'
+                        : 'The originally filed accounts did not reflect the complete accounting records and consequently contained incorrect financial-statement classifications or balances.')
             );
         }
         if ($amendments === []) {
@@ -3405,6 +3985,93 @@ final class CompaniesHouseAccountsSubmissionService
             'non_compliance_explanation' => $nonComplianceText,
             'significant_amendments' => $amendmentsText,
         ];
+    }
+
+    /** @param array<string,mixed> $row */
+    private function isDirectorLoanNoteEvidenceRow(array $row): bool
+    {
+        $sourceConcept = strtolower(trim((string)($row['source_concept'] ?? '')));
+        if ($sourceConcept === '' || !str_contains($sourceConcept, 'director')) {
+            return false;
+        }
+
+        return str_contains($sourceConcept, 'loan')
+            || str_contains($sourceConcept, 'advance')
+            || str_contains($sourceConcept, 'credit');
+    }
+
+    /**
+     * Rebuild disclosure comparison rows from the exact AAMD that the next
+     * amendment supersedes. This avoids reusing original-AA comparison text
+     * when a second or later amendment is required.
+     *
+     * @param list<array<string,mixed>> $supersededFacts
+     * @return list<array<string,mixed>>
+     */
+    private function supersededComparisonRows(array $model, array $supersededFacts): array
+    {
+        $buckets = (array)(($model['current'] ?? [])['buckets'] ?? []);
+        $disclosures = (array)($model['disclosures'] ?? []);
+        $definitions = [
+            'core:CalledUpShareCapitalNotPaidNotExpressedAsCurrentAsset|current_period_end_superseded'
+                => ['called_up_share_capital_not_paid', 'Called up share capital not paid'],
+            'core:FixedAssets|current_period_end_superseded'
+                => ['fixed_assets', 'Fixed assets'],
+            'core:CurrentAssets|current_period_end_superseded'
+                => ['current_assets', 'Current assets'],
+            'core:PrepaymentsAccruedIncomeNotExpressedWithinCurrentAssetSubtotal|current_period_end_superseded'
+                => ['prepayments_accrued_income', 'Prepayments and accrued income'],
+            'core:Creditors|current_period_end_superseded_creditors_within_one_year'
+                => ['creditors_within_one_year', 'Creditors within one year'],
+            'core:Creditors|current_period_end_superseded_creditors_after_one_year'
+                => ['creditors_after_more_than_one_year', 'Creditors after more than one year'],
+            'core:NetCurrentAssetsLiabilities|current_period_end_superseded'
+                => ['net_current_assets_liabilities', 'Net current assets/liabilities'],
+            'core:TotalAssetsLessCurrentLiabilities|current_period_end_superseded'
+                => ['total_assets_less_current_liabilities', 'Total assets less current liabilities'],
+            'core:ProvisionsForLiabilitiesBalanceSheetSubtotal|current_period_end_superseded'
+                => ['provisions_for_liabilities', 'Provisions for liabilities'],
+            'core:AccruedLiabilitiesNotExpressedWithinCreditorsSubtotal|current_period_end_superseded'
+                => ['accruals_deferred_income', 'Accruals and deferred income'],
+            'core:NetAssetsLiabilities|current_period_end_superseded'
+                => ['net_assets_liabilities', 'Net assets/liabilities'],
+            'core:Equity|current_period_end_superseded'
+                => ['equity_capital_reserves', 'Equity / capital and reserves'],
+            'core:AverageNumberEmployeesDuringPeriod|current_period_duration_superseded'
+                => ['average_number_employees', 'Average number of employees'],
+        ];
+        $rows = [];
+        foreach ($supersededFacts as $fact) {
+            if (!is_array($fact) || !is_numeric($fact['value'] ?? null)) {
+                continue;
+            }
+            $factKey = (string)($fact['concept'] ?? '') . '|' . (string)($fact['context_ref'] ?? '');
+            $definition = $definitions[$factKey] ?? null;
+            if (!is_array($definition)) {
+                continue;
+            }
+            [$metricKey, $label] = $definition;
+            $appValue = $metricKey === 'average_number_employees'
+                ? ($disclosures[$metricKey] ?? null)
+                : ($buckets[$metricKey] ?? null);
+            if (!is_numeric($appValue)) {
+                continue;
+            }
+            $filedValue = round((float)$fact['value'], 2);
+            $appValue = round((float)$appValue, 2);
+            $variance = round($appValue - $filedValue, 2);
+            $rows[] = [
+                'metric_key' => $metricKey,
+                'label' => $label,
+                'app_value' => $appValue,
+                'filed_value' => $filedValue,
+                'variance' => $variance,
+                'status' => abs($variance) >= 0.005 ? 'fail' : 'ok',
+                'source_concept' => (string)($fact['source_short_name'] ?? $fact['concept'] ?? ''),
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -3735,6 +4402,48 @@ final class CompaniesHouseAccountsSubmissionService
         return is_array($row) ? $this->normaliseSubmission($row) : null;
     }
 
+    private function latestAcceptedRevisedSubmission(
+        int $companyId,
+        int $accountingPeriodId,
+        string $environment
+    ): ?array {
+        $environment = strtoupper(trim($environment));
+        if ($environment !== 'LIVE') {
+            return null;
+        }
+        if ($this->acceptedSubmissionResolver !== null) {
+            $submission = ($this->acceptedSubmissionResolver)(
+                $companyId,
+                $accountingPeriodId,
+                $environment
+            );
+            return is_array($submission) ? $submission : null;
+        }
+        if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT * FROM ' . self::SUBMISSIONS_TABLE . '
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND filing_type = :filing_type
+               AND environment = :environment
+               AND lifecycle = :lifecycle
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'filing_type' => 'revised',
+                'environment' => $environment,
+                'lifecycle' => 'accepted',
+            ]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
     private function currentArtifactSubmission(
         int $companyId,
         int $accountingPeriodId,
@@ -3963,6 +4672,63 @@ final class CompaniesHouseAccountsSubmissionService
     }
 
     /**
+     * An accepted filing is immutable historic evidence. Once the imported
+     * AAMD document reconciles, retain that exact local artifact even if a
+     * newer presentation profile would be required for a brand-new filing.
+     * File integrity is still rechecked before it is exposed as reusable.
+     */
+    private function retainedAcceptedArtifactState(array $submission): array
+    {
+        $path = trim((string)($submission['artifact_path'] ?? $submission['revised_artifact_path'] ?? ''));
+        $expectedHash = strtolower(trim((string)(
+            $submission['artifact_sha256'] ?? $submission['revised_artifact_sha256'] ?? ''
+        )));
+        $metadata = is_array($submission['filing_metadata'] ?? null)
+            ? (array)$submission['filing_metadata']
+            : json_decode((string)($submission['filing_metadata_json'] ?? ''), true);
+        $result = [
+            'path' => $path,
+            'filename' => $path !== '' ? basename($path) : '',
+            'sha256' => $expectedHash,
+            'basis_hash' => (string)($submission['basis_hash'] ?? ''),
+            'base_run_id' => (int)($submission['ixbrl_generation_run_id'] ?? 0),
+            'presentation_version' => is_array($metadata)
+                ? trim((string)($metadata['presentation_version'] ?? ''))
+                : '',
+            'state' => 'missing',
+            'current' => false,
+            'reusable' => false,
+            'accepted' => true,
+            'fact_count' => 0,
+            'errors' => [],
+        ];
+        if ((string)($submission['lifecycle'] ?? '') !== 'accepted') {
+            $result['state'] = 'invalid';
+            $result['accepted'] = false;
+            $result['errors'] = ['Only an accepted Companies House artifact can be retained after reconciliation.'];
+            return $result;
+        }
+        if ($path === '' || !is_file($path)) {
+            $result['errors'] = ['The accepted Companies House iXBRL artifact is missing.'];
+            return $result;
+        }
+        $actualHash = hash_file('sha256', $path);
+        if (!is_string($actualHash)
+            || preg_match('/^[a-f0-9]{64}$/D', $expectedHash) !== 1
+            || !hash_equals($expectedHash, strtolower($actualHash))) {
+            $result['state'] = 'tampered';
+            $result['errors'] = ['The accepted Companies House iXBRL artifact has changed since filing.'];
+            return $result;
+        }
+
+        $result['state'] = 'retained';
+        $result['current'] = true;
+        $result['reusable'] = true;
+        $result['fact_count'] = $this->inlineFactCount($path);
+        return $result;
+    }
+
+    /**
      * Reports whether the prepared file is available for the transmission UI.
      *
      * Avoid hashing and reconstructing filing provenance during every page
@@ -4144,7 +4910,14 @@ final class CompaniesHouseAccountsSubmissionService
 
     private function submission(int $submissionId): ?array
     {
-        if ($submissionId <= 0 || !\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
+        if ($submissionId <= 0) {
+            return null;
+        }
+        if ($this->submissionResolver !== null) {
+            $submission = ($this->submissionResolver)($submissionId);
+            return is_array($submission) ? $submission : null;
+        }
+        if (!\InterfaceDB::tableExists(self::SUBMISSIONS_TABLE)) {
             return null;
         }
         $row = \InterfaceDB::fetchOne(
@@ -4198,6 +4971,8 @@ final class CompaniesHouseAccountsSubmissionService
             'filename' => (string)($artifact['filename'] ?? ''),
             'path' => (string)($artifact['path'] ?? ''),
             'sha256' => strtolower((string)($artifact['sha256'] ?? '')),
+            'original_document_id' => (int)($artifact['original_document_id'] ?? 0),
+            'superseded_document_id' => (int)($artifact['superseded_document_id'] ?? 0),
             'validation_status' => (string)($validation['status'] ?? ''),
             'validation_log_path' => (string)($validation['log_path'] ?? ''),
             'validation' => $validation,
@@ -4956,6 +5731,17 @@ final class CompaniesHouseAccountsSubmissionService
         return $this->sequenceService ?? new CompaniesHouseSubmissionSequenceService();
     }
 
+    /** @return array<string,mixed> */
+    private function allocateSubmissionSequence(
+        int $submissionId,
+        string $environment,
+        string $presenterId
+    ): array {
+        return $this->sequenceAllocator !== null
+            ? (array)($this->sequenceAllocator)($submissionId, $environment, $presenterId)
+            : $this->sequences()->allocate($submissionId, $environment, $presenterId);
+    }
+
     private function archives(): TransmissionArchiveService
     {
         return $this->archiveService ?? new TransmissionArchiveService();
@@ -5135,7 +5921,9 @@ final class CompaniesHouseAccountsSubmissionService
         int $accountsValidationRunId = 0,
         string $authorityProfileFingerprint = '',
         string $filingKind = 'revised',
-        string $classificationApprovalHash = ''
+        string $classificationApprovalHash = '',
+        int $originalDocumentId = 0,
+        int $supersededDocumentId = 0
     ): array {
         return [
             'base_run_id' => $baseRunId,
@@ -5147,6 +5935,8 @@ final class CompaniesHouseAccountsSubmissionService
             'authority_profile_fingerprint' => $authorityProfileFingerprint,
             'filing_kind' => $filingKind,
             'classification_approval_hash' => strtolower(trim($classificationApprovalHash)),
+            'original_document_id' => max(0, $originalDocumentId),
+            'superseded_document_id' => max(0, $supersededDocumentId),
             'original_approval_evidence' => (array)($declarations['original_approval_evidence'] ?? []),
             // Preserve the complete Arelle result so warnings, the exact
             // validated hash and immutable log provenance survive the prepare
@@ -5180,8 +5970,25 @@ final class CompaniesHouseAccountsSubmissionService
             ],
             'filing_kind' => '',
             'filing_required' => false,
+            'filing_outstanding' => false,
             'correction_required' => false,
             'revision_required' => false,
+            'reconciliation' => [
+                'available' => false,
+                'reconciliation_state' => 'unverifiable',
+                'revision_reconciled' => false,
+                'filing_outstanding' => false,
+                'action_required' => false,
+                'errors' => [$message],
+            ],
+            'revised_filing_observation' => [
+                'available' => false,
+                'reconciliation_state' => 'unverifiable',
+                'revision_reconciled' => false,
+                'filing_outstanding' => false,
+                'action_required' => false,
+                'errors' => [$message],
+            ],
             'taxonomy_compatibility' => null,
             'readiness' => ['ready_for_filing' => false, 'filing_errors' => [$message]],
             'submission' => null,

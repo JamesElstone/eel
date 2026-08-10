@@ -102,6 +102,176 @@ $harness->run(\eel_accounts\Service\CompaniesHousePdfDownloadService::class, fun
             $harness->assertSame(1, (int)($result['skipped_existing_count'] ?? 0));
             $harness->assertSame('already_present', (string)($result['documents'][0]['status'] ?? ''));
         });
+
+        $harness->check(\eel_accounts\Service\CompaniesHousePdfDownloadService::class, 'suffixes colliding sanitized filenames with full document ids without deleting the legacy file', function () use ($harness, $baseDirectory): void {
+            $firstBody = '%PDF-1.4 original filing';
+            $secondBody = '%PDF-1.4 revised filing';
+            $firstDocumentId = 'document-original-full-identifier-0123456789';
+            $secondDocumentId = 'document-revised-full-identifier-9876543210';
+            $companyService = new \eel_accounts\Service\CompaniesHouseService('TEST', 20, static function (array $request) use ($firstDocumentId, $secondDocumentId): array {
+                return [
+                    'status_code' => 200,
+                    'url' => 'https://api.company-information.service.gov.uk/company/87654321/filing-history',
+                    'body' => json_encode([
+                        'total_count' => 2,
+                        'items' => [
+                            [
+                                'date' => '2025-01-01',
+                                'type' => 'AA',
+                                'transaction_id' => 'transaction-original',
+                                'links' => [
+                                    'document_metadata' => 'https://document-api.company-information.service.gov.uk/document/' . $firstDocumentId,
+                                ],
+                            ],
+                            [
+                                'date' => '2025-01-15',
+                                'type' => 'AAMD',
+                                'transaction_id' => 'transaction-revised',
+                                'links' => [
+                                    'document_metadata' => 'https://document-api.company-information.service.gov.uk/document/' . $secondDocumentId,
+                                ],
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ];
+            });
+            $documentService = new \eel_accounts\Service\CompaniesHouseDocumentService('TEST', 20, static function (array $request) use ($firstBody, $secondBody, $firstDocumentId, $secondDocumentId): array {
+                $url = (string)($request['url'] ?? '');
+                $isFirst = str_contains($url, $firstDocumentId);
+                $documentId = $isFirst ? $firstDocumentId : $secondDocumentId;
+                $body = $isFirst ? $firstBody : $secondBody;
+
+                if (str_ends_with($url, '/content')) {
+                    return [
+                        'status_code' => 200,
+                        'url' => $url,
+                        'headers' => ['content-type' => 'application/pdf'],
+                        'body' => $body,
+                    ];
+                }
+
+                return [
+                    'status_code' => 200,
+                    'url' => $url,
+                    'headers' => ['content-type' => 'application/json'],
+                    'body' => json_encode([
+                        'id' => $documentId,
+                        'filename' => $isFirst ? 'accounts:2024.pdf' : 'accounts/2024.pdf',
+                        'links' => [
+                            'document' => 'https://document-api.company-information.service.gov.uk/document/' . $documentId . '/content',
+                        ],
+                        'resources' => [
+                            'application/pdf' => [
+                                'content_length' => strlen($body),
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ];
+            });
+            $fileCheckService = new \eel_accounts\Service\FileCheckService([
+                'upload_base_dir' => $baseDirectory,
+            ], null, static fn(int $companyId): string => $companyId === 8 ? '87654321' : '', static fn(int $companyId): string => $baseDirectory);
+            $service = new \eel_accounts\Service\CompaniesHousePdfDownloadService(
+                'TEST',
+                20,
+                $companyService,
+                $documentService,
+                $fileCheckService
+            );
+            $directory = $fileCheckService->ensureCompaniesHousePdfDirectory(8);
+            $legacyPath = $directory . DIRECTORY_SEPARATOR . 'accounts_2024.pdf';
+            // Match the revised PDF byte length so size alone cannot establish ownership.
+            $legacyBody = '%PDF-1.4 legacy! filing';
+            file_put_contents($legacyPath, $legacyBody);
+
+            $result = $service->downloadForCompany(8, '87654321');
+            $firstPath = $directory . DIRECTORY_SEPARATOR . 'accounts_2024_' . $firstDocumentId . '.pdf';
+            $secondPath = $directory . DIRECTORY_SEPARATOR . 'accounts_2024_' . $secondDocumentId . '.pdf';
+
+            $harness->assertSame(2, (int)($result['downloaded_count'] ?? 0));
+            $harness->assertSame(0, (int)($result['failed_count'] ?? 1));
+            $harness->assertSame($firstBody, (string)file_get_contents($firstPath));
+            $harness->assertSame($secondBody, (string)file_get_contents($secondPath));
+            $harness->assertSame($legacyBody, (string)file_get_contents($legacyPath));
+            $harness->assertSame(basename($firstPath), (string)($result['documents'][0]['filename'] ?? ''));
+            $harness->assertSame(basename($secondPath), (string)($result['documents'][1]['filename'] ?? ''));
+
+            $repeat = $service->downloadForCompany(8, '87654321');
+            $harness->assertSame(0, (int)($repeat['downloaded_count'] ?? 1));
+            $harness->assertSame(2, (int)($repeat['skipped_existing_count'] ?? 0));
+            $harness->assertSame($legacyBody, (string)file_get_contents($legacyPath));
+
+            $wrongFirstBody = str_repeat('X', strlen($firstBody));
+            file_put_contents($firstPath, $wrongFirstBody);
+            $corruptExisting = $service->downloadForCompany(8, '87654321');
+            $harness->assertSame(0, (int)($corruptExisting['downloaded_count'] ?? 1));
+            $harness->assertSame(1, (int)($corruptExisting['skipped_existing_count'] ?? 0));
+            $harness->assertSame(1, (int)($corruptExisting['failed_count'] ?? 0));
+            $harness->assertSame('failed', (string)($corruptExisting['documents'][0]['status'] ?? ''));
+            $harness->assertSame($wrongFirstBody, (string)file_get_contents($firstPath));
+            $harness->assertSame($secondBody, (string)file_get_contents($secondPath));
+            $harness->assertSame($legacyBody, (string)file_get_contents($legacyPath));
+            file_put_contents($firstPath, $firstBody);
+
+            $contentRequests = 0;
+            $degradedDocumentService = new \eel_accounts\Service\CompaniesHouseDocumentService('TEST', 20, static function (array $request) use ($secondBody, $firstDocumentId, $secondDocumentId, &$contentRequests): array {
+                $url = (string)($request['url'] ?? '');
+
+                if (str_contains($url, $firstDocumentId)) {
+                    throw new RuntimeException('Simulated original-filing metadata failure.');
+                }
+
+                if (str_ends_with($url, '/content')) {
+                    $contentRequests++;
+
+                    return [
+                        'status_code' => 200,
+                        'url' => $url,
+                        'headers' => ['content-type' => 'application/pdf'],
+                        'body' => $secondBody,
+                    ];
+                }
+
+                return [
+                    'status_code' => 200,
+                    'url' => $url,
+                    'headers' => ['content-type' => 'application/json'],
+                    'body' => json_encode([
+                        'id' => $secondDocumentId,
+                        'filename' => 'accounts/2024.pdf',
+                        'links' => [
+                            'document' => 'https://document-api.company-information.service.gov.uk/document/' . $secondDocumentId . '/content',
+                        ],
+                        'resources' => [
+                            'application/pdf' => [
+                                'content_length' => strlen($secondBody),
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ];
+            });
+            $degradedService = new \eel_accounts\Service\CompaniesHousePdfDownloadService(
+                'TEST',
+                20,
+                $companyService,
+                $degradedDocumentService,
+                $fileCheckService
+            );
+
+            $degraded = $degradedService->downloadForCompany(8, '87654321');
+
+            $harness->assertSame(0, (int)($degraded['downloaded_count'] ?? 1));
+            $harness->assertSame(1, (int)($degraded['skipped_existing_count'] ?? 0));
+            $harness->assertSame(1, (int)($degraded['failed_count'] ?? 0));
+            $harness->assertSame(1, $contentRequests);
+            $harness->assertSame('failed', (string)($degraded['documents'][0]['status'] ?? ''));
+            $harness->assertSame('already_present', (string)($degraded['documents'][1]['status'] ?? ''));
+            $harness->assertSame(basename($secondPath), (string)($degraded['documents'][1]['filename'] ?? ''));
+            $harness->assertSame($secondPath, (string)($degraded['documents'][1]['path'] ?? ''));
+            $harness->assertSame($legacyBody, (string)file_get_contents($legacyPath));
+            $harness->assertSame($firstBody, (string)file_get_contents($firstPath));
+            $harness->assertSame($secondBody, (string)file_get_contents($secondPath));
+        });
     } finally {
         companiesHousePdfDownloadRemoveDirectory($baseDirectory);
     }

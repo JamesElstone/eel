@@ -103,16 +103,19 @@ final class IxbrlRevisedAccountsArtifactService
         $periodEnd = (string)$period['period_end'];
         $input['company_name'] = trim((string)($period['company_name'] ?? ''));
         $declarations = $this->declarations($periodEnd, $input);
+        $supersededDocumentId = (int)(
+            $input['superseded_document_id'] ?? $input['original_document_id']
+        );
         try {
             $supersededFacts = (new IxbrlSupersededFactsService())->facts(
                 $companyId,
-                (int)$input['original_document_id'],
+                $supersededDocumentId,
                 $periodEnd
             );
         } catch (\Throwable $exception) {
             return [
                 'success' => false,
-                'errors' => ['The original filing could not be used for superseded facts: ' . $exception->getMessage()],
+                'errors' => ['The superseded filing could not be used for revised facts: ' . $exception->getMessage()],
                 'warnings' => [],
             ];
         }
@@ -124,6 +127,7 @@ final class IxbrlRevisedAccountsArtifactService
                 ($input['filing_classification'] ?? [])['approval_basis_hash'] ?? ''
             ))),
             'original_document_id' => (int)$input['original_document_id'],
+            'superseded_document_id' => $supersededDocumentId,
             'base_run_id' => (int)($baseArtifact['run_id'] ?? 0),
             'base_sha256' => (string)($baseArtifact['hash'] ?? ''),
             'base_basis_hash' => (string)($baseArtifact['basis_hash'] ?? ''),
@@ -317,6 +321,8 @@ final class IxbrlRevisedAccountsArtifactService
             'sha256' => $sha256,
             'validated_sha256' => $validatedHash,
             'basis_hash' => $basisHash,
+            'original_document_id' => (int)$input['original_document_id'],
+            'superseded_document_id' => $supersededDocumentId,
             'base_run_id' => (int)($baseArtifact['run_id'] ?? 0),
             'base_sha256' => (string)($baseArtifact['hash'] ?? ''),
             'fact_count' => (int)($transformed['fact_count'] ?? 0),
@@ -1114,6 +1120,10 @@ final class IxbrlRevisedAccountsArtifactService
         }
         if ((int)($input['original_document_id'] ?? 0) <= 0) {
             $errors[] = 'Select the exact original Companies House filing.';
+        }
+        if (array_key_exists('superseded_document_id', $input)
+            && (int)$input['superseded_document_id'] <= 0) {
+            $errors[] = 'Select the exact Companies House filing superseded by this amendment.';
         }
         $classification = (array)($input['filing_classification'] ?? []);
         if ((string)($classification['filing_kind'] ?? '') !== 'revised'

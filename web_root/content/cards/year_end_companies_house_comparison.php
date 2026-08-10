@@ -21,7 +21,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['companies.house.accounts.submission', 'page.context', 'year.end.checklist'];
+        return [
+            'year.end.companies.house.comparison',
+            'companies.house.accounts.submission',
+            'page.context',
+            'year.end.checklist',
+        ];
     }
 
     public function services(): array
@@ -31,6 +36,15 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 'key' => 'sectionReview',
                 'service' => \eel_accounts\Service\YearEndSectionApprovalService::class,
                 'method' => 'fetchCompaniesHouseReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+            [
+                'key' => 'revisedObservation',
+                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
+                'method' => 'fetchRevisedObservation',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -52,6 +66,20 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         }
         $review = (array)($sectionReview['display'] ?? []);
         $comparison = (array)($review['comparison'] ?? []);
+        $revisedObservation = (array)($context['services']['revisedObservation'] ?? []);
+        $revisedServiceError = (array)($context['service_errors']['revisedObservation'] ?? []);
+        if ($revisedObservation === [] && $revisedServiceError !== []) {
+            $message = trim((string)($revisedServiceError['message'] ?? ''));
+            $revisedObservation = [
+                'available' => false,
+                'reconciliation_state' => 'unverifiable',
+                'errors' => [
+                    $message !== ''
+                        ? $message
+                        : 'The latest revised filing could not be checked.',
+                ],
+            ];
+        }
         $access = (array)($review['access'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
@@ -67,7 +95,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $lockNotice . '
-            ' . $this->renderComparisonPanel($comparison, $companySettings, $companyId, $accountingPeriodId) . '
+            ' . $this->renderComparisonPanel($comparison, $revisedObservation, $companySettings, $companyId, $accountingPeriodId) . '
             ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $sectionReview) . '
         </section>';
     }
@@ -143,6 +171,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     private function renderComparisonPanel(
         array $comparison,
+        array $revisedObservation,
         array $companySettings,
         int $companyId,
         int $accountingPeriodId
@@ -162,30 +191,79 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         }
 
         $warningsHtml = '';
-        foreach ((array)($comparison['warnings'] ?? []) as $warning) {
-            $warningsHtml .= '<div class="helper">' . \eel_accounts\Support\Utf8::html((string)$warning) . '</div>';
+        $warnings = array_merge(
+            (array)($comparison['warnings'] ?? []),
+            (array)($revisedObservation['warnings'] ?? []),
+            (array)($revisedObservation['errors'] ?? [])
+        );
+        foreach (array_values(array_unique(array_map('strval', $warnings))) as $warning) {
+            $warningsHtml .= '<div class="helper">' . \eel_accounts\Support\Utf8::html($warning) . '</div>';
         }
+
+        $revisedRows = [];
+        foreach ((array)($revisedObservation['rows'] ?? []) as $revisedRow) {
+            if (!is_array($revisedRow)) {
+                continue;
+            }
+            $metricKey = trim((string)($revisedRow['metric_key'] ?? ''));
+            if ($metricKey !== '') {
+                $revisedRows[$metricKey] = $revisedRow;
+            }
+        }
+
+        $revisedObservationUnavailable = array_key_exists('available', $revisedObservation)
+            && empty($revisedObservation['available']);
 
         $rowsHtml = '';
         foreach ((array)($comparison['rows'] ?? []) as $row) {
             $status = (string)($row['status'] ?? '');
+            $revisedRow = (array)($revisedRows[(string)($row['metric_key'] ?? '')] ?? []);
+            $revisedStatus = (string)($revisedRow['status'] ?? (
+                $revisedObservationUnavailable ? 'unavailable' : 'not_filed'
+            ));
+            $revisedValue = $revisedRow['revised_filed_value'] ?? $revisedRow['filed_value'] ?? null;
             $rowsHtml .= '<tr>
-                <td>' . \eel_accounts\Support\Utf8::html((string)($row['label'] ?? '')) . '</td>
+                <th scope="row">' . \eel_accounts\Support\Utf8::html((string)($row['label'] ?? '')) . '</th>
                 <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
                 <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
                 <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
                 <td><span class="badge ' . $this->badgeClass($status) . '">' . \eel_accounts\Support\Utf8::html($this->comparisonStatusLabel($status)) . '</span></td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $revisedValue)) . '</td>
+                <td>' . \eel_accounts\Support\Utf8::html($this->nullableMoney($companySettings, $revisedRow['variance'] ?? null)) . '</td>
+                <td><span class="badge ' . $this->badgeClass($revisedStatus) . '">' . \eel_accounts\Support\Utf8::html($this->comparisonStatusLabel($revisedStatus)) . '</span></td>
             </tr>';
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="5">No Companies House comparison rows were found for this accounting period.</td></tr>';
+            $rowsHtml = '<tr><td colspan="8">No Companies House comparison rows were found for this accounting period.</td></tr>';
         }
 
         $filingKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
         $filingKindLabel = in_array($filingKind, ['original', 'revised'], true)
             ? ucfirst($filingKind)
             : 'Unavailable';
+        $defaultReconciliationState = (!empty($revisedObservation['errors'])
+            || (array_key_exists('available', $revisedObservation) && empty($revisedObservation['available'])))
+            ? 'unverifiable'
+            : 'awaiting';
+        $reconciliationState = strtolower(trim((string)(
+            $revisedObservation['reconciliation_state'] ?? $defaultReconciliationState
+        )));
+        $filingOutstanding = array_key_exists('filing_outstanding', $revisedObservation)
+            ? !empty($revisedObservation['filing_outstanding'])
+            : true;
+        $revisionCount = (int)($revisedObservation['revision_count'] ?? count((array)($revisedObservation['revisions'] ?? [])));
+        $revisedFiling = (array)($revisedObservation['filing'] ?? []);
+        $revisedFilingDate = trim((string)($revisedFiling['filing_date'] ?? ''));
+        $revisedFilingHelper = $revisionCount > 0
+            ? 'Latest Revised Filing date: ' . ($revisedFilingDate !== '' ? $revisedFilingDate : '-')
+                . ' (latest of ' . $revisionCount . ' revised filing' . ($revisionCount === 1 ? '' : 's') . ').'
+            : (!$filingOutstanding
+                ? 'Latest Revised Filing: no amended filing is required for this accounting period.'
+                : ($reconciliationState === 'unverifiable'
+                ? 'Latest Revised Filing: its current Companies House state could not be checked.'
+                : 'Latest Revised Filing: no amended filing has been imported for this accounting period.'));
+        $revisedNote = trim((string)($revisedObservation['comparison_note'] ?? $revisedObservation['note'] ?? ''));
         $syncForm = '<form method="post" action="?page=companies_house" data-ajax="true">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
             . '<input type="hidden" name="card_action" value="Company">'
@@ -198,18 +276,31 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<section class="panel-soft" id="companies-house-comparison">
             <div class="status-head"><h3 class="card-title">Companies House Comparison</h3>' . $syncForm . '</div>
             <div class="summary-grid">'
-                . $this->metric('Filing classification', $filingKindLabel)
+                . $this->metric('Required filing route', $filingKindLabel)
                 . $this->metric(
                     'Classification basis',
                     $filingKind === 'revised' ? 'Exact-period filing found' : 'No exact-period filing found'
                 )
+                . $this->metric(
+                    'Latest Revised Filing',
+                    $this->reconciliationStateLabel(
+                        $reconciliationState,
+                        !empty($revisedObservation['has_revised_filing']),
+                        $filingOutstanding
+                    )
+                )
             . '</div>
             <div class="helper">' . \eel_accounts\Support\Utf8::html((string)($comparison['comparison_note'] ?? '')) . '</div>
+            ' . ($revisedNote !== '' ? '<div class="helper">' . \eel_accounts\Support\Utf8::html($revisedNote) . '</div>' : '') . '
             ' . $warningsHtml . '
-            <div class="helper">Stored filing date: ' . \eel_accounts\Support\Utf8::html((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
+            <div class="helper">Original Filing date: ' . \eel_accounts\Support\Utf8::html((string)($comparison['filing']['filing_date'] ?? '-')) . '</div>
+            <div class="helper">' . \eel_accounts\Support\Utf8::html($revisedFilingHelper) . '</div>
             <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead>
+                <table aria-label="App figures compared with the original and latest revised Companies House filings">
+                    <thead>
+                        <tr><th scope="col" rowspan="2">Metric</th><th scope="col" rowspan="2">App</th><th scope="colgroup" colspan="3">Original Filing</th><th scope="colgroup" colspan="3">Latest Revised Filing</th></tr>
+                        <tr><th scope="col">Value</th><th scope="col">Variance</th><th scope="col">Status</th><th scope="col">Value</th><th scope="col">Variance</th><th scope="col">Status</th></tr>
+                    </thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
@@ -255,9 +346,10 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="companies-house-mismatch-acknowledgement">
             <div class="status-head">
-                <h3 class="card-title">Approval</h3>
+                <h3 class="card-title">Original Filing Comparison Approval</h3>
                 <span class="badge ' . \eel_accounts\Support\Utf8::html($isAcknowledged ? 'success' : 'warning') . '">' . \eel_accounts\Support\Utf8::html($isAcknowledged ? 'Approved' : 'Approval pending') . '</span>
             </div>
+            <div class="helper">This approval applies only to the App versus Original Filing comparison. The Latest Revised Filing is read-only reconciliation evidence and does not change this approval.</div>
             ' . $form . '
         </section>';
     }
@@ -543,10 +635,28 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     private function badgeClass(string $status): string
     {
         return match ($status) {
-            'pass', 'success', 'matches' => 'success',
-            'fail', 'danger', 'differs' => 'danger',
-            'warning', 'not_filed' => 'warning',
+            'pass', 'success', 'matches', 'verified' => 'success',
+            'fail', 'danger', 'differs', 'mismatch' => 'danger',
+            'warning', 'not_filed', 'awaiting', 'unverifiable', 'unavailable' => 'warning',
             default => 'info',
+        };
+    }
+
+    private function reconciliationStateLabel(
+        string $state,
+        bool $hasRevisedFiling = false,
+        bool $filingOutstanding = true
+    ): string
+    {
+        if (!$hasRevisedFiling && !$filingOutstanding) {
+            return 'No revised filing required';
+        }
+
+        return match ($state) {
+            'verified' => 'Filed and verified',
+            'mismatch' => 'Further correction may be required',
+            'unverifiable' => $hasRevisedFiling ? 'Filed but unverifiable' : 'Unverifiable',
+            default => 'Awaiting revised filing',
         };
     }
 

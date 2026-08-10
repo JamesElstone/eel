@@ -205,6 +205,188 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(
             \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'reuses the accepted Revised lineage when the imported AAMD filing is reconciled',
+            static function () use ($harness): void {
+                $calls = ['accounts' => 0, 'validation' => 0, 'computation' => 0, 'ct600' => 0, 'companies_house' => 0];
+                $companiesHouseContext = static fn(): array => [
+                    'filing_required' => true,
+                    'filing_outstanding' => false,
+                    'filing_kind' => 'revised',
+                    'correction_required' => true,
+                    'revision_required' => true,
+                    'reconciliation' => [
+                        'reconciliation_state' => 'verified',
+                        'revision_reconciled' => true,
+                        'filing_outstanding' => false,
+                    ],
+                    'submission' => [
+                        'id' => 79,
+                        'lifecycle' => 'accepted',
+                        'filing_type' => 'revised',
+                    ],
+                    'prepared_artifact' => [
+                        'state' => 'retained',
+                        'current' => true,
+                        'reusable' => true,
+                        'accepted' => true,
+                        'errors' => [],
+                        'filename' => 'accepted-revised.xhtml',
+                        'path' => 'accepted-revised.xhtml',
+                        'sha256' => hash('sha256', 'accepted-revised'),
+                    ],
+                    'revised_validation' => ['status' => 'passed'],
+                    'can_prepare' => false,
+                    'preparation_blockers' => [
+                        'The latest revised Companies House filing reconciles with the approved correction; no further filing is outstanding.',
+                    ],
+                ];
+                $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                    readinessResolver: static fn(): array => [
+                        'can_generate' => true,
+                        'ready_for_filing' => true,
+                    ],
+                    periodProjectionResolver: static fn(): array => [
+                        'periods' => [['ct_period_id' => 8, 'sequence_no' => 1, 'status' => 'current']],
+                    ],
+                    companiesHouseResolver: $companiesHouseContext,
+                    accountsGenerator: static function () use (&$calls): array {
+                        $calls['accounts']++;
+                        return ['success' => true];
+                    },
+                    accountsValidator: static function () use (&$calls): array {
+                        $calls['validation']++;
+                        return ['status' => 'passed'];
+                    },
+                    computationStatusResolver: static fn(): array => ['ready' => true, 'fileable' => true],
+                    computationGenerator: static function () use (&$calls): array {
+                        $calls['computation']++;
+                        return ['success' => true];
+                    },
+                    ct600Generator: static function () use (&$calls): array {
+                        $calls['ct600']++;
+                        return ['success' => true];
+                    },
+                    companiesHousePreparer: static function () use (&$calls): array {
+                        $calls['companies_house']++;
+                        return ['success' => true];
+                    },
+                    revisionReadinessResolver: static function (): array {
+                        throw new RuntimeException(
+                            'Historic revised-account preparation readiness must not be re-evaluated after reconciliation.'
+                        );
+                    },
+                );
+
+                $plan = $service->plan(49, 79);
+                $harness->assertTrue((bool)$plan['ready']);
+                $harness->assertSame('reconciled', (string)$plan['companies_house']['state']);
+                $harness->assertSame('revised', (string)$plan['companies_house']['filing_kind']);
+
+                $result = $service->generate(49, 79, 'test');
+                $harness->assertTrue((bool)$result['success']);
+                $harness->assertSame(
+                    ['accounts' => 1, 'validation' => 1, 'computation' => 1, 'ct600' => 1, 'companies_house' => 0],
+                    $calls
+                );
+                $companiesHouse = (array)$result['stages']['companies_house_accounts'];
+                $harness->assertSame('succeeded', (string)$companiesHouse['outcome']);
+                $harness->assertSame('revised', (string)$companiesHouse['filing_kind']);
+                $harness->assertFalse((bool)$companiesHouse['filing_outstanding']);
+                $harness->assertTrue((bool)$companiesHouse['artifact_reused']);
+                $harness->assertSame(
+                    'accepted-revised.xhtml',
+                    (string)(($companiesHouse['artifact'] ?? [])['filename'] ?? '')
+                );
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)$result['messages']),
+                    'accepted filing lineage is retained'
+                ));
+                $harness->assertFalse(str_contains(
+                    implode(' ', (array)$result['messages']),
+                    'No Companies House filing artifact is required'
+                ));
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
+            'keeps reconciliation final when the retained accepted artifact is missing or tampered',
+            static function () use ($harness): void {
+                foreach ([
+                    'missing' => 'The retained local artifact is missing.',
+                    'tampered' => 'The retained local artifact failed its integrity check.',
+                ] as $artifactState => $artifactError) {
+                    $companiesHouseCalls = 0;
+                    $context = static fn(): array => [
+                        'filing_required' => true,
+                        'filing_outstanding' => false,
+                        'filing_kind' => 'revised',
+                        'reconciliation' => [
+                            'reconciliation_state' => 'verified',
+                            'revision_reconciled' => true,
+                            'filing_outstanding' => false,
+                        ],
+                        'submission' => [
+                            'id' => 80,
+                            'lifecycle' => 'accepted',
+                            'filing_type' => 'revised',
+                        ],
+                        'prepared_artifact' => [
+                            'state' => $artifactState,
+                            'current' => false,
+                            'reusable' => false,
+                            'accepted' => true,
+                            'filename' => '',
+                            'path' => '',
+                            'errors' => [$artifactError],
+                        ],
+                        'can_prepare' => false,
+                        'preparation_blockers' => ['No further filing is outstanding.'],
+                    ];
+                    $service = new \eel_accounts\Service\IxbrlFilingSetGenerationService(
+                        readinessResolver: static fn(): array => [
+                            'can_generate' => true,
+                            'ready_for_filing' => true,
+                        ],
+                        periodProjectionResolver: static fn(): array => [
+                            'periods' => [['ct_period_id' => 8, 'sequence_no' => 1, 'status' => 'current']],
+                        ],
+                        companiesHouseResolver: $context,
+                        accountsGenerator: static fn(): array => ['success' => true],
+                        accountsValidator: static fn(): array => ['status' => 'passed'],
+                        computationStatusResolver: static fn(): array => ['ready' => true, 'fileable' => true],
+                        computationGenerator: static fn(): array => ['success' => true],
+                        ct600Generator: static fn(): array => ['success' => true],
+                        companiesHousePreparer: static function () use (&$companiesHouseCalls): array {
+                            $companiesHouseCalls++;
+                            return ['success' => true];
+                        },
+                        revisionReadinessResolver: static function (): array {
+                            throw new RuntimeException('Reconciled filings must not re-enter preparation readiness.');
+                        },
+                    );
+
+                    $plan = $service->plan(49, 80);
+                    $harness->assertTrue((bool)$plan['ready']);
+                    $harness->assertSame('reconciled', (string)$plan['companies_house']['state']);
+                    $harness->assertFalse((bool)$plan['companies_house']['artifact_reused']);
+
+                    $result = $service->generate(49, 80, 'test');
+                    $harness->assertTrue((bool)$result['success']);
+                    $harness->assertSame(0, $companiesHouseCalls);
+                    $stage = (array)$result['stages']['companies_house_accounts'];
+                    $harness->assertSame('succeeded', (string)$stage['outcome']);
+                    $harness->assertFalse((bool)$stage['artifact_reused']);
+                    $harness->assertFalse(array_key_exists('artifact', $stage));
+                    $warning = implode(' ', (array)$stage['warnings']);
+                    $harness->assertTrue(str_contains($warning, 'Attention:'));
+                    $harness->assertTrue(str_contains($warning, $artifactError));
+                }
+            }
+        );
+
+        $harness->check(
+            \eel_accounts\Service\IxbrlFilingSetGenerationService::class,
             'an explicit retry regenerates current Accounting before retrying a failed computation',
             static function () use ($harness): void {
                 $accountsGenerationCalls = 0;

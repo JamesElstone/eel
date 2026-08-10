@@ -26,6 +26,11 @@ final class CompaniesHouseStoredDataService
                 MAX(CASE WHEN c.short_name = \'StartDateForPeriodCoveredByReport\' THEN f.normalised_date END) AS latest_year_period_start,
                 MAX(CASE WHEN c.short_name = \'EndDateForPeriodCoveredByReport\' THEN f.normalised_date END) AS latest_year_period_end,
                 MAX(CASE WHEN c.short_name = \'BalanceSheetDate\' THEN f.normalised_date END) AS balance_sheet_date,
+                MAX(CASE
+                    WHEN c.short_name = \'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse\'
+                     AND LOWER(TRIM(COALESCE(NULLIF(f.normalised_text, \'\'), f.raw_value))) IN (\'1\', \'true\', \'yes\')
+                    THEN 1 ELSE 0
+                END) AS revision_marker,
                 COUNT(DISTINCT CASE WHEN ctx.is_latest_year_context = 1 THEN ctx.id END) AS latest_year_context_count,
                 COUNT(DISTINCT CASE WHEN f.is_latest_year_fact = 1 THEN f.id END) AS latest_year_fact_count
             FROM companies_house_documents d

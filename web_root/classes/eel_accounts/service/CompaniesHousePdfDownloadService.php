@@ -38,6 +38,7 @@ final class CompaniesHousePdfDownloadService
         $downloaded = 0;
         $skipped = 0;
         $failed = 0;
+        $candidates = [];
 
         foreach ($items as $item) {
             $metadataUrl = trim((string)($item['links']['document_metadata'] ?? ''));
@@ -53,28 +54,95 @@ final class CompaniesHousePdfDownloadService
                 }
 
                 $documentId = trim((string)($metadata['document_id'] ?? ''));
-                $filename = $this->pdfFilename($metadata, $item, $documentId);
+                if ($documentId === '') {
+                    $documentId = $this->extractDocumentId($metadataUrl);
+                    $metadata['document_id'] = $documentId;
+                }
+
+                $candidates[] = [
+                    'item' => $item,
+                    'metadata_url' => $metadataUrl,
+                    'metadata' => $metadata,
+                    'document_id' => $documentId,
+                    'base_filename' => $this->pdfFilename($metadata, $item, $documentId),
+                ];
+            } catch (\Throwable $exception) {
+                $candidates[] = [
+                    'failure' => $this->failedDocumentResult($item, $metadataUrl, $exception),
+                ];
+            }
+        }
+
+        $filenameCounts = [];
+        foreach ($candidates as $candidate) {
+            if (isset($candidate['failure'])) {
+                continue;
+            }
+
+            $collisionKey = strtolower((string)$candidate['base_filename']);
+            $filenameCounts[$collisionKey] = ($filenameCounts[$collisionKey] ?? 0) + 1;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (isset($candidate['failure'])) {
+                $failed++;
+                $documents[] = $candidate['failure'];
+                continue;
+            }
+
+            $item = (array)$candidate['item'];
+            $metadataUrl = (string)$candidate['metadata_url'];
+            $metadata = (array)$candidate['metadata'];
+
+            try {
+                $baseFilename = (string)$candidate['base_filename'];
+                $collisionKey = strtolower($baseFilename);
+                $hasExplicitCollision = ($filenameCounts[$collisionKey] ?? 0) > 1;
+                $filename = $hasExplicitCollision
+                    ? $this->pdfFilenameWithDocumentId($baseFilename, (string)$candidate['document_id'])
+                    : $baseFilename;
                 $path = $directory . DIRECTORY_SEPARATOR . $filename;
-                $expectedBytes = $this->expectedPdfBytes((array)($metadata['data'] ?? []));
+                $body = null;
 
-                if ($this->hasExpectedExistingFile($path, $expectedBytes)) {
-                    $skipped++;
-                    $documents[] = $this->documentResult($item, $metadata, $filename, $path, 'already_present');
-                    continue;
+                if ($hasExplicitCollision && is_file($path)) {
+                    $body = $this->fetchPdfBody($metadata);
+                    if ($this->existingFileMatchesBody($path, $body)) {
+                        $skipped++;
+                        $documents[] = $this->documentResult($item, $metadata, $filename, $path, 'already_present');
+                        continue;
+                    }
+                    throw new \RuntimeException(
+                        'Existing document-specific Companies House PDF does not match the downloaded content.'
+                    );
                 }
 
-                $content = $this->documentService()->fetchContent(
-                    (string)($metadata['content_url'] ?? ''),
-                    'application/pdf'
-                );
+                if (!$hasExplicitCollision && is_file($path)) {
+                    // A failed peer metadata request can hide a filename collision. Prove that an
+                    // unsuffixed legacy file belongs to this document before treating it as present.
+                    $body = $this->fetchPdfBody($metadata);
 
-                if ((int)($content['status'] ?? 0) !== 200) {
-                    throw new \RuntimeException('Document content request returned HTTP ' . (int)($content['status'] ?? 0) . '.');
+                    if ($this->existingFileMatchesBody($path, $body)) {
+                        $skipped++;
+                        $documents[] = $this->documentResult($item, $metadata, $filename, $path, 'already_present');
+                        continue;
+                    }
+
+                    $filename = $this->pdfFilenameWithDocumentId($baseFilename, (string)$candidate['document_id']);
+                    $path = $directory . DIRECTORY_SEPARATOR . $filename;
+
+                    if ($this->existingFileMatchesBody($path, $body)) {
+                        $skipped++;
+                        $documents[] = $this->documentResult($item, $metadata, $filename, $path, 'already_present');
+                        continue;
+                    }
+
+                    if (is_file($path)) {
+                        throw new \RuntimeException('Existing document-specific Companies House PDF does not match the downloaded content.');
+                    }
                 }
 
-                $body = (string)($content['body'] ?? '');
-                if ($body === '') {
-                    throw new \RuntimeException('Document content response was empty.');
+                if ($body === null) {
+                    $body = $this->fetchPdfBody($metadata);
                 }
 
                 $this->writeFile($path, $body);
@@ -82,14 +150,7 @@ final class CompaniesHousePdfDownloadService
                 $documents[] = $this->documentResult($item, $metadata, $filename, $path, 'downloaded');
             } catch (\Throwable $exception) {
                 $failed++;
-                $documents[] = [
-                    'transaction_id' => (string)($item['transaction_id'] ?? ''),
-                    'filing_date' => (string)($item['date'] ?? ''),
-                    'filing_type' => (string)($item['type'] ?? ''),
-                    'document_id' => $this->extractDocumentId($metadataUrl),
-                    'status' => 'failed',
-                    'error' => $exception->getMessage(),
-                ];
+                $documents[] = $this->failedDocumentResult($item, $metadataUrl, $exception);
             }
         }
 
@@ -158,26 +219,34 @@ final class CompaniesHousePdfDownloadService
         return $items;
     }
 
-    private function expectedPdfBytes(array $metadata): int
+    private function fetchPdfBody(array $metadata): string
     {
-        $resources = is_array($metadata['resources'] ?? null) ? $metadata['resources'] : [];
-        $pdf = is_array($resources['application/pdf'] ?? null) ? $resources['application/pdf'] : [];
+        $content = $this->documentService()->fetchContent(
+            (string)($metadata['content_url'] ?? ''),
+            'application/pdf'
+        );
 
-        return max(0, (int)($pdf['content_length'] ?? 0));
+        if ((int)($content['status'] ?? 0) !== 200) {
+            throw new \RuntimeException('Document content request returned HTTP ' . (int)($content['status'] ?? 0) . '.');
+        }
+
+        $body = (string)($content['body'] ?? '');
+        if ($body === '') {
+            throw new \RuntimeException('Document content response was empty.');
+        }
+
+        return $body;
     }
 
-    private function hasExpectedExistingFile(string $path, int $expectedBytes): bool
+    private function existingFileMatchesBody(string $path, string $body): bool
     {
         if (!is_file($path)) {
             return false;
         }
 
-        $size = filesize($path);
-        if ($size === false || $size <= 0) {
-            return false;
-        }
+        $hash = hash_file('sha256', $path);
 
-        return $expectedBytes <= 0 || $size === $expectedBytes;
+        return is_string($hash) && hash_equals(hash('sha256', $body), $hash);
     }
 
     private function pdfFilename(array $metadata, array $item, string $documentId): string
@@ -204,6 +273,21 @@ final class CompaniesHousePdfDownloadService
         }
 
         return $filename;
+    }
+
+    private function pdfFilenameWithDocumentId(string $baseFilename, string $documentId): string
+    {
+        $documentId = preg_replace('/[^A-Za-z0-9._-]+/', '_', trim($documentId)) ?? '';
+        $documentId = trim($documentId, '._-');
+
+        if ($documentId === '') {
+            throw new \RuntimeException('A Companies House document id is required to disambiguate duplicate PDF filenames.');
+        }
+
+        $extension = str_ends_with(strtolower($baseFilename), '.pdf') ? substr($baseFilename, -4) : '.pdf';
+        $basename = str_ends_with(strtolower($baseFilename), '.pdf') ? substr($baseFilename, 0, -4) : $baseFilename;
+
+        return $basename . '_' . $documentId . $extension;
     }
 
     private function writeFile(string $path, string $body): void
@@ -237,6 +321,18 @@ final class CompaniesHousePdfDownloadService
             'filename' => $filename,
             'path' => $path,
             'status' => $status,
+        ];
+    }
+
+    private function failedDocumentResult(array $item, string $metadataUrl, \Throwable $exception): array
+    {
+        return [
+            'transaction_id' => (string)($item['transaction_id'] ?? ''),
+            'filing_date' => (string)($item['date'] ?? ''),
+            'filing_type' => (string)($item['type'] ?? ''),
+            'document_id' => $this->extractDocumentId($metadataUrl),
+            'status' => 'failed',
+            'error' => $exception->getMessage(),
         ];
     }
 

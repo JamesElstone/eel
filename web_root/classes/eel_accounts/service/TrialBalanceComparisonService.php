@@ -15,6 +15,7 @@ final class TrialBalanceComparisonService
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\CompaniesHouseStoredDataService $storedDataService = null,
+        private readonly ?\eel_accounts\Service\CompaniesHousePeriodFilingResolverService $filingResolver = null,
     ) {
     }
 
@@ -40,11 +41,25 @@ final class TrialBalanceComparisonService
 
         $stored = $this->storedDataService ?? new \eel_accounts\Service\CompaniesHouseStoredDataService();
         $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
-        $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
+        $resolution = ($this->filingResolver
+            ?? new \eel_accounts\Service\CompaniesHousePeriodFilingResolverService($stored))
+            ->resolve(
+                $companyId,
+                $accountingPeriodId,
+                $companyNumber,
+                (string)$accountingPeriod['period_end'],
+                $summaries
+            );
+        $original = is_array($resolution['original'] ?? null)
+            ? (array)$resolution['original']
+            : null;
+        $nearest = $original !== null
+            ? $this->comparisonSummary($original)
+            : $this->findNearestOriginalSummary($summaries, (string)$accountingPeriod['period_end']);
         if ($nearest === null) {
             return [
                 'available' => false,
-                'errors' => ['No stored Companies House accounts filings were found for this company.'],
+                'errors' => ['No stored original Companies House accounts filings were found for this company.'],
             ];
         }
 
@@ -86,12 +101,15 @@ final class TrialBalanceComparisonService
         ];
     }
 
-    private function findNearestSummary(array $summaries, string $periodEnd): ?array {
+    private function findNearestOriginalSummary(array $summaries, string $periodEnd): ?array {
         $target = strtotime($periodEnd) ?: 0;
         $best = null;
         $bestDistance = null;
 
         foreach ($summaries as $summary) {
+            if (!is_array($summary) || $this->isRevisionSummary($summary)) {
+                continue;
+            }
             $candidateEnd = (string)($summary['latest_year_period_end'] ?? $summary['balance_sheet_date'] ?? '');
             if ($candidateEnd === '') {
                 continue;
@@ -112,6 +130,37 @@ final class TrialBalanceComparisonService
         }
 
         return $best;
+    }
+
+    /** @param array<string,mixed> $summary */
+    private function isRevisionSummary(array $summary): bool
+    {
+        $filingType = strtoupper(trim((string)($summary['filing_type'] ?? '')));
+        $description = strtolower(trim((string)($summary['filing_description'] ?? '')));
+        $marker = strtolower(trim((string)($summary['revision_marker'] ?? '')));
+
+        return $filingType === 'AAMD'
+            || str_contains($description, 'accounts-amended')
+            || str_contains($description, 'amended-accounts')
+            || in_array($marker, ['1', 'true', 'yes'], true);
+    }
+
+    /** @param array<string,mixed> $summary @return array<string,mixed> */
+    private function comparisonSummary(array $summary): array
+    {
+        return [
+            'id' => (int)($summary['id'] ?? $summary['document_row_id'] ?? 0),
+            'filing_date' => (string)($summary['filing_date'] ?? ''),
+            'filing_type' => (string)($summary['filing_type'] ?? ''),
+            'period_start' => (string)($summary['period_start'] ?? $summary['latest_year_period_start'] ?? ''),
+            'period_end' => (string)(
+                $summary['period_end']
+                ?? $summary['latest_year_period_end']
+                ?? $summary['balance_sheet_date']
+                ?? ''
+            ),
+            'parse_status' => (string)($summary['parse_status'] ?? ''),
+        ];
     }
 
     private function fetchMetricFacts(int $documentRowId): array {

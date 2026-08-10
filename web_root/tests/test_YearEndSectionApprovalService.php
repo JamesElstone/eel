@@ -143,6 +143,24 @@ $harness->run(\eel_accounts\Service\YearEndSectionApprovalService::class, static
         $harness->assertSame('companies_house_mismatch_acknowledgement', (string)$bundle['check_code']);
         $harness->assertSame(64, strlen($token));
         $harness->assertSame('companies_house_mismatch_acknowledgement', (string)$activeCheck->invoke($service, $context));
+
+        $unverifiableContext = $context;
+        $unverifiableContext['comparison']['can_acknowledge'] = false;
+        $unverifiableContext['comparison']['warnings'] = [
+            'The exact-period original Companies House filing must be parsed before approval.',
+        ];
+        $blocked = (array)$bundleMethod->invoke(
+            $service,
+            12,
+            34,
+            'companies_house_mismatch_acknowledgement',
+            $unverifiableContext
+        );
+        $harness->assertSame(false, !empty($blocked['can_approve']));
+        $harness->assertTrue(str_contains(
+            (string)(($blocked['approval_errors'] ?? [])[0] ?? ''),
+            'must be parsed'
+        ));
     });
 
     $harness->check(\eel_accounts\Service\YearEndSectionApprovalService::class, 'does not stale a Director Loan bundle when only the S455 evaluation clock changes', static function () use ($harness, $service): void {

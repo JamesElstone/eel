@@ -160,9 +160,17 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         : 'Preparing the approved return for HMRC test transmission…',
                     8
                 );
-                $command = !$live
-                    ? $service->submitTest($companyId, $ctPeriodId, $actor, $report, $retry)
-                    : $service->submitLive($companyId, $ctPeriodId, $actor, $report, $retry);
+                $command = $this->submitWithAutomaticStatus(
+                    static fn(callable $phaseReport): array => !$live
+                        ? $service->submitTest($companyId, $ctPeriodId, $actor, $phaseReport, $retry)
+                        : $service->submitLive($companyId, $ctPeriodId, $actor, $phaseReport, $retry),
+                    static fn(int $resolvedSubmissionId, callable $phaseReport): array => $service->poll(
+                        $resolvedSubmissionId,
+                        $actor,
+                        $phaseReport
+                    ),
+                    $report
+                );
             } else {
                 if ($submissionId <= 0) {
                     return $this->result(false, ['Select a pending HMRC submission to check.'], [], $changedFacts);
@@ -236,6 +244,88 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
     }
 
     /**
+     * Submit TIL/LIVE once, honour the acknowledgement interval, then perform
+     * one status poll and the existing bounded cleanup workflow. Sandbox TEST
+     * remains a submit-only action.
+     *
+     * @param callable(callable(string,int):void):array<string,mixed> $submit
+     * @param callable(int,callable(string,int):void):array<string,mixed> $poll
+     * @param callable(string,int):void $report
+     * @return array<string,mixed>
+     */
+    private function submitWithAutomaticStatus(
+        callable $submit,
+        callable $poll,
+        callable $report
+    ): array {
+        $submitted = $submit($this->phaseReporter($report, 8, 55));
+        $mode = strtoupper(trim((string)($submitted['mode']
+            ?? ($submitted['submission']['environment'] ?? ''))));
+        $state = strtolower(trim((string)($submitted['protocol_state']
+            ?? ($submitted['submission']['protocol_state'] ?? ''))));
+        $submissionId = (int)($submitted['submission_id']
+            ?? ($submitted['submission']['id'] ?? 0));
+        if (!in_array($mode, ['TIL', 'LIVE'], true)
+            || !in_array($state, ['awaiting_poll', 'delete_pending'], true)
+            || ($state === 'awaiting_poll' && empty($submitted['success']))
+            || $submissionId <= 0) {
+            return $submitted;
+        }
+
+        $waitSeconds = max(0, (int)($submitted['poll_after_seconds'] ?? 0));
+        if ($waitSeconds > self::AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS) {
+            $submitted['warnings'] = array_values(array_unique(array_merge(
+                (array)($submitted['warnings'] ?? []),
+                [
+                    $state === 'delete_pending'
+                        ? 'HMRC returned the final result but requested a wait of '
+                            . $waitSeconds . ' seconds before conversation cleanup. '
+                            . 'Use Complete HMRC Cleanup after that interval.'
+                        : 'HMRC acknowledged the submission but requested a wait of '
+                            . $waitSeconds . ' seconds before the first status check. '
+                            . 'Use Check Submission Status after that interval.',
+                ]
+            )));
+            return $submitted;
+        }
+
+        $this->waitForProtocolAction(
+            $waitSeconds,
+            $report,
+            58,
+            68,
+            $state === 'delete_pending'
+                ? 'before the HMRC conversation cleanup request'
+                : 'before checking the HMRC submission status'
+        );
+        if ($state === 'delete_pending') {
+            $cleanup = $poll(
+                $submissionId,
+                $this->phaseReporter($report, 70, 98)
+            );
+            $cleanup['warnings'] = array_values(array_unique(array_merge(
+                (array)($submitted['warnings'] ?? []),
+                (array)($cleanup['warnings'] ?? [])
+            )));
+            if (strtolower(trim((string)($submitted['business_outcome'] ?? ''))) === 'rejected') {
+                $cleanup['success'] = false;
+                $cleanup['errors'] = array_values(array_unique(array_merge(
+                    (array)($submitted['errors'] ?? []),
+                    (array)($cleanup['errors'] ?? [])
+                )));
+            }
+            return $cleanup;
+        }
+        $remainingWaitBudget = self::AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS - $waitSeconds;
+        return $this->pollWithAutomaticCleanup(
+            static fn(callable $phaseReport): array => $poll($submissionId, $phaseReport),
+            $this->phaseReporter($report, 70, 98),
+            'awaiting_poll',
+            $remainingWaitBudget
+        );
+    }
+
+    /**
      * Advance one pending HMRC conversation and, when a status poll discovers
      * required cleanup, honour HMRC's delay and perform exactly one follow-up.
      *
@@ -246,7 +336,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
     private function pollWithAutomaticCleanup(
         callable $poll,
         callable $report,
-        string $initialProtocolState
+        string $initialProtocolState,
+        int $automaticWaitLimitSeconds = self::AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS
     ): array {
         $first = $poll($this->phaseReporter($report, 12, 70));
         $state = strtolower(trim((string)($first['protocol_state'] ?? '')));
@@ -255,7 +346,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         }
 
         $waitSeconds = max(0, (int)($first['poll_after_seconds'] ?? 0));
-        if ($waitSeconds > self::AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS) {
+        if ($waitSeconds > max(0, $automaticWaitLimitSeconds)) {
             $first['warnings'] = array_values(array_unique(array_merge(
                 (array)($first['warnings'] ?? []),
                 [
@@ -267,25 +358,13 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return $first;
         }
 
-        $remaining = $waitSeconds;
-        $report(
-            'HMRC returned the final result and requires conversation cleanup. '
-                . 'Waiting ' . $remaining . ' seconds before the delete request…',
-            72
+        $this->waitForProtocolAction(
+            $waitSeconds,
+            $report,
+            72,
+            84,
+            'before the HMRC conversation cleanup request'
         );
-        while ($remaining > 0) {
-            $chunk = min(self::WAIT_PROGRESS_CHUNK_SECONDS, $remaining);
-            ($this->sleeper)($chunk);
-            $remaining -= $chunk;
-            $elapsed = $waitSeconds - $remaining;
-            $percent = 72 + (int)floor(($elapsed / max(1, $waitSeconds)) * 12);
-            $report(
-                $remaining > 0
-                    ? 'Waiting ' . $remaining . ' more seconds before HMRC conversation cleanup…'
-                    : 'HMRC cleanup wait complete; preparing the delete request…',
-                min(84, $percent)
-            );
-        }
 
         $report('Sending the required HMRC conversation cleanup request…', 85);
         $cleanup = $poll($this->phaseReporter($report, 86, 98));
@@ -303,6 +382,39 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         }
 
         return $cleanup;
+    }
+
+    /** @param callable(string,int):void $report */
+    private function waitForProtocolAction(
+        int $waitSeconds,
+        callable $report,
+        int $startPercent,
+        int $endPercent,
+        string $reason
+    ): void {
+        $waitSeconds = max(0, $waitSeconds);
+        $remaining = $waitSeconds;
+        $report(
+            $waitSeconds > 0
+                ? 'HMRC requested a wait of ' . $waitSeconds . ' seconds ' . $reason . '…'
+                : 'The HMRC protocol action is ready…',
+            $startPercent
+        );
+        while ($remaining > 0) {
+            $chunk = min(self::WAIT_PROGRESS_CHUNK_SECONDS, $remaining);
+            ($this->sleeper)($chunk);
+            $remaining -= $chunk;
+            $elapsed = $waitSeconds - $remaining;
+            $percent = $startPercent + (int)floor(
+                ($elapsed / max(1, $waitSeconds)) * max(0, $endPercent - $startPercent)
+            );
+            $report(
+                $remaining > 0
+                    ? 'Waiting ' . $remaining . ' more seconds ' . $reason . '…'
+                    : 'HMRC protocol wait complete; continuing…',
+                min($endPercent, $percent)
+            );
+        }
     }
 
     /** @return Closure(string,int):void */

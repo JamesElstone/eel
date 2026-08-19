@@ -819,6 +819,224 @@ $harness->run(HmrcSubmissionAction::class, static function (
 
     $harness->check(
         HmrcSubmissionAction::class,
+        'automatically polls TIL and LIVE acknowledgements after submission',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'submitWithAutomaticStatus');
+            $workflow->setAccessible(true);
+            foreach (['TIL' => 'til_validated', 'LIVE' => 'live_accepted'] as $mode => $outcome) {
+                $slept = [];
+                $submitCalls = 0;
+                $pollCalls = 0;
+                $subject = new HmrcSubmissionAction(
+                    static function (int $seconds) use (&$slept): void {
+                        $slept[] = $seconds;
+                    }
+                );
+                $result = $workflow->invoke(
+                    $subject,
+                    static function (callable $phaseReport) use (&$submitCalls, $mode): array {
+                        $submitCalls++;
+                        $phaseReport('Submitting fixture.', 100);
+                        return [
+                            'success' => true,
+                            'submission_id' => 91,
+                            'mode' => $mode,
+                            'protocol_state' => 'awaiting_poll',
+                            'business_outcome' => '',
+                            'needs_poll' => true,
+                            'poll_after_seconds' => 10,
+                            'errors' => [],
+                            'warnings' => [],
+                        ];
+                    },
+                    static function (int $submissionId, callable $phaseReport) use (&$pollCalls, $mode, $outcome): array {
+                        $pollCalls++;
+                        $phaseReport('Polling fixture.', 100);
+                        return [
+                            'success' => true,
+                            'submission_id' => $submissionId,
+                            'mode' => $mode,
+                            'protocol_state' => 'closed',
+                            'business_outcome' => $outcome,
+                            'needs_poll' => false,
+                            'poll_after_seconds' => null,
+                            'errors' => [],
+                            'warnings' => [],
+                        ];
+                    },
+                    static function (string $message, int $percent): void {
+                        unset($message, $percent);
+                    }
+                );
+                $harness->assertTrue((bool)$result['success']);
+                $harness->assertSame('closed', (string)$result['protocol_state']);
+                $harness->assertSame($outcome, (string)$result['business_outcome']);
+                $harness->assertSame(1, $submitCalls);
+                $harness->assertSame(1, $pollCalls);
+                $harness->assertSame([5, 5], $slept);
+            }
+        }
+    );
+
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'completes TIL submission polling and cleanup within one bounded action',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'submitWithAutomaticStatus');
+            $workflow->setAccessible(true);
+            $slept = [];
+            $pollCalls = 0;
+            $queue = [[
+                'success' => true,
+                'submission_id' => 92,
+                'mode' => 'TIL',
+                'protocol_state' => 'delete_pending',
+                'business_outcome' => 'til_validated',
+                'needs_poll' => true,
+                'poll_after_seconds' => 10,
+                'errors' => [],
+                'warnings' => [],
+            ], [
+                'success' => true,
+                'submission_id' => 92,
+                'mode' => 'TIL',
+                'protocol_state' => 'closed',
+                'business_outcome' => 'til_validated',
+                'needs_poll' => false,
+                'poll_after_seconds' => null,
+                'errors' => [],
+                'warnings' => [],
+            ]];
+            $result = $workflow->invoke(
+                new HmrcSubmissionAction(
+                    static function (int $seconds) use (&$slept): void {
+                        $slept[] = $seconds;
+                    }
+                ),
+                static fn(callable $phaseReport): array => [
+                    'success' => true,
+                    'submission_id' => 92,
+                    'mode' => 'TIL',
+                    'protocol_state' => 'awaiting_poll',
+                    'business_outcome' => '',
+                    'needs_poll' => true,
+                    'poll_after_seconds' => 10,
+                    'errors' => [],
+                    'warnings' => [],
+                ],
+                static function (int $submissionId, callable $phaseReport) use (&$pollCalls, &$queue): array {
+                    unset($submissionId, $phaseReport);
+                    $pollCalls++;
+                    return (array)array_shift($queue);
+                },
+                static function (string $message, int $percent): void {
+                    unset($message, $percent);
+                }
+            );
+            $harness->assertTrue((bool)$result['success']);
+            $harness->assertSame('closed', (string)$result['protocol_state']);
+            $harness->assertSame('til_validated', (string)$result['business_outcome']);
+            $harness->assertSame(2, $pollCalls);
+            $harness->assertSame([5, 5, 5, 5], $slept);
+
+            $directCleanupCalls = 0;
+            $direct = $workflow->invoke(
+                new HmrcSubmissionAction(static function (int $seconds): void {
+                    unset($seconds);
+                }),
+                static fn(callable $phaseReport): array => [
+                    'success' => true,
+                    'submission_id' => 95,
+                    'mode' => 'LIVE',
+                    'protocol_state' => 'delete_pending',
+                    'business_outcome' => 'live_accepted',
+                    'poll_after_seconds' => 0,
+                    'errors' => [],
+                    'warnings' => [],
+                ],
+                static function (int $submissionId, callable $phaseReport) use (&$directCleanupCalls): array {
+                    unset($phaseReport);
+                    $directCleanupCalls++;
+                    return [
+                        'success' => true,
+                        'submission_id' => $submissionId,
+                        'mode' => 'LIVE',
+                        'protocol_state' => 'closed',
+                        'business_outcome' => 'live_accepted',
+                        'errors' => [],
+                        'warnings' => [],
+                    ];
+                },
+                static function (string $message, int $percent): void {
+                    unset($message, $percent);
+                }
+            );
+            $harness->assertTrue((bool)$direct['success']);
+            $harness->assertSame('closed', (string)$direct['protocol_state']);
+            $harness->assertSame(1, $directCleanupCalls);
+        }
+    );
+
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'does not automatically poll sandbox TEST or exceed the submission wait cap',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'submitWithAutomaticStatus');
+            $workflow->setAccessible(true);
+            $pollCalls = 0;
+            $slept = [];
+            $subject = new HmrcSubmissionAction(
+                static function (int $seconds) use (&$slept): void {
+                    $slept[] = $seconds;
+                }
+            );
+            $poll = static function (int $submissionId, callable $phaseReport) use (&$pollCalls): array {
+                unset($submissionId, $phaseReport);
+                $pollCalls++;
+                return [];
+            };
+            $report = static function (string $message, int $percent): void {
+                unset($message, $percent);
+            };
+            $sandbox = $workflow->invoke(
+                $subject,
+                static fn(callable $phaseReport): array => [
+                    'success' => true,
+                    'submission_id' => 93,
+                    'mode' => 'TEST',
+                    'protocol_state' => 'awaiting_poll',
+                    'poll_after_seconds' => 10,
+                ],
+                $poll,
+                $report
+            );
+            $harness->assertSame('TEST', (string)$sandbox['mode']);
+            $harness->assertSame(0, $pollCalls);
+
+            $overCap = $workflow->invoke(
+                $subject,
+                static fn(callable $phaseReport): array => [
+                    'success' => true,
+                    'submission_id' => 94,
+                    'mode' => 'LIVE',
+                    'protocol_state' => 'awaiting_poll',
+                    'poll_after_seconds' => 61,
+                    'warnings' => [],
+                ],
+                $poll,
+                $report
+            );
+            $harness->assertSame(0, $pollCalls);
+            $harness->assertSame([], $slept);
+            $harness->assertTrue(str_contains(
+                implode(' ', (array)($overCap['warnings'] ?? [])),
+                'Use Check Submission Status'
+            ));
+        }
+    );
+
+    $harness->check(
+        HmrcSubmissionAction::class,
         'preserves rejection and stops after one failed automatic cleanup attempt',
         static function () use ($harness): void {
             $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'pollWithAutomaticCleanup');
@@ -1270,7 +1488,7 @@ $harness->run(HmrcSubmissionAction::class, static function (
         }
         $harness->assertTrue(str_contains(
             $source,
-            'submitTest($companyId, $ctPeriodId, $actor, $report, $retry)'
+            'submitTest($companyId, $ctPeriodId, $actor, $phaseReport, $retry)'
         ));
         foreach ([
             'Checking the selected HMRC transmission and CT Period',

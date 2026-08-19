@@ -51,16 +51,17 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             'hmrc_retry_test',
             'hmrc_retry_live',
             'hmrc_generate_request',
+            'hmrc_download_request_artifact',
             'hmrc_reprocess_response',
             'hmrc_poll',
         ], true)) {
             return $this->result(false, ['Unknown Corporation Tax submission action.'], [], $changedFacts);
         }
-        if ($intent === 'hmrc_generate_request'
+        if (in_array($intent, ['hmrc_generate_request', 'hmrc_download_request_artifact'], true)
             && !(bool)AppConfigurationStore::get('developer_options', false)) {
             return $this->result(
                 false,
-                ['Developer options must be enabled to generate an unsent HMRC GovTalk request file.'],
+                ['Developer options must be enabled to generate or download an HMRC GovTalk request artefact.'],
                 [],
                 $changedFacts
             );
@@ -87,6 +88,41 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         try {
             /** @var \eel_accounts\Service\HmrcCorporationTaxSubmissionService $service */
             $service = $services->get(\eel_accounts\Service\HmrcCorporationTaxSubmissionService::class);
+            $actor = (int)$security['user_id'];
+            if ($intent === 'hmrc_download_request_artifact') {
+                $file = $service->requestArtifactForDownload(
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    $requestEnvironment
+                );
+                if ((string)($file['source'] ?? '') === 'submitted'
+                    && (int)($file['exchange_id'] ?? 0) > 0) {
+                    (new \eel_accounts\Service\GovTalkTransmissionHistoryService())
+                        ->recordEvidenceDownload(
+                            $companyId,
+                            (int)$file['exchange_id'],
+                            'request',
+                            (string)$actor
+                        );
+                } elseif ((string)($file['source'] ?? '') === 'generated'
+                    && (int)($file['bundle_id'] ?? 0) > 0
+                    && (int)($file['artifact_row_id'] ?? 0) > 0) {
+                    (new \eel_accounts\Service\FilingEvidenceService())->recordEvent(
+                        (int)$file['bundle_id'],
+                        'hmrc_developer_request_downloaded',
+                        'info',
+                        (string)$actor,
+                        'An administrator downloaded an immutable generated HMRC GovTalk request artefact.',
+                        [
+                            'environment' => (string)($file['environment'] ?? ''),
+                            'sha256' => (string)($file['sha256'] ?? ''),
+                        ],
+                        (int)$file['artifact_row_id']
+                    );
+                }
+                $this->streamRequestArtifact($file);
+            }
             $progress = $services->actionProgress();
             @set_time_limit(0);
             $progress->report('Checking the selected HMRC transmission and CT Period…', 0);
@@ -95,7 +131,6 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 return $this->result(false, [(string)$periodStatus['error']], [], $changedFacts);
             }
 
-            $actor = (int)$security['user_id'];
             $report = static function (string $message, int $percent) use ($progress): void {
                 $progress->report($message, $percent);
             };
@@ -352,7 +387,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
     private function successMessage(string $intent, array $command): string
     {
         if ($intent === 'hmrc_generate_request') {
-            $path = trim((string)($command['path'] ?? ''));
+            $filename = trim((string)($command['filename'] ?? ''));
             $mode = strtoupper(trim((string)($command['mode'] ?? '')));
             $label = match ($mode) {
                 'TEST' => 'TEST',
@@ -360,9 +395,11 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 'LIVE' => 'LIVE',
                 default => '',
             };
+            $existing = strtolower(trim((string)($command['status'] ?? ''))) === 'existing';
             return 'The HMRC' . ($label !== '' ? ' ' . $label : '')
-                . ' GovTalk request file was generated without transmission'
-                . ($path !== '' ? ': ' . $path : '.');
+                . ' GovTalk request artefact '
+                . ($existing ? 'already existed; no new file was generated' : 'was generated without transmission')
+                . ($filename !== '' ? ': ' . $filename : '.');
         }
         if ($intent === 'hmrc_reprocess_response') {
             return 'The archived HMRC response was reprocessed locally and its recorded result was applied. '
@@ -409,6 +446,27 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             'hmrc_retry_live' => 'The LIVE Corporation Tax retry was processed.',
             default => 'The latest HMRC submission status was retrieved.',
         };
+    }
+
+    /** @param array<string,mixed> $file */
+    private function streamRequestArtifact(array $file): never
+    {
+        $path = (string)($file['path'] ?? '');
+        $filename = str_replace(['"', "\r", "\n"], '', (string)($file['filename'] ?? ''));
+        if ($path === '' || $filename === '' || !is_file($path)) {
+            throw new RuntimeException('The HMRC GovTalk request artefact is unavailable.');
+        }
+        header('Content-Type: application/xml; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, private');
+        header('Pragma: no-cache');
+        header('X-Content-Type-Options: nosniff');
+        $size = filesize($path);
+        if (is_int($size)) {
+            header('Content-Length: ' . $size);
+        }
+        readfile($path);
+        exit;
     }
 
     private function result(

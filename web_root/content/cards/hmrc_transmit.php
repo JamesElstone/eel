@@ -315,25 +315,42 @@ final class _hmrc_transmitCard extends CardBaseFramework
 
         if ($developerOptions) {
             $requestModes = match ($xmlEnvironment) {
-                'TEST' => ['TEST' => 'Generate TEST Request File'],
+                'TEST' => ['TEST' => 'TEST'],
                 'LIVE' => [
-                    'TEST' => 'Generate TEST Request File',
-                    'TIL' => 'Generate Test-In-Live Request File',
-                    'LIVE' => 'Generate LIVE Request File',
+                    'TEST' => 'TEST',
+                    'TIL' => 'Test-In-Live',
+                    'LIVE' => 'LIVE',
                 ],
                 default => [],
             };
             if ($requestModes !== []) {
                 $requestDisabled = !$controlsDisabled && $dependenciesReady ? '' : ' disabled';
                 $html .= '<div class="settings-stack"><h3>Generate Request Files</h3><div class="actions-row">';
-                foreach ($requestModes as $mode => $label) {
-                    $html .= '<form method="post" action="?page=transmit" data-ajax="true">'
+                foreach ($requestModes as $mode => $environmentLabel) {
+                    $artifact = (array)(($period['request_artifacts'] ?? [])[$mode] ?? []);
+                    $available = !empty($artifact['available']);
+                    $html .= '<form method="post" action="?page=transmit"'
+                        . ($available ? '' : ' data-ajax="true"') . '>'
                         . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
-                        . '<input type="hidden" name="intent" value="hmrc_generate_request">'
+                        . '<input type="hidden" name="intent" value="'
+                        . ($available ? 'hmrc_download_request_artifact' : 'hmrc_generate_request') . '">'
                         . '<input type="hidden" name="request_environment" value="'
-                        . \eel_accounts\Support\Utf8::html($mode) . '">'
-                        . '<button class="button" type="submit"' . $requestDisabled . '>'
-                        . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
+                        . \eel_accounts\Support\Utf8::html($mode) . '">';
+                    if ($available) {
+                        $source = strtolower(trim((string)($artifact['source'] ?? '')));
+                        $message = $source === 'submitted'
+                            ? 'Download the exact outbound XML sent to HMRC? It contains authentication values and must be kept private.'
+                            : 'Download the immutable generated HMRC GovTalk XML? It may contain authentication values and must be kept private.';
+                        $html .= '<button class="button" type="submit" data-chicken-check="true"'
+                            . ' data-chicken-title="Download private HMRC request artefact"'
+                            . ' data-chicken-message="' . \eel_accounts\Support\Utf8::html($message) . '"'
+                            . ' data-chicken-confirm-text="Download XML">Download '
+                            . \eel_accounts\Support\Utf8::html($environmentLabel) . ' Artefact</button>';
+                    } else {
+                        $html .= '<button class="button" type="submit"' . $requestDisabled . '>Generate '
+                            . \eel_accounts\Support\Utf8::html($environmentLabel) . ' Request File</button>';
+                    }
+                    $html .= '</form>';
                 }
                 $html .= '</div></div>';
             }

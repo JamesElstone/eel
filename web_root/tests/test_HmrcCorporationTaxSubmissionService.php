@@ -362,6 +362,40 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'updated_at' => $now,
                     ]
                 );
+                $evidenceId = 'EEL-FE-00000000000000000000000000098623';
+                $evidenceHash = hash('sha256', 'hmrc-request-file-evidence-98623');
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_reviews
+                        (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                     VALUES (:company_id, :period_id, 1, :locked_at, :locked_by)',
+                    [
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'locked_at' => $now,
+                        'locked_by' => 'test',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO filing_evidence_bundles
+                        (evidence_id, company_id, accounting_period_id, evidence_version,
+                         application_name, application_version, calculation_build,
+                         locked_at, locked_by, bundle_hash)
+                     VALUES (:evidence_id, :company_id, :period_id, :version,
+                             :name, :app_version, :build,
+                             :locked_at, :locked_by, :bundle_hash)',
+                    [
+                        'evidence_id' => $evidenceId,
+                        'company_id' => $companyId,
+                        'period_id' => $accountingPeriodId,
+                        'version' => 'filing-evidence-v1',
+                        'name' => 'EEL Accounts tests',
+                        'app_version' => 'test',
+                        'build' => 'test',
+                        'locked_at' => $now,
+                        'locked_by' => 'test',
+                        'bundle_hash' => $evidenceHash,
+                    ]
+                );
 
                 try {
                     $artifactRoot = test_register_cleanup_path(
@@ -407,6 +441,8 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'accounting_period_id' => $accountingPeriodId,
                         'ct_period_id' => $ctPeriodId,
                         'basis' => 'request-file-fixture',
+                        'filing_evidence_id' => $evidenceId,
+                        'filing_evidence_bundle_hash' => $evidenceHash,
                     ];
                     $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode): array => [
                         'ok' => true,
@@ -459,6 +495,13 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         transport: $transport,
                         artifactRoot: $artifactRoot,
                         packagePreparer: $package,
+                        manifestResolver: static fn(int $requestedCompanyId, int $requestedCtPeriodId): array => [
+                            'ok' => $requestedCompanyId === $companyId && $requestedCtPeriodId === $ctPeriodId,
+                            'errors' => [],
+                            'warnings' => [],
+                            'source_manifest' => $manifest,
+                            'body_sha256' => hash('sha256', $body),
+                        ],
                         xmlEnvironmentResolver: static fn(): string => 'LIVE'
                     );
                     $generatedByMode = [];
@@ -479,9 +522,19 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
 
                     $h->assertFalse($transportCalled);
                     $h->assertSame($before, $after);
-                    $h->assertSame(['TEST', 'LIVE', 'LIVE', 'LIVE'], $loadedCredentialProfiles);
+                    $h->assertSame(['TEST', 'LIVE', 'LIVE'], $loadedCredentialProfiles);
                     $h->assertSame(true, (bool)$defaultLive['success']);
                     $h->assertSame('LIVE', (string)$defaultLive['mode']);
+                    $h->assertSame('existing', (string)$defaultLive['status']);
+                    $h->assertSame('generated', (string)$defaultLive['artifact_source']);
+                    $h->assertSame(
+                        (string)$generatedByMode['LIVE']['path'],
+                        (string)$defaultLive['path']
+                    );
+                    $h->assertSame(3, (int)InterfaceDB::fetchColumn(
+                        "SELECT COUNT(*) FROM filing_evidence_artifacts
+                         WHERE artifact_role LIKE 'hmrc_govtalk_developer_request_%'"
+                    ));
                     $expectations = [
                         'TEST' => [
                             'endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/submission',
@@ -537,6 +590,145 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         $h->assertTrue(str_contains($stored, '<URI>' . $expected['vendor'] . '</URI>'));
                         $h->assertSame(hash('sha256', $stored), (string)$generated['sha256']);
                         $h->assertSame(strlen($stored), (int)$generated['bytes']);
+                    }
+
+                    $status = $service->status($companyId, $accountingPeriodId);
+                    $periodStatus = (array)(($status['periods'] ?? [])[0] ?? []);
+                    foreach (['TEST', 'TIL', 'LIVE'] as $mode) {
+                        $descriptor = (array)(($periodStatus['request_artifacts'] ?? [])[$mode] ?? []);
+                        $h->assertTrue((bool)($descriptor['available'] ?? false));
+                        $h->assertSame('generated', (string)($descriptor['source'] ?? ''));
+                        $h->assertFalse(array_key_exists('storage_path', $descriptor));
+                    }
+                    $download = $service->requestArtifactForDownload(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        'LIVE'
+                    );
+                    $h->assertSame('generated', (string)$download['source']);
+                    $h->assertSame((string)$generatedByMode['LIVE']['path'], (string)$download['path']);
+                    $h->assertThrows(
+                        static fn(): array => $service->requestArtifactForDownload(
+                            $companyId,
+                            $accountingPeriodId + 1,
+                            $ctPeriodId,
+                            'LIVE'
+                        ),
+                        RuntimeException::class
+                    );
+                    $h->assertThrows(
+                        static fn(): array => $service->requestArtifactForDownload(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
+                            'PRODUCTION'
+                        ),
+                        InvalidArgumentException::class
+                    );
+
+                    $livePath = (string)$generatedByMode['LIVE']['path'];
+                    $liveBytes = (string)file_get_contents($livePath);
+                    file_put_contents($livePath, $liveBytes . "\n<!-- tampered -->\n");
+                    $h->assertThrows(
+                        static fn(): array => $service->requestArtifactForDownload(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
+                            'LIVE'
+                        ),
+                        RuntimeException::class
+                    );
+                    file_put_contents($livePath, $liveBytes);
+
+                    InterfaceDB::prepareExecute(
+                        'UPDATE filing_evidence_artifacts
+                         SET storage_path = :path
+                         WHERE artifact_role = :role AND ct_period_id = :ct_period_id',
+                        [
+                            'path' => $livePath . '.missing',
+                            'role' => 'hmrc_govtalk_developer_request_live',
+                            'ct_period_id' => $ctPeriodId,
+                        ]
+                    );
+                    $h->assertThrows(
+                        static fn(): array => $service->requestArtifactForDownload(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
+                            'LIVE'
+                        ),
+                        RuntimeException::class
+                    );
+                    $outsidePath = test_register_cleanup_path(
+                        test_tmp_directory() . DIRECTORY_SEPARATOR
+                            . 'outside-hmrc-request-' . bin2hex(random_bytes(4)) . '.xml'
+                    );
+                    file_put_contents($outsidePath, $liveBytes);
+                    InterfaceDB::prepareExecute(
+                        'UPDATE filing_evidence_artifacts
+                         SET storage_path = :path, filename = :filename
+                         WHERE artifact_role = :role AND ct_period_id = :ct_period_id',
+                        [
+                            'path' => $outsidePath,
+                            'filename' => basename($outsidePath),
+                            'role' => 'hmrc_govtalk_developer_request_live',
+                            'ct_period_id' => $ctPeriodId,
+                        ]
+                    );
+                    $h->assertThrows(
+                        static fn(): array => $service->requestArtifactForDownload(
+                            $companyId,
+                            $accountingPeriodId,
+                            $ctPeriodId,
+                            'LIVE'
+                        ),
+                        RuntimeException::class
+                    );
+                    InterfaceDB::prepareExecute(
+                        'UPDATE filing_evidence_artifacts
+                         SET storage_path = :path, filename = :filename
+                         WHERE artifact_role = :role AND ct_period_id = :ct_period_id',
+                        [
+                            'path' => $livePath,
+                            'filename' => basename($livePath),
+                            'role' => 'hmrc_govtalk_developer_request_live',
+                            'ct_period_id' => $ctPeriodId,
+                        ]
+                    );
+
+                    $changedManifest = array_replace($manifest, ['basis' => 'request-file-fixture-changed']);
+                    $changedManifestService = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        transport: $transport,
+                        artifactRoot: $artifactRoot,
+                        manifestResolver: static fn(): array => [
+                            'ok' => true,
+                            'errors' => [],
+                            'warnings' => [],
+                            'source_manifest' => $changedManifest,
+                            'body_sha256' => hash('sha256', $body),
+                        ],
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
+                    );
+                    $changedManifestStatus = $changedManifestService->status($companyId, $accountingPeriodId);
+                    foreach ((array)(($changedManifestStatus['periods'][0] ?? [])['request_artifacts'] ?? []) as $descriptor) {
+                        $h->assertFalse((bool)($descriptor['available'] ?? false));
+                    }
+                    $changedBodyService = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        transport: $transport,
+                        artifactRoot: $artifactRoot,
+                        manifestResolver: static fn(): array => [
+                            'ok' => true,
+                            'errors' => [],
+                            'warnings' => [],
+                            'source_manifest' => $manifest,
+                            'body_sha256' => hash('sha256', $body . '<changed/>'),
+                        ],
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
+                    );
+                    $changedBodyStatus = $changedBodyService->status($companyId, $accountingPeriodId);
+                    foreach ((array)(($changedBodyStatus['periods'][0] ?? [])['request_artifacts'] ?? []) as $descriptor) {
+                        $h->assertFalse((bool)($descriptor['available'] ?? false));
                     }
 
                     $testConfiguredService = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
@@ -844,6 +1036,65 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame(true, is_file((string)$persisted['request_body_path']));
                     $h->assertSame(hash('sha256', $body), (string)$persisted['body_sha256']);
                     $h->assertSame(true, trim((string)$persisted['source_manifest_sha256']) !== '');
+
+                    $previewBytes = '<GovTalkMessage>developer preview</GovTalkMessage>';
+                    $previewPath = dirname((string)$persisted['request_body_path'])
+                        . DIRECTORY_SEPARATOR . 'developer-preview-til.xml';
+                    file_put_contents($previewPath, $previewBytes);
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO filing_evidence_artifacts (
+                            artifact_id, transaction_hex, bundle_id, ct_period_id,
+                            artifact_role, artifact_status, filename, storage_path, sha256,
+                            generator_name, generator_version, validation_status,
+                            identifier_embedded, metadata_json, completed_at
+                         ) VALUES (
+                            :artifact_id, :transaction_hex, :bundle_id, :ct_period_id,
+                            :artifact_role, :artifact_status, :filename, :storage_path, :sha256,
+                            :generator_name, :generator_version, :validation_status,
+                            1, :metadata_json, :completed_at
+                         )',
+                        [
+                            'artifact_id' => 'EEL-AR-00000000000000000000000000098601',
+                            'transaction_hex' => '00000000000000000000000000098601',
+                            'bundle_id' => (int)$persisted['evidence_bundle_id'],
+                            'ct_period_id' => $ctPeriodId,
+                            'artifact_role' => 'hmrc_govtalk_developer_request_til',
+                            'artifact_status' => 'generated',
+                            'filename' => basename($previewPath),
+                            'storage_path' => $previewPath,
+                            'sha256' => hash('sha256', $previewBytes),
+                            'generator_name' => 'EEL Accounts tests',
+                            'generator_version' => 'test',
+                            'validation_status' => 'passed',
+                            'metadata_json' => json_encode([
+                                'artifact_source' => 'generated',
+                                'environment' => 'TIL',
+                                'body_sha256' => (string)$persisted['body_sha256'],
+                                'source_manifest_sha256' => (string)$persisted['source_manifest_sha256'],
+                                'transmitted' => false,
+                            ], JSON_THROW_ON_ERROR),
+                            'completed_at' => $now,
+                        ]
+                    );
+                    $artifactStatus = $service->status($companyId, $accountingPeriodId);
+                    $tilArtifact = (array)(
+                        ($artifactStatus['periods'][0]['request_artifacts']['TIL'] ?? [])
+                    );
+                    $h->assertTrue((bool)($tilArtifact['available'] ?? false));
+                    $h->assertSame('submitted', (string)($tilArtifact['source'] ?? ''));
+                    $h->assertSame($submissionId, (int)($tilArtifact['submission_id'] ?? 0));
+                    $submittedDownload = $service->requestArtifactForDownload(
+                        $companyId,
+                        $accountingPeriodId,
+                        $ctPeriodId,
+                        'TIL'
+                    );
+                    $h->assertSame('submitted', (string)$submittedDownload['source']);
+                    $h->assertSame(
+                        realpath((string)$persisted['request_body_path']),
+                        realpath((string)$submittedDownload['path'])
+                    );
+                    $h->assertFalse(strcasecmp((string)$submittedDownload['path'], $previewPath) === 0);
 
                     $now = (string)$persisted['next_poll_at'];
                     $timedOut = $service->poll($submissionId, 42);

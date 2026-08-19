@@ -30,6 +30,11 @@ final class HmrcCorporationTaxSubmissionService
         'authority_confirmed_by',
         'cleanup_attempts',
     ];
+    private const DEVELOPER_REQUEST_ROLES = [
+        'TEST' => 'hmrc_govtalk_developer_request_test',
+        'TIL' => 'hmrc_govtalk_developer_request_til',
+        'LIVE' => 'hmrc_govtalk_developer_request_live',
+    ];
 
     private HmrcCtTransactionEngineTransportInterface $transport;
     private HmrcSubmissionPackageService $packages;
@@ -159,6 +164,23 @@ final class HmrcCorporationTaxSubmissionService
             );
             $manifestHash = (string)($manifest['source_manifest_sha256'] ?? '');
             $bodyHash = (string)($manifest['body_sha256'] ?? '');
+            $requestArtifacts = [];
+            $requestModes = $xmlEnvironment === 'TEST'
+                ? ['TEST']
+                : ($xmlEnvironment === 'LIVE' ? ['TEST', 'TIL', 'LIVE'] : []);
+            foreach ($requestModes as $requestMode) {
+                $artifact = $this->requestArtifactRecordForHashes(
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId,
+                    $requestMode,
+                    $manifestHash,
+                    $bodyHash
+                );
+                $requestArtifacts[$requestMode] = is_array($artifact)
+                    ? $this->publicRequestArtifactDescriptor($artifact)
+                    : $this->unavailableRequestArtifactDescriptor($requestMode);
+            }
             $latestTestAttempt = $bodyHash === ''
                 ? $this->firstMode($submissions, 'TEST')
                 : $this->firstModeForBody($submissions, 'TEST', $bodyHash);
@@ -266,6 +288,7 @@ final class HmrcCorporationTaxSubmissionService
                 'live_environment' => $liveEnvironment,
                 'current_manifest_sha256' => $manifestHash,
                 'current_body_sha256' => $bodyHash,
+                'request_artifacts' => $requestArtifacts,
                 'latest_test' => $latestTest,
                 'latest_live' => $latestLive,
                 'latest_test_attempt' => $latestTestAttempt,
@@ -409,13 +432,69 @@ final class HmrcCorporationTaxSubmissionService
             return $this->failure('The prepared CT600 package identity does not match the selected CT period.');
         }
 
+        $existing = $this->requestArtifactRecordForHashes(
+            $companyId,
+            (int)$ctPeriod['accounting_period_id'],
+            $ctPeriodId,
+            $mode,
+            (string)$package['source_manifest_sha256'],
+            (string)$package['body_sha256']
+        );
+        if (is_array($existing)) {
+            try {
+                $file = $this->requestArtifactFile($existing);
+            } catch (\Throwable $exception) {
+                return $this->failure(
+                    'An immutable GovTalk request artefact already exists but failed verification; '
+                        . 'no replacement file was generated: ' . $exception->getMessage()
+                );
+            }
+            $report('The existing immutable GovTalk request artefact is ready.', 100);
+            return $this->existingRequestArtifactResult(
+                $existing,
+                $file,
+                (array)($package['warnings'] ?? [])
+            );
+        }
+
+        $profile = HmrcCtTransactionEngineEnvironment::profile($mode);
+        $evidence = new FilingEvidenceService();
+        try {
+            $reservation = $evidence->reserveArtifact(
+                $companyId,
+                (int)$ctPeriod['accounting_period_id'],
+                self::DEVELOPER_REQUEST_ROLES[$mode],
+                $ctPeriodId,
+                [
+                    'artifact_source' => 'generated',
+                    'environment' => $mode,
+                    'body_sha256' => (string)$package['body_sha256'],
+                    'source_manifest_sha256' => (string)$package['source_manifest_sha256'],
+                    'endpoint' => (string)$profile['submission_url'],
+                    'credential_environment' => (string)$profile['credential_environment'],
+                    'transmitted' => false,
+                ]
+            );
+        } catch (\Throwable $exception) {
+            return $this->failure(
+                'The immutable GovTalk request artefact could not be reserved: ' . $exception->getMessage()
+            );
+        }
+
         $report('Building the exact environment-specific GovTalk request…', 65);
         $prepared = $this->transport->prepareSubmissionRequest(
             (string)$package['filing_body_xml'],
             (string)$package['utr'],
-            $mode
+            $mode,
+            (string)$reservation['transaction_hex']
         );
         if (empty($prepared['success'])) {
+            $this->failRequestArtifactQuietly(
+                $evidence,
+                (int)$reservation['id'],
+                'The environment-specific GovTalk request could not be prepared.',
+                ['environment' => $mode, 'transmitted' => false]
+            );
             return $this->failure($this->transportErrors($prepared));
         }
 
@@ -426,11 +505,36 @@ final class HmrcCorporationTaxSubmissionService
                 (string)$prepared['transaction_id'],
                 (string)($prepared['raw_request_xml'] ?? $prepared['request_xml'] ?? '')
             );
+            $credentialsPlaceholder = !empty($prepared['credentials_placeholder']);
+            $evidence->completeArtifact((int)$reservation['id'], [
+                'status' => 'generated',
+                'filename' => $artifact['filename'],
+                'path' => $artifact['path'],
+                'sha256' => $artifact['sha256'],
+                'schema_identity' => 'GovTalk Document Submission Protocol 2.0 / CT/5',
+                'validation_status' => 'passed',
+                'identifier_embedded' => true,
+                'metadata' => [
+                    'artifact_source' => 'generated',
+                    'environment' => $mode,
+                    'body_sha256' => (string)$package['body_sha256'],
+                    'source_manifest_sha256' => (string)$package['source_manifest_sha256'],
+                    'endpoint' => (string)($prepared['endpoint'] ?? $profile['submission_url']),
+                    'credential_environment' => (string)$profile['credential_environment'],
+                    'credentials_placeholder' => $credentialsPlaceholder,
+                    'transmitted' => false,
+                ],
+            ]);
         } catch (\Throwable $exception) {
+            $this->failRequestArtifactQuietly(
+                $evidence,
+                (int)$reservation['id'],
+                'The GovTalk request file could not be stored.',
+                ['environment' => $mode, 'transmitted' => false]
+            );
             return $this->failure('The GovTalk request file could not be stored: ' . $exception->getMessage());
         }
         $report('The GovTalk request file was generated without transmission.', 100);
-        $credentialsPlaceholder = !empty($prepared['credentials_placeholder']);
         $credentialWarning = $credentialsPlaceholder
             ? 'The generated GovTalk request uses developer placeholder sender credentials and cannot be transmitted.'
             : 'The generated GovTalk request contains configured HMRC sender credentials; keep it private.';
@@ -456,7 +560,66 @@ final class HmrcCorporationTaxSubmissionService
             'endpoint' => (string)($prepared['endpoint'] ?? ''),
             'transaction_id' => $artifact['transaction_id'],
             'credentials_placeholder' => $credentialsPlaceholder,
+            'artifact_source' => 'generated',
+            'artifact_id' => (string)$reservation['artifact_id'],
         ];
+    }
+
+    /** @return array{path:string,filename:string,sha256:string,environment:string,source:string,artifact_id:string,artifact_row_id:int,bundle_id:int,submission_id:int,exchange_id:int} */
+    public function requestArtifactForDownload(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $requestedEnvironment
+    ): array {
+        try {
+            $mode = HmrcCtTransactionEngineEnvironment::normalise($requestedEnvironment);
+        } catch (\InvalidArgumentException $exception) {
+            throw new \InvalidArgumentException($exception->getMessage(), 0, $exception);
+        }
+        $xmlEnvironment = $this->xmlEnvironment();
+        $allowedModes = $xmlEnvironment === 'TEST'
+            ? ['TEST']
+            : ($xmlEnvironment === 'LIVE' ? ['TEST', 'TIL', 'LIVE'] : []);
+        if (!in_array($mode, $allowedModes, true)) {
+            throw new \RuntimeException(
+                'The requested HMRC request artefact is not permitted by the selected HMRC XML environment.'
+            );
+        }
+
+        $status = $this->status($companyId, $accountingPeriodId);
+        if (empty($status['success'])) {
+            throw new \RuntimeException(
+                (string)(((array)($status['errors'] ?? []))[0] ?? 'HMRC request artefact status is unavailable.')
+            );
+        }
+        $selected = null;
+        foreach ((array)($status['periods'] ?? []) as $period) {
+            if ((int)($period['ct_period_id'] ?? 0) === $ctPeriodId) {
+                $selected = (array)$period;
+                break;
+            }
+        }
+        if (!is_array($selected)) {
+            throw new \RuntimeException(
+                'The selected CT period does not belong to the authenticated accounting period.'
+            );
+        }
+        $record = $this->requestArtifactRecordForHashes(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $mode,
+            (string)($selected['current_manifest_sha256'] ?? ''),
+            (string)($selected['current_body_sha256'] ?? '')
+        );
+        if (!is_array($record)) {
+            throw new \RuntimeException(
+                'No immutable ' . $mode . ' GovTalk request artefact exists for the exact current filing basis.'
+            );
+        }
+
+        return $this->requestArtifactFile($record);
     }
 
     public function poll(
@@ -3251,6 +3414,341 @@ final class HmrcCorporationTaxSubmissionService
             'warnings' => [],
             'submission' => $submission,
         ];
+    }
+
+    /** @return array<string,mixed>|null */
+    private function requestArtifactRecordForHashes(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        $mode = strtoupper(trim($mode));
+        $manifestHash = strtolower(trim($manifestHash));
+        $bodyHash = strtolower(trim($bodyHash));
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $ctPeriodId <= 0
+            || !isset(self::DEVELOPER_REQUEST_ROLES[$mode])
+            || preg_match('/^[a-f0-9]{64}$/D', $manifestHash) !== 1
+            || preg_match('/^[a-f0-9]{64}$/D', $bodyHash) !== 1) {
+            return null;
+        }
+
+        $submitted = $this->submittedRequestArtifactRecord(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $mode,
+            $manifestHash,
+            $bodyHash
+        );
+        if (is_array($submitted)) {
+            return $submitted;
+        }
+
+        return $this->generatedRequestArtifactRecord(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $mode,
+            $manifestHash,
+            $bodyHash
+        );
+    }
+
+    /** @return array<string,mixed>|null */
+    private function submittedRequestArtifactRecord(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        if (!\InterfaceDB::tableExists('govtalk_protocol_exchanges')
+            || !\InterfaceDB::tableExists('transmission_archives')) {
+            return null;
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT s.id AS submission_id, e.id AS exchange_id,
+                    e.transaction_id, e.request_path, e.request_sha256,
+                    a.submission_reference AS archive_submission_reference
+             FROM ' . self::SUBMISSIONS . ' s
+             INNER JOIN govtalk_protocol_exchanges e
+               ON e.hmrc_submission_id = s.id
+              AND e.authority = :exchange_authority
+              AND e.operation = :operation
+             INNER JOIN transmission_archives a
+               ON a.id = e.transmission_archive_id
+              AND a.authority = :archive_authority
+              AND a.company_id = s.company_id
+              AND a.accounting_period_id = s.accounting_period_id
+              AND a.environment = s.environment
+             WHERE s.company_id = :company_id
+               AND s.accounting_period_id = :accounting_period_id
+               AND s.ct_period_id = :ct_period_id
+               AND s.environment = :environment
+               AND s.source_manifest_sha256 = :manifest_hash
+               AND s.body_sha256 = :body_hash
+               AND e.environment = s.environment
+               AND e.request_path IS NOT NULL
+               AND e.request_sha256 IS NOT NULL
+             ORDER BY s.id DESC, e.id DESC',
+            [
+                'exchange_authority' => 'hmrc',
+                'archive_authority' => 'hmrc',
+                'operation' => 'submit',
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+                'environment' => $mode,
+                'manifest_hash' => $manifestHash,
+                'body_hash' => $bodyHash,
+            ]
+        ) ?: [];
+        foreach ($rows as $row) {
+            $submissionId = (int)($row['submission_id'] ?? 0);
+            if ($submissionId <= 0
+                || trim((string)($row['archive_submission_reference'] ?? ''))
+                    !== $this->archiveReference($submissionId)) {
+                continue;
+            }
+            return [
+                'source' => 'submitted',
+                'company_id' => $companyId,
+                'environment' => $mode,
+                'artifact_id' => '',
+                'artifact_row_id' => 0,
+                'bundle_id' => 0,
+                'submission_id' => $submissionId,
+                'exchange_id' => (int)($row['exchange_id'] ?? 0),
+                'transaction_id' => strtoupper(trim((string)($row['transaction_id'] ?? ''))),
+                'filename' => basename((string)($row['request_path'] ?? '')),
+                'storage_path' => (string)($row['request_path'] ?? ''),
+                'sha256' => strtolower(trim((string)($row['request_sha256'] ?? ''))),
+                'metadata' => [
+                    'environment' => $mode,
+                    'body_sha256' => $bodyHash,
+                    'source_manifest_sha256' => $manifestHash,
+                    'transmitted' => true,
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    /** @return array<string,mixed>|null */
+    private function generatedRequestArtifactRecord(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        if (!\InterfaceDB::tableExists('filing_evidence_artifacts')
+            || !\InterfaceDB::tableExists('filing_evidence_bundles')) {
+            return null;
+        }
+        $rows = \InterfaceDB::fetchAll(
+            "SELECT artifact.id, artifact.artifact_id, artifact.transaction_hex,
+                    artifact.bundle_id, artifact.filename, artifact.storage_path,
+                    artifact.sha256, artifact.metadata_json
+             FROM filing_evidence_artifacts artifact
+             INNER JOIN filing_evidence_bundles bundle ON bundle.id = artifact.bundle_id
+             WHERE bundle.company_id = :company_id
+               AND bundle.accounting_period_id = :accounting_period_id
+               AND artifact.ct_period_id = :ct_period_id
+               AND artifact.artifact_role = :artifact_role
+               AND artifact.artifact_status IN ('generated', 'validated', 'historical')
+             ORDER BY artifact.id DESC",
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'ct_period_id' => $ctPeriodId,
+                'artifact_role' => self::DEVELOPER_REQUEST_ROLES[$mode],
+            ]
+        ) ?: [];
+        foreach ($rows as $row) {
+            $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
+            $metadata = is_array($metadata) ? $metadata : [];
+            if (strtoupper(trim((string)($metadata['environment'] ?? ''))) !== $mode
+                || !hash_equals($manifestHash, strtolower(trim((string)(
+                    $metadata['source_manifest_sha256'] ?? ''
+                ))))
+                || !hash_equals($bodyHash, strtolower(trim((string)($metadata['body_sha256'] ?? ''))))
+                || !array_key_exists('transmitted', $metadata)
+                || !empty($metadata['transmitted'])) {
+                continue;
+            }
+            return [
+                'source' => 'generated',
+                'company_id' => $companyId,
+                'environment' => $mode,
+                'artifact_id' => (string)($row['artifact_id'] ?? ''),
+                'artifact_row_id' => (int)($row['id'] ?? 0),
+                'bundle_id' => (int)($row['bundle_id'] ?? 0),
+                'submission_id' => 0,
+                'exchange_id' => 0,
+                'transaction_id' => strtoupper(trim((string)($row['transaction_hex'] ?? ''))),
+                'filename' => (string)($row['filename'] ?? ''),
+                'storage_path' => (string)($row['storage_path'] ?? ''),
+                'sha256' => strtolower(trim((string)($row['sha256'] ?? ''))),
+                'metadata' => $metadata,
+            ];
+        }
+
+        return null;
+    }
+
+    /** @return array<string,mixed> */
+    private function publicRequestArtifactDescriptor(array $record): array
+    {
+        return [
+            'available' => true,
+            'environment' => (string)$record['environment'],
+            'source' => (string)$record['source'],
+            'filename' => (string)$record['filename'],
+            'artifact_id' => (string)($record['artifact_id'] ?? ''),
+            'submission_id' => (int)($record['submission_id'] ?? 0),
+            'exchange_id' => (int)($record['exchange_id'] ?? 0),
+            'sha256' => (string)$record['sha256'],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function unavailableRequestArtifactDescriptor(string $mode): array
+    {
+        return [
+            'available' => false,
+            'environment' => strtoupper(trim($mode)),
+            'source' => '',
+            'filename' => '',
+            'artifact_id' => '',
+            'submission_id' => 0,
+            'exchange_id' => 0,
+            'sha256' => '',
+        ];
+    }
+
+    /** @return array{path:string,filename:string,sha256:string,environment:string,source:string,artifact_id:string,artifact_row_id:int,bundle_id:int,submission_id:int,exchange_id:int} */
+    private function requestArtifactFile(array $record): array
+    {
+        $source = strtolower(trim((string)($record['source'] ?? '')));
+        $path = '';
+        $filename = '';
+        $sha256 = strtolower(trim((string)($record['sha256'] ?? '')));
+        if ($source === 'submitted') {
+            $evidence = $this->govTalk->evidenceFileForCompany(
+                (int)($record['company_id'] ?? 0),
+                (int)($record['exchange_id'] ?? 0),
+                'request'
+            );
+            $path = (string)$evidence['path'];
+            $filename = (string)$evidence['filename'];
+            $evidenceHash = strtolower(trim((string)$evidence['sha256']));
+            $recordPath = realpath((string)($record['storage_path'] ?? ''));
+            $evidencePath = realpath($path);
+            if (!is_string($recordPath)
+                || !is_string($evidencePath)
+                || strcasecmp($recordPath, $evidencePath) !== 0
+                || $sha256 === ''
+                || !hash_equals($sha256, $evidenceHash)) {
+                throw new \RuntimeException(
+                    'The submitted GovTalk request does not match its immutable exchange evidence.'
+                );
+            }
+        } elseif ($source === 'generated') {
+            $resolved = realpath((string)($record['storage_path'] ?? ''));
+            if (!is_string($resolved)
+                || !is_file($resolved)
+                || !$this->pathWithin($resolved, $this->artifactRoot)) {
+                throw new \RuntimeException('The generated GovTalk request artefact is unavailable.');
+            }
+            if (preg_match('/^[a-f0-9]{64}$/D', $sha256) !== 1) {
+                throw new \RuntimeException('The generated GovTalk request artefact has no valid integrity hash.');
+            }
+            $actual = hash_file('sha256', $resolved);
+            if (!is_string($actual) || !hash_equals($sha256, strtolower($actual))) {
+                throw new \RuntimeException('The generated GovTalk request artefact failed its integrity check.');
+            }
+            $path = $resolved;
+            $filename = basename($resolved);
+            $recordedFilename = trim((string)($record['filename'] ?? ''));
+            if ($recordedFilename === '' || $recordedFilename !== $filename) {
+                throw new \RuntimeException('The generated GovTalk request filename does not match its evidence record.');
+            }
+        } else {
+            throw new \RuntimeException('The GovTalk request artefact source is invalid.');
+        }
+
+        return [
+            'path' => $path,
+            'filename' => $filename,
+            'sha256' => $sha256,
+            'environment' => strtoupper(trim((string)($record['environment'] ?? ''))),
+            'source' => $source,
+            'artifact_id' => (string)($record['artifact_id'] ?? ''),
+            'artifact_row_id' => (int)($record['artifact_row_id'] ?? 0),
+            'bundle_id' => (int)($record['bundle_id'] ?? 0),
+            'submission_id' => (int)($record['submission_id'] ?? 0),
+            'exchange_id' => (int)($record['exchange_id'] ?? 0),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function existingRequestArtifactResult(array $record, array $file, array $warnings): array
+    {
+        $metadata = (array)($record['metadata'] ?? []);
+        $credentialsPlaceholder = !empty($metadata['credentials_placeholder']);
+        $warning = $credentialsPlaceholder
+            ? 'The existing GovTalk request uses developer placeholder sender credentials and cannot be transmitted.'
+            : 'The existing GovTalk request contains HMRC sender credentials; keep it private.';
+        $bytes = filesize((string)$file['path']);
+
+        return [
+            'success' => true,
+            'submission_id' => (int)($record['submission_id'] ?? 0),
+            'mode' => (string)$record['environment'],
+            'status' => 'existing',
+            'protocol_state' => (string)$record['source'] === 'submitted' ? 'archived' : 'not_sent',
+            'business_outcome' => '',
+            'needs_poll' => false,
+            'poll_after_seconds' => null,
+            'errors' => [],
+            'warnings' => array_values(array_unique(array_merge($warnings, [
+                'An exact immutable GovTalk request artefact already exists; no new file was generated.',
+                $warning,
+            ]))),
+            'path' => $file['path'],
+            'filename' => $file['filename'],
+            'sha256' => $file['sha256'],
+            'bytes' => is_int($bytes) ? $bytes : 0,
+            'endpoint' => (string)($metadata['endpoint']
+                ?? HmrcCtTransactionEngineEnvironment::profile((string)$record['environment'])['submission_url']),
+            'transaction_id' => (string)($record['transaction_id'] ?? ''),
+            'credentials_placeholder' => $credentialsPlaceholder,
+            'artifact_source' => (string)$record['source'],
+            'artifact_id' => (string)($record['artifact_id'] ?? ''),
+            'exchange_id' => (int)($record['exchange_id'] ?? 0),
+        ];
+    }
+
+    private function failRequestArtifactQuietly(
+        FilingEvidenceService $evidence,
+        int $artifactRowId,
+        string $message,
+        array $metadata
+    ): void {
+        try {
+            $evidence->failArtifact($artifactRowId, $message, $metadata);
+        } catch (\Throwable) {
+            // Preserve the preparation/storage failure that caused this cleanup attempt.
+        }
     }
 
     /**

@@ -350,6 +350,53 @@ $harness->run(_hmrc_transmitCard::class, static function (
                 $harness->assertTrue(str_contains($html, '>' . $label . '</button>'));
             }
             $harness->assertSame(3, substr_count($html, 'name="intent" value="hmrc_generate_request"'));
+
+            $context['services']['hmrc_ct600_status']['periods'][0]['request_artifacts'] = [
+                'TEST' => [
+                    'available' => true,
+                    'environment' => 'TEST',
+                    'source' => 'generated',
+                    'filename' => 'generated-test.xml',
+                ],
+                'TIL' => [
+                    'available' => true,
+                    'environment' => 'TIL',
+                    'source' => 'submitted',
+                    'filename' => 'submitted-til.xml',
+                ],
+                'LIVE' => [
+                    'available' => false,
+                    'environment' => 'LIVE',
+                    'source' => '',
+                    'filename' => '',
+                ],
+            ];
+            $withArtifacts = $card->render($context);
+            $harness->assertSame(
+                2,
+                substr_count($withArtifacts, 'name="intent" value="hmrc_download_request_artifact"')
+            );
+            $harness->assertSame(
+                1,
+                substr_count($withArtifacts, 'name="intent" value="hmrc_generate_request"')
+            );
+            $harness->assertTrue(str_contains($withArtifacts, '>Download TEST Artefact</button>'));
+            $harness->assertTrue(str_contains($withArtifacts, '>Download Test-In-Live Artefact</button>'));
+            $harness->assertTrue(str_contains($withArtifacts, '>Generate LIVE Request File</button>'));
+            $harness->assertTrue(str_contains(
+                $withArtifacts,
+                'Download the exact outbound XML sent to HMRC?'
+            ));
+            $harness->assertTrue(str_contains(
+                $withArtifacts,
+                'Download the immutable generated HMRC GovTalk XML?'
+            ));
+            $harness->assertSame(
+                2,
+                substr_count($withArtifacts, '<form method="post" action="?page=transmit">')
+            );
+            $harness->assertFalse(str_contains($withArtifacts, 'generated-test.xml'));
+            $harness->assertFalse(str_contains($withArtifacts, 'submitted-til.xml'));
         } finally {
             AppConfigurationStore::set('developer_options', (bool)$previous);
         }
@@ -1130,6 +1177,15 @@ $harness->run(HmrcSubmissionAction::class, static function (
                     (string)($disabled->flashMessages()[0]['message'] ?? ''),
                     'Developer Options must be enabled'
                 ));
+                $disabledDownload = $action->handle($request([
+                    'intent' => 'hmrc_download_request_artifact',
+                    'request_environment' => 'TEST',
+                ]), createTestPageServiceFramework());
+                $harness->assertFalse($disabledDownload->isSuccess());
+                $harness->assertTrue(str_contains(
+                    (string)($disabledDownload->flashMessages()[0]['message'] ?? ''),
+                    'Developer options must be enabled'
+                ));
 
                 InterfaceDB::prepareExecute(
                     'INSERT INTO hmrc_ct600_submissions
@@ -1190,19 +1246,24 @@ $harness->run(HmrcSubmissionAction::class, static function (
         }
     );
 
-    $harness->check(HmrcSubmissionAction::class, 'exposes only the Test LIVE request-file response-reprocessing and Poll command intents', static function () use ($harness): void {
+    $harness->check(HmrcSubmissionAction::class, 'exposes only the TEST LIVE request-artefact response-reprocessing and Poll command intents', static function () use ($harness): void {
         $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content'
             . DIRECTORY_SEPARATOR . 'actions' . DIRECTORY_SEPARATOR . 'HmrcSubmissionAction.php');
         foreach ([
             'hmrc_submit_test', 'hmrc_submit_live',
             'hmrc_retry_test', 'hmrc_retry_live',
-            'hmrc_generate_request', 'hmrc_reprocess_response', 'hmrc_poll',
+            'hmrc_generate_request', 'hmrc_download_request_artifact',
+            'hmrc_reprocess_response', 'hmrc_poll',
         ] as $intent) {
             $harness->assertTrue(str_contains($source, "'" . $intent . "'"));
         }
-        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->reprocessArchivedResponse(', '->poll(', '->status('] as $call) {
+        foreach (['->submitTest(', '->submitLive(', '->generateRequestFile(', '->requestArtifactForDownload(', '->reprocessArchivedResponse(', '->poll(', '->status('] as $call) {
             $harness->assertTrue(str_contains($source, $call));
         }
+        $downloadDispatch = strpos($source, "if (\$intent === 'hmrc_download_request_artifact')");
+        $progressStart = strpos($source, '$progress = $services->actionProgress();');
+        $harness->assertTrue(is_int($downloadDispatch) && is_int($progressStart));
+        $harness->assertTrue((int)$downloadDispatch < (int)$progressStart);
         foreach (['declaration_name', 'declaration_status', 'declaration_confirmed', 'authority_confirmed',
                   'original_unfiled_confirmed'] as $field) {
             $harness->assertFalse(str_contains($source, "'" . $field . "'"));

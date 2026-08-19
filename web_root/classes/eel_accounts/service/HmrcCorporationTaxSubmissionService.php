@@ -11,6 +11,7 @@ namespace eel_accounts\Service;
 
 use eel_accounts\Client\GovTalkConversationContext;
 use eel_accounts\Client\HmrcCtTransactionEngineClient;
+use eel_accounts\Client\HmrcCtTransactionEngineEnvironment;
 use eel_accounts\Client\HmrcCtTransactionEngineTransportInterface;
 
 /** Durable CT600 GovTalk submission workflow, one conversation per CT period. */
@@ -278,7 +279,7 @@ final class HmrcCorporationTaxSubmissionService
                 'latest_submission' => $submissions[0] ?? null,
                 'pending_submission' => $pending,
                 'test_ready' => $testBlockers === [],
-                'live_ready' => $liveBlockers === [],
+                'live_ready' => $xmlEnvironment === 'LIVE' && $liveBlockers === [],
                 'test_blockers' => array_values(array_unique($testBlockers)),
                 'live_blockers' => array_values(array_unique($liveBlockers)),
                 'blockers' => array_values(array_unique(array_merge($testBlockers, $liveBlockers))),
@@ -340,7 +341,8 @@ final class HmrcCorporationTaxSubmissionService
         int $companyId,
         int $ctPeriodId,
         int|string|null $actor = null,
-        ?callable $progress = null
+        ?callable $progress = null,
+        ?string $requestedEnvironment = null
     ): array {
         unset($actor);
         $report = static function (string $message, int $percent) use ($progress): void {
@@ -353,7 +355,23 @@ final class HmrcCorporationTaxSubmissionService
         if ($xmlEnvironment === 'DISABLED') {
             return $this->failure('HMRC XML transmission is disabled in Application API Credentials.');
         }
-        $mode = $xmlEnvironment === 'TEST' ? 'TEST' : 'LIVE';
+        $defaultMode = $xmlEnvironment === 'TEST' ? 'TEST' : 'LIVE';
+        $requestedEnvironment = strtoupper(trim((string)$requestedEnvironment));
+        try {
+            $mode = $requestedEnvironment === ''
+                ? $defaultMode
+                : HmrcCtTransactionEngineEnvironment::normalise($requestedEnvironment);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->failure($exception->getMessage());
+        }
+        $allowedModes = $xmlEnvironment === 'TEST'
+            ? ['TEST']
+            : ['TEST', 'TIL', 'LIVE'];
+        if (!in_array($mode, $allowedModes, true)) {
+            return $this->failure(
+                'The requested HMRC request-file environment is not permitted by the selected HMRC XML environment.'
+            );
+        }
         $schemaError = $this->schemaError();
         if ($schemaError !== null) {
             return $this->failure($schemaError);
@@ -435,6 +453,7 @@ final class HmrcCorporationTaxSubmissionService
             'filename' => $artifact['filename'],
             'sha256' => $artifact['sha256'],
             'bytes' => $artifact['bytes'],
+            'endpoint' => (string)($prepared['endpoint'] ?? ''),
             'transaction_id' => $artifact['transaction_id'],
             'credentials_placeholder' => $credentialsPlaceholder,
         ];
@@ -3259,7 +3278,7 @@ final class HmrcCorporationTaxSubmissionService
         }
         $mode = strtolower(trim($mode));
         $transactionId = strtolower(trim($transactionId));
-        if (!in_array($mode, ['test', 'live'], true)
+        if (!in_array($mode, ['test', 'til', 'live'], true)
             || preg_match('/^[a-f0-9]{1,32}$/D', $transactionId) !== 1) {
             throw new \RuntimeException('The GovTalk request identity is invalid.');
         }

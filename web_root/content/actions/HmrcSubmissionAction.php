@@ -23,6 +23,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $submissionId = (int)$request->input('submission_id', 0);
         $exchangeId = (int)$request->input('exchange_id', 0);
+        $requestEnvironment = strtoupper(trim((string)$request->input('request_environment', '')));
 
         $contextError = $this->accountingContextError($companyId, $accountingPeriodId);
         if ($contextError !== null) {
@@ -84,14 +85,17 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             };
             if ($intent === 'hmrc_generate_request') {
                 $progress->report(
-                    'Preparing the exact HMRC GovTalk request without transmitting it…',
+                    'Preparing the exact'
+                        . ($requestEnvironment !== '' ? ' ' . $requestEnvironment : '')
+                        . ' HMRC GovTalk request without transmitting it…',
                     8
                 );
                 $command = $service->generateRequestFile(
                     $companyId,
                     $ctPeriodId,
                     $actor,
-                    $report
+                    $report,
+                    $requestEnvironment !== '' ? $requestEnvironment : null
                 );
             } elseif (in_array($intent, [
                 'hmrc_submit_test', 'hmrc_submit_live',
@@ -246,7 +250,15 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
     {
         if ($intent === 'hmrc_generate_request') {
             $path = trim((string)($command['path'] ?? ''));
-            return 'The HMRC GovTalk request file was generated without transmission'
+            $mode = strtoupper(trim((string)($command['mode'] ?? '')));
+            $label = match ($mode) {
+                'TEST' => 'TEST',
+                'TIL' => 'Test-in-Live',
+                'LIVE' => 'LIVE',
+                default => '',
+            };
+            return 'The HMRC' . ($label !== '' ? ' ' . $label : '')
+                . ' GovTalk request file was generated without transmission'
                 . ($path !== '' ? ': ' . $path : '.');
         }
         if ($intent === 'hmrc_reprocess_response') {

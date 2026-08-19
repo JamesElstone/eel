@@ -171,29 +171,34 @@ final class _hmrc_transmitCard extends CardBaseFramework
 
         $html .= '<div class="summary-grid four">' . $this->dependencyMetrics((array)($period['filing_dependencies'] ?? [])) . '</div>';
 
-        $blockers = array_values(array_unique(array_merge(
-            $this->messages((array)($period['blockers'] ?? [])),
-            $this->messages((array)($period['test_blockers'] ?? [])),
-            $this->messages((array)($period['live_blockers'] ?? []))
-        )));
-        $submissionBlockers = array_values(array_filter(
-            $blockers,
-            fn(string $blocker): bool => !$this->isCardDependency($blocker)
-                && !$this->isXmlCredentialBlocker($blocker)
-        ));
-        if ($submissionBlockers !== []) {
-            $html .= '<div class="summary-grid">';
-            foreach ($submissionBlockers as $blocker) {
-                $html .= $this->blockerMetric($blocker);
-            }
-            $html .= '</div>';
-        }
+        $html .= $this->actionBlockers($period, $xmlEnvironment);
 
-        $gatewayRejection = $xmlEnvironment === 'LIVE'
-            ? (array)($period['live_gateway_rejection'] ?? [])
-            : (array)($period['test_gateway_rejection'] ?? []);
-        if ($gatewayRejection !== []) {
-            $html .= $this->gatewayRejectionPanel($gatewayRejection, $xmlEnvironment);
+        if ($xmlEnvironment === 'TEST') {
+            $testGatewayRejection = (array)($period['test_gateway_rejection'] ?? []);
+            if ($testGatewayRejection !== []) {
+                $html .= $this->gatewayRejectionPanel(
+                    $testGatewayRejection,
+                    'HMRC TEST',
+                    'TEST'
+                );
+            }
+        } elseif ($xmlEnvironment === 'LIVE') {
+            $tilGatewayRejection = (array)($period['test_gateway_rejection'] ?? []);
+            $liveGatewayRejection = (array)($period['live_gateway_rejection'] ?? []);
+            if ($tilGatewayRejection !== []) {
+                $html .= $this->gatewayRejectionPanel(
+                    $tilGatewayRejection,
+                    'HMRC Test-In-Live',
+                    'LIVE'
+                );
+            }
+            if ($liveGatewayRejection !== []) {
+                $html .= $this->gatewayRejectionPanel(
+                    $liveGatewayRejection,
+                    'HMRC LIVE',
+                    'LIVE'
+                );
+            }
         }
 
         $html .= $this->submissionForm(
@@ -224,68 +229,133 @@ final class _hmrc_transmitCard extends CardBaseFramework
         bool $credentialsConfigured
     ): string {
         $xmlEnvironment = strtoupper(trim((string)($period['xml_environment'] ?? 'DISABLED')));
-        $isLive = $xmlEnvironment === 'LIVE';
-        $submissionIntent = $isLive ? 'hmrc_submit_live' : 'hmrc_submit_test';
         $dependenciesReady = $this->filingDependenciesReady((array)($period['filing_dependencies'] ?? []));
-        $submissionDisabled = ($isLive ? $liveEnabled : $testEnabled) && !$controlsDisabled
-            && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
-        $gatewayRejection = $isLive
-            ? (array)($period['live_gateway_rejection'] ?? [])
-            : (array)($period['test_gateway_rejection'] ?? []);
-        $retryReady = $isLive
-            ? !empty($period['live_gateway_retry_ready'])
-            : !empty($period['test_gateway_retry_ready']);
-        $retryIntent = $isLive ? 'hmrc_retry_live' : 'hmrc_retry_test';
-        $retryDisabled = $retryReady && !$controlsDisabled
-            && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
-        $requestDisabled = !$controlsDisabled && $dependenciesReady
-            ? ''
-            : ' disabled';
-        $submissionClass = ' danger';
         $periodLabel = trim($start . ' to ' . $end);
-        $submissionEnvironment = $isLive ? 'HMRC LIVE' : 'HMRC TEST';
-        $submissionWarning = $isLive
-            ? 'This is a statutory filing. It sends tax return information outside EEL Accounts and cannot be undone in this application.'
-            : 'This sends tax return information outside EEL Accounts to the HMRC test environment and cannot be undone in this application.';
+        $actions = [];
+        if ($xmlEnvironment === 'TEST') {
+            $actions[] = [
+                'label' => 'Transmit Submission to Test',
+                'intent' => 'hmrc_submit_test',
+                'ready' => $testEnabled,
+                'class' => ' primary',
+                'title' => 'Transmit Corporation Tax return to HMRC Test',
+                'environment' => 'HMRC TEST',
+                'warning' => 'This sends tax return information to the HMRC test environment and does not file the return.',
+                'confirm' => 'Transmit to Test',
+                'gateway_rejection' => (array)($period['test_gateway_rejection'] ?? []),
+                'retry_ready' => !empty($period['test_gateway_retry_ready']),
+                'retry_intent' => 'hmrc_retry_test',
+                'retry_label' => 'Retry Test Transmission',
+            ];
+        } elseif ($xmlEnvironment === 'LIVE') {
+            $actions[] = [
+                'label' => 'Transmit Submission to Test-In-Live',
+                'intent' => 'hmrc_submit_test',
+                'ready' => $testEnabled,
+                'class' => ' primary',
+                'title' => 'Transmit Corporation Tax return to HMRC Test-In-Live',
+                'environment' => 'HMRC Test-In-Live',
+                'warning' => 'This uses the configured LIVE credentials to validate the return. It does not file the return or send it to HMRC back-end systems.',
+                'confirm' => 'Run Test-In-Live',
+                'gateway_rejection' => (array)($period['test_gateway_rejection'] ?? []),
+                'retry_ready' => !empty($period['test_gateway_retry_ready']),
+                'retry_intent' => 'hmrc_retry_test',
+                'retry_label' => 'Retry Test-In-Live Transmission',
+            ];
+            $actions[] = [
+                'label' => 'Transmit Submission to Live',
+                'intent' => 'hmrc_submit_live',
+                'ready' => $liveEnabled,
+                'class' => ' danger',
+                'title' => 'Transmit Corporation Tax return to HMRC LIVE',
+                'environment' => 'HMRC LIVE',
+                'warning' => 'This is a statutory filing. It sends tax return information outside EEL Accounts and cannot be undone in this application.',
+                'confirm' => 'Transmit LIVE Tax Return',
+                'gateway_rejection' => (array)($period['live_gateway_rejection'] ?? []),
+                'retry_ready' => !empty($period['live_gateway_retry_ready']),
+                'retry_intent' => 'hmrc_retry_live',
+                'retry_label' => 'Retry LIVE Transmission',
+            ];
+        }
 
-        return '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
+        $html = '<section class="panel-soft"><form method="post" action="?page=transmit" data-ajax="true" class="settings-stack">'
             . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
             . '<h3>Transmit Submission</h3>'
-            . '<div class="actions-row">'
-            . '<button class="button' . $submissionClass . '" type="submit" name="intent" value="' . $submissionIntent . '"' . $submissionDisabled
-            . ' data-chicken-check="true" data-chicken-title="Transmit Corporation Tax return"'
-            . ' data-chicken-message="Transmit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
-            . ' to ' . $submissionEnvironment . '?&lt;br&gt;&lt;br&gt;' . $submissionWarning . '"'
-            . ' data-chicken-confirm-text="Transmit Tax Return" data-chicken-button-class="button danger"'
-            . '>Transmit Submission</button>'
-            . ($developerOptions && $gatewayRejection !== []
-                ? '<button class="button danger" type="submit" name="intent" value="' . $retryIntent . '"'
+            . '<div class="actions-row">';
+        foreach ($actions as $action) {
+            $disabled = !empty($action['ready']) && !$controlsDisabled
+                && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
+            $html .= '<button class="button' . (string)$action['class'] . '" type="submit" name="intent" value="'
+                . \eel_accounts\Support\Utf8::html((string)$action['intent']) . '"' . $disabled
+                . ' data-chicken-check="true" data-chicken-title="'
+                . \eel_accounts\Support\Utf8::html((string)$action['title']) . '"'
+                . ' data-chicken-message="Transmit the CT600 for ' . \eel_accounts\Support\Utf8::html($periodLabel)
+                . ' to ' . \eel_accounts\Support\Utf8::html((string)$action['environment'])
+                . '?&lt;br&gt;&lt;br&gt;' . \eel_accounts\Support\Utf8::html((string)$action['warning']) . '"'
+                . ' data-chicken-confirm-text="' . \eel_accounts\Support\Utf8::html((string)$action['confirm']) . '"'
+                . ' data-chicken-button-class="button' . (string)$action['class'] . '"'
+                . '>' . \eel_accounts\Support\Utf8::html((string)$action['label']) . '</button>';
+
+            if ($developerOptions && (array)$action['gateway_rejection'] !== []) {
+                $retryDisabled = !empty($action['retry_ready']) && !$controlsDisabled
+                    && $credentialsConfigured && $dependenciesReady ? '' : ' disabled';
+                $html .= '<button class="button danger" type="submit" name="intent" value="'
+                    . \eel_accounts\Support\Utf8::html((string)$action['retry_intent']) . '"'
                     . $retryDisabled
                     . ' data-chicken-check="true" data-chicken-title="Retry HMRC transmission"'
                     . ' data-chicken-message="Create a new audited HMRC submission for the same CT600 body and transmit it to '
-                    . $submissionEnvironment . '?&lt;br&gt;&lt;br&gt;This sends tax return information outside EEL Accounts and cannot be undone in this application."'
+                    . \eel_accounts\Support\Utf8::html((string)$action['environment'])
+                    . '?&lt;br&gt;&lt;br&gt;This sends tax return information outside EEL Accounts and cannot be undone in this application."'
                     . ' data-chicken-confirm-text="Retry Transmission" data-chicken-button-class="button danger"'
-                    . '>Retry Transmission</button>'
-                : '')
-            . ($developerOptions
-                ? '<button class="button" type="submit" name="intent" value="hmrc_generate_request"'
-                    . $requestDisabled . '>Generate Request File</button>'
-                : '')
-            . '</div>'
-            . '</form></section>';
+                    . '>' . \eel_accounts\Support\Utf8::html((string)$action['retry_label']) . '</button>';
+            }
+        }
+        $html .= '</div></form>';
+
+        if ($developerOptions) {
+            $requestModes = match ($xmlEnvironment) {
+                'TEST' => ['TEST' => 'Generate TEST Request File'],
+                'LIVE' => [
+                    'TEST' => 'Generate TEST Request File',
+                    'TIL' => 'Generate Test-In-Live Request File',
+                    'LIVE' => 'Generate LIVE Request File',
+                ],
+                default => [],
+            };
+            if ($requestModes !== []) {
+                $requestDisabled = !$controlsDisabled && $dependenciesReady ? '' : ' disabled';
+                $html .= '<div class="settings-stack"><h3>Generate Request Files</h3><div class="actions-row">';
+                foreach ($requestModes as $mode => $label) {
+                    $html .= '<form method="post" action="?page=transmit" data-ajax="true">'
+                        . $this->hiddenFields($companyId, $accountingPeriodId, $ctPeriodId)
+                        . '<input type="hidden" name="intent" value="hmrc_generate_request">'
+                        . '<input type="hidden" name="request_environment" value="'
+                        . \eel_accounts\Support\Utf8::html($mode) . '">'
+                        . '<button class="button" type="submit"' . $requestDisabled . '>'
+                        . \eel_accounts\Support\Utf8::html($label) . '</button></form>';
+                }
+                $html .= '</div></div>';
+            }
+        }
+
+        return $html . '</section>';
     }
 
-    private function gatewayRejectionPanel(array $submission, string $xmlEnvironment): string
+    private function gatewayRejectionPanel(
+        array $submission,
+        string $environmentLabel,
+        string $credentialEnvironment
+    ): string
     {
         $summary = trim((string)($submission['hmrc_response_summary'] ?? ''));
         if ($summary === '') {
             $summary = 'HMRC Gateway rejected the submission before opening a filing conversation.';
         }
         $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
-        $credentialEnvironment = $xmlEnvironment === 'TEST' ? 'TEST' : 'LIVE';
         $html = '<section class="panel-soft summary-card danger hmrc-gateway-rejection">'
-            . '<div class="status-head"><h3 class="card-title">HMRC Gateway rejection</h3>'
+            . '<div class="status-head"><h3 class="card-title">'
+            . \eel_accounts\Support\Utf8::html($environmentLabel) . ' Gateway rejection</h3>'
             . '<span class="badge danger">Not transmitted</span></div>'
             . '<div class="helper">' . \eel_accounts\Support\Utf8::html($summary) . '</div>';
         if (str_contains($summary, '1046')) {
@@ -319,13 +389,56 @@ final class _hmrc_transmitCard extends CardBaseFramework
         if (in_array($liveOutcome, ['accepted', 'live_accepted'], true)) {
             return ['success', 'Filed'];
         }
-        if (!empty($period['live_ready'])) {
-            return ['success', 'Ready for LIVE'];
-        }
-        if (!empty($period['test_ready'])) {
-            return ['warning', 'Ready to test'];
+        $xmlEnvironment = strtoupper(trim((string)($period['xml_environment'] ?? 'DISABLED')));
+        if ($xmlEnvironment === 'LIVE') {
+            if (!empty($period['live_ready'])) {
+                return ['success', 'Ready for LIVE'];
+            }
+            if (!empty($period['test_ready'])) {
+                return ['warning', 'Ready for Test-In-Live'];
+            }
+        } elseif ($xmlEnvironment === 'TEST' && !empty($period['test_ready'])) {
+            return ['warning', 'Ready for TEST'];
         }
         return ['muted', 'Blocked'];
+    }
+
+    private function actionBlockers(array $period, string $xmlEnvironment): string
+    {
+        $fallback = (array)($period['blockers'] ?? []);
+        $testBlockers = array_key_exists('test_blockers', $period)
+            ? (array)$period['test_blockers']
+            : $fallback;
+        $liveBlockers = array_key_exists('live_blockers', $period)
+            ? (array)$period['live_blockers']
+            : $fallback;
+        $groups = match ($xmlEnvironment) {
+            'TEST' => ['TEST' => $testBlockers],
+            'LIVE' => [
+                'Test-In-Live' => $testBlockers,
+                'LIVE' => $liveBlockers,
+            ],
+            default => [],
+        };
+        $html = '';
+        foreach ($groups as $label => $items) {
+            $blockers = array_values(array_unique(array_filter(
+                $this->messages($items),
+                fn(string $blocker): bool => !$this->isCardDependency($blocker)
+                    && !$this->isXmlCredentialBlocker($blocker)
+                    && !str_contains(strtolower($blocker), 'already passed')
+            )));
+            if ($blockers === []) {
+                continue;
+            }
+            $html .= '<div class="summary-grid">';
+            foreach ($blockers as $blocker) {
+                $html .= $this->blockerMetric($label . ' blocker', $blocker);
+            }
+            $html .= '</div>';
+        }
+
+        return $html;
     }
 
     private function submissionLabel(array $submission): string
@@ -480,9 +593,10 @@ final class _hmrc_transmitCard extends CardBaseFramework
         return $html . '</section>';
     }
 
-    private function blockerMetric(string $message): string
+    private function blockerMetric(string $label, string $message): string
     {
-        return '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+        return '<div class="summary-card danger"><div class="summary-label">'
+            . \eel_accounts\Support\Utf8::html($label) . '</div>'
             . '<div class="helper">' . \eel_accounts\Support\Utf8::html($message) . '</div></div>';
     }
 

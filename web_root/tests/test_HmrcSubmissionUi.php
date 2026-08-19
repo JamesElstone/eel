@@ -121,7 +121,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertSame(2, substr_count($html, '<h3 class="card-title">CT Period '));
         $harness->assertTrue(str_contains($html, 'CT Period 1 (2022-09-05 to 2023-09-04):'));
         $harness->assertTrue(str_contains($html, 'CT Period 3 (2023-09-05 to 2023-09-30):'));
-        $harness->assertSame(0, substr_count($html, 'name="intent" value="hmrc_submit_test"'));
+        $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_submit_test"'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_submit_live"'));
         $harness->assertTrue(str_contains(
             $html,
@@ -149,11 +149,14 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertTrue(str_contains($html, '<section class="panel-soft summary-card danger hmrc-transmit-status-board"><div class="status-head"><h3 class="card-title">Filing iXBRL artifacts</h3><span class="badge danger">Not ready</span></div><div class="helper">The current filing iXBRL artifacts are not ready.</div><div class="helper">The computation artifact filing basis is stale.</div></section>'));
         $harness->assertTrue(str_contains($html, 'Run HMRC Test in Live for the current filing body.'));
         $harness->assertTrue(str_contains($html, 'IRMARK-7'));
-        $harness->assertTrue(str_contains($html, '>Transmit Submission</button>'));
-        $harness->assertFalse(str_contains($html, '>Test</button>'));
+        $harness->assertSame(2, substr_count($html, '>Transmit Submission to Test-In-Live</button>'));
+        $harness->assertSame(2, substr_count($html, '>Transmit Submission to Live</button>'));
+        $harness->assertTrue(str_contains($html, 'Ready for Test-In-Live'));
         $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
-        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Transmit Tax Return"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Run Test-In-Live"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Transmit LIVE Tax Return"'));
         $harness->assertTrue(str_contains($html, 'data-chicken-button-class="button danger"'));
+        $harness->assertTrue(str_contains($html, 'does not file the return or send it to HMRC back-end systems'));
         $harness->assertTrue(str_contains($html, 'sends tax return information outside EEL Accounts'));
         foreach (['declaration_name', 'declaration_status', 'original_unfiled_confirmed',
                   'authority_confirmed', 'declaration_confirmed'] as $field) {
@@ -162,8 +165,67 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertSame(2, substr_count($html, '<h3>Transmit Submission</h3>'));
         $harness->assertFalse(str_contains($html, 'supplementary_scope_confirmed'));
         $harness->assertFalse(str_contains($html, 'A successful TIL result for the current body and source manifest is required before LIVE submission.'));
+        $harness->assertSame(1, preg_match('/name="ct_period_id" value="6"[\s\S]*?<button class="button primary" type="submit" name="intent" value="hmrc_submit_test" data-chicken-check/', $html));
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="6"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" disabled/', $html));
         $harness->assertSame(1, preg_match('/name="ct_period_id" value="7"[\s\S]*?<button class="button danger" type="submit" name="intent" value="hmrc_submit_live" disabled data-chicken-check/', $html));
+    });
+
+    $harness->check(_hmrc_transmitCard::class, 'moves from Test-In-Live readiness to LIVE readiness for the matching body', static function () use ($harness, $card): void {
+        $dependencies = [
+            ['label' => 'Disclosures and filing basis', 'ready' => true],
+            ['label' => 'CT-period filing basis', 'ready' => true],
+            ['label' => 'CT600 source model', 'ready' => true],
+            ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+        ];
+        $html = $card->render([
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'LIVE',
+                'test_environment' => 'TIL',
+                'live_environment' => 'LIVE',
+                'environments' => [
+                    'TIL' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                    'LIVE' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'LIVE',
+                    'sequence_no' => 1,
+                    'period_start' => '2022-09-05',
+                    'period_end' => '2023-09-04',
+                    'test_ready' => true,
+                    'live_ready' => false,
+                    'filing_dependencies' => $dependencies,
+                    'test_blockers' => [],
+                    'live_blockers' => ['The exact current filing body must pass HMRC Test in Live before LIVE filing.'],
+                ], [
+                    'ct_period_id' => 7,
+                    'xml_environment' => 'LIVE',
+                    'sequence_no' => 2,
+                    'period_start' => '2023-09-05',
+                    'period_end' => '2023-09-30',
+                    'test_ready' => false,
+                    'live_ready' => true,
+                    'latest_til_attempt' => ['business_outcome' => 'til_validated'],
+                    'filing_dependencies' => $dependencies,
+                    'test_blockers' => ['This exact filing body has already passed HMRC Test in Live.'],
+                    'live_blockers' => [],
+                ]],
+            ]],
+        ]);
+
+        $secondStart = strpos($html, 'CT Period 2 (2023-09-05 to 2023-09-30):');
+        $harness->assertTrue(is_int($secondStart) && $secondStart > 0);
+        $first = substr($html, 0, (int)$secondStart);
+        $second = substr($html, (int)$secondStart);
+        $harness->assertTrue(str_contains($first, 'Ready for Test-In-Live'));
+        $harness->assertTrue(str_contains($first, 'name="intent" value="hmrc_submit_test" data-chicken-check'));
+        $harness->assertTrue(str_contains($first, 'name="intent" value="hmrc_submit_live" disabled'));
+        $harness->assertTrue(str_contains($second, 'Ready for LIVE'));
+        $harness->assertTrue(str_contains($second, 'name="intent" value="hmrc_submit_test" disabled'));
+        $harness->assertTrue(str_contains($second, 'name="intent" value="hmrc_submit_live" data-chicken-check'));
+        $harness->assertFalse(str_contains($second, 'Test-In-Live blocker</div><div class="helper">This exact filing body has already passed'));
     });
 
     $harness->check(_hmrc_transmitCard::class, 'shows request-file generation only with developer options enabled', static function () use ($harness, $card): void {
@@ -209,16 +271,22 @@ $harness->run(_hmrc_transmitCard::class, static function (
             $developer = $card->render($context);
             $harness->assertTrue(str_contains(
                 $developer,
-                'name="intent" value="hmrc_generate_request">Generate Request File</button>'
+                'name="request_environment" value="TEST"'
             ));
+            $harness->assertTrue(str_contains($developer, '>Generate TEST Request File</button>'));
+            $harness->assertFalse(str_contains($developer, '>Generate Test-In-Live Request File</button>'));
+            $harness->assertFalse(str_contains($developer, '>Generate LIVE Request File</button>'));
             $harness->assertTrue(str_contains(
                 $developer,
-                'class="button danger" type="submit" name="intent" value="hmrc_submit_test"'
+                'class="button primary" type="submit" name="intent" value="hmrc_submit_test"'
             ));
+            $harness->assertTrue(str_contains($developer, '>Transmit Submission to Test</button>'));
+            $harness->assertFalse(str_contains($developer, 'name="intent" value="hmrc_submit_live"'));
+            $harness->assertFalse(str_contains($developer, '>Transmit Submission to Test-In-Live</button>'));
             $harness->assertTrue(str_contains($developer, 'data-chicken-check="true"'));
             $harness->assertTrue(str_contains($developer, 'to HMRC TEST?'));
-            $harness->assertTrue(str_contains($developer, 'sends tax return information outside EEL Accounts'));
-            $harness->assertTrue(str_contains($developer, 'data-chicken-button-class="button danger"'));
+            $harness->assertTrue(str_contains($developer, 'does not file the return'));
+            $harness->assertTrue(str_contains($developer, 'data-chicken-button-class="button primary"'));
 
             $context['services']['hmrc_ct600_status']['environments']['TEST'] = [
                 'ready' => false,
@@ -228,12 +296,60 @@ $harness->run(_hmrc_transmitCard::class, static function (
             $withoutCredentials = $card->render($context);
             $harness->assertTrue(str_contains(
                 $withoutCredentials,
-                'name="intent" value="hmrc_generate_request">Generate Request File</button>'
+                '>Generate TEST Request File</button>'
             ));
             $harness->assertTrue(str_contains(
                 $withoutCredentials,
                 'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'
             ));
+        } finally {
+            AppConfigurationStore::set('developer_options', (bool)$previous);
+        }
+    });
+
+    $harness->check(_hmrc_transmitCard::class, 'renders explicit TEST TIL and LIVE request-file controls in LIVE mode', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'LIVE',
+                'test_environment' => 'TIL',
+                'live_environment' => 'LIVE',
+                'environments' => [
+                    'TIL' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                    'LIVE' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'LIVE',
+                    'period_start' => '2022-09-05',
+                    'period_end' => '2023-09-04',
+                    'test_ready' => true,
+                    'live_ready' => false,
+                    'filing_dependencies' => [
+                        ['label' => 'Disclosures and filing basis', 'ready' => true],
+                        ['label' => 'CT-period filing basis', 'ready' => true],
+                        ['label' => 'CT600 source model', 'ready' => true],
+                        ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+                    ],
+                    'test_blockers' => [],
+                    'live_blockers' => ['The exact current filing body must pass HMRC Test in Live before LIVE filing.'],
+                ]],
+            ]],
+        ];
+        $previous = AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render($context);
+            foreach ([
+                'TEST' => 'Generate TEST Request File',
+                'TIL' => 'Generate Test-In-Live Request File',
+                'LIVE' => 'Generate LIVE Request File',
+            ] as $mode => $label) {
+                $harness->assertTrue(str_contains($html, 'name="request_environment" value="' . $mode . '"'));
+                $harness->assertTrue(str_contains($html, '>' . $label . '</button>'));
+            }
+            $harness->assertSame(3, substr_count($html, 'name="intent" value="hmrc_generate_request"'));
         } finally {
             AppConfigurationStore::set('developer_options', (bool)$previous);
         }
@@ -297,7 +413,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         try {
             AppConfigurationStore::set('developer_options', false);
             $standard = $card->render($context);
-            $harness->assertTrue(str_contains($standard, 'HMRC Gateway rejection'));
+            $harness->assertTrue(str_contains($standard, 'HMRC TEST Gateway rejection'));
             $harness->assertTrue(str_contains($standard, '1046: Authentication Failure'));
             $harness->assertTrue(str_contains($standard, 'HMRC / XML / CT600_XML / TEST'));
             $harness->assertTrue(str_contains($standard, 'Configure HMRC XML Credentials'));
@@ -312,6 +428,72 @@ $harness->run(_hmrc_transmitCard::class, static function (
             $harness->assertTrue(str_contains($developer, 'data-chicken-title="Retry HMRC transmission"'));
             $harness->assertTrue(str_contains($developer, 'data-chicken-confirm-text="Retry Transmission"'));
             $harness->assertTrue(str_contains($developer, 'Create a new audited HMRC submission'));
+        } finally {
+            AppConfigurationStore::set('developer_options', (bool)$previous);
+        }
+    });
+
+    $harness->check(_hmrc_transmitCard::class, 'keeps Test-In-Live and LIVE Gateway retries independently reachable', static function () use ($harness, $card): void {
+        $dependencies = [
+            ['label' => 'Disclosures and filing basis', 'ready' => true],
+            ['label' => 'CT-period filing basis', 'ready' => true],
+            ['label' => 'CT600 source model', 'ready' => true],
+            ['label' => 'Filing iXBRL artifacts', 'ready' => true],
+        ];
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 79],
+            'services' => ['hmrc_ct600_status' => [
+                'success' => true,
+                'xml_environment' => 'LIVE',
+                'test_environment' => 'TIL',
+                'live_environment' => 'LIVE',
+                'environments' => [
+                    'TIL' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                    'LIVE' => ['ready' => true, 'credentials_configured' => true, 'blockers' => []],
+                ],
+                'periods' => [[
+                    'ct_period_id' => 6,
+                    'xml_environment' => 'LIVE',
+                    'period_start' => '2022-09-05',
+                    'period_end' => '2023-09-04',
+                    'test_ready' => false,
+                    'live_ready' => false,
+                    'test_gateway_retry_ready' => true,
+                    'test_gateway_rejection' => [
+                        'id' => 18,
+                        'hmrc_response_summary' => '1046: Test-In-Live authentication failed.',
+                    ],
+                    'filing_dependencies' => $dependencies,
+                    'test_blockers' => ['HMRC definitively rejected this exact filing body.'],
+                    'live_blockers' => ['The exact current filing body must pass HMRC Test in Live before LIVE filing.'],
+                ], [
+                    'ct_period_id' => 7,
+                    'xml_environment' => 'LIVE',
+                    'period_start' => '2023-09-05',
+                    'period_end' => '2023-09-30',
+                    'test_ready' => false,
+                    'live_ready' => false,
+                    'live_gateway_retry_ready' => true,
+                    'live_gateway_rejection' => [
+                        'id' => 19,
+                        'hmrc_response_summary' => 'LIVE Gateway rejected the submission.',
+                    ],
+                    'filing_dependencies' => $dependencies,
+                    'test_blockers' => ['This exact filing body has already passed HMRC Test in Live.'],
+                    'live_blockers' => ['HMRC definitively rejected this exact filing body.'],
+                ]],
+            ]],
+        ];
+        $previous = AppConfigurationStore::get('developer_options', false);
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $html = $card->render($context);
+            $harness->assertTrue(str_contains($html, 'HMRC Test-In-Live Gateway rejection'));
+            $harness->assertTrue(str_contains($html, 'HMRC LIVE Gateway rejection'));
+            $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_retry_test"'));
+            $harness->assertTrue(str_contains($html, '>Retry Test-In-Live Transmission</button>'));
+            $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_retry_live"'));
+            $harness->assertTrue(str_contains($html, '>Retry LIVE Transmission</button>'));
         } finally {
             AppConfigurationStore::set('developer_options', (bool)$previous);
         }
@@ -359,12 +541,12 @@ $harness->run(_hmrc_transmitCard::class, static function (
         ));
         $harness->assertTrue(str_contains(
             $html,
-            '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+            '<div class="summary-card danger"><div class="summary-label">TEST blocker</div>'
             . '<div class="helper">The current CT600 XML artifact is not ready. Generate it from iXBRL Generation.</div></div>'
         ));
         $harness->assertTrue(str_contains(
             $html,
-            '<div class="summary-card danger"><div class="summary-label">Submission blocker</div>'
+            '<div class="summary-card danger"><div class="summary-label">TEST blocker</div>'
             . '<div class="helper">The prepared CT600 XML has a stale or mismatched accounts iXBRL hash.</div></div>'
         ));
         $harness->assertFalse(str_contains(
@@ -406,8 +588,9 @@ $harness->run(_hmrc_transmitCard::class, static function (
         $harness->assertFalse(str_contains($html, 'name="declaration_name"'));
         $harness->assertFalse(str_contains($html, 'name="original_unfiled_confirmed"'));
         $harness->assertTrue(str_contains($html, '<h3>Transmit Submission</h3>'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_submit_test" disabled data-chicken-check="true"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_submit_test"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_submit_live"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_generate_request"'));
         $harness->assertFalse(str_contains($html, 'name="intent" value="hmrc_poll"'));
     });
 
@@ -421,6 +604,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
                 'environments' => [],
                 'periods' => [[
                     'ct_period_id' => 6,
+                    'xml_environment' => 'LIVE',
                     'period_start' => '2025-01-01',
                     'period_end' => '2025-12-31',
                     'test_ready' => false,
@@ -801,12 +985,21 @@ $harness->run(HmrcSubmissionAction::class, static function (
         foreach ([
             'Checking the selected HMRC transmission and CT Period',
             'Preparing the approved return for LIVE HMRC transmission',
-            'Preparing the exact HMRC GovTalk request without transmitting it',
+            'Preparing the exact',
+            'HMRC GovTalk request without transmitting it',
             'Local HMRC response reprocessing is complete; no request was sent to HMRC',
             'HMRC transmission processing is complete',
         ] as $progressMessage) {
             $harness->assertTrue(str_contains($source, $progressMessage));
         }
+        $harness->assertTrue(str_contains(
+            $source,
+            '$requestEnvironment = strtoupper(trim((string)$request->input(\'request_environment\', \'\')))'
+        ));
+        $harness->assertTrue(str_contains(
+            $source,
+            '$requestEnvironment !== \'\' ? $requestEnvironment : null'
+        ));
         $harness->assertTrue(str_contains($source, '$submissionId !== $authorisedSubmissionId'));
         foreach (['$request->isPost()', 'isValidCsrfToken($csrfToken)', 'RoleAssignmentService::ADMIN_ROLE_ID'] as $securityGate) {
             $harness->assertTrue(str_contains($source, $securityGate));

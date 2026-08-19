@@ -372,9 +372,32 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     if (!mkdir($artifactDirectory, 0700, true) && !is_dir($artifactDirectory)) {
                         throw new RuntimeException('Unable to create the request-file test directory.');
                     }
-                    $body = '<IRenvelope xmlns="http://www.govtalk.gov.uk/taxation/CT/5">'
-                        . '<IRheader><Keys><Key Type="UTR">0123456789</Key></Keys></IRheader>'
+                    $unmarkedBody = '<IRenvelope xmlns="http://www.govtalk.gov.uk/taxation/CT/5">'
+                        . '<IRheader><Keys><Key Type="UTR">0123456789</Key></Keys>'
+                        . '<Sender>Company</Sender></IRheader>'
                         . '<CompanyTaxReturn/></IRenvelope>';
+                    $marked = (new \eel_accounts\Service\HmrcIrmarkService())->apply(
+                        '<GovTalkMessage xmlns="http://www.govtalk.gov.uk/CM/envelope">'
+                        . '<EnvelopeVersion>2.0</EnvelopeVersion><Header><MessageDetails/></Header>'
+                        . '<GovTalkDetails><Keys/></GovTalkDetails><Body>' . $unmarkedBody
+                        . '</Body></GovTalkMessage>'
+                    );
+                    if (empty($marked['ok'])) {
+                        throw new RuntimeException('Unable to IRmark the request-file CT600 fixture.');
+                    }
+                    $markedDocument = new DOMDocument();
+                    $markedDocument->loadXML((string)$marked['xml'], LIBXML_NONET | LIBXML_NOBLANKS);
+                    $markedXpath = new DOMXPath($markedDocument);
+                    $markedNodes = $markedXpath->query(
+                        '/*[local-name()="GovTalkMessage"]/*[local-name()="Body"]/*'
+                    );
+                    $markedNode = $markedNodes === false ? null : $markedNodes->item(0);
+                    $body = $markedNode instanceof DOMElement
+                        ? (string)$markedDocument->saveXML($markedNode)
+                        : '';
+                    if ($body === '') {
+                        throw new RuntimeException('Unable to extract the IRmarked request-file CT600 fixture.');
+                    }
                     $ct600Path = $artifactDirectory . DIRECTORY_SEPARATOR . 'ct600.xml';
                     if (file_put_contents($ct600Path, $body) !== strlen($body)) {
                         throw new RuntimeException('Unable to create the request-file CT600 fixture.');
@@ -403,8 +426,31 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         'ct600_xml_path' => $ct600Path,
                         'validation' => ['mode' => $mode],
                     ];
-                    $transport = new HmrcCtTestTransport();
-                    $transport->credentialsPlaceholder = true;
+                    $transportCalled = false;
+                    $loadedCredentialProfiles = [];
+                    $transactionSequence = 0;
+                    $transport = new \eel_accounts\Client\HmrcCtTransactionEngineClient(
+                        static function (array $request) use (&$transportCalled): array {
+                            unset($request);
+                            $transportCalled = true;
+                            throw new RuntimeException('Request-file generation must not use HTTP transport.');
+                        },
+                        static function (string $environment) use (&$loadedCredentialProfiles): array {
+                            $loadedCredentialProfiles[] = $environment;
+                            return [
+                                'sender_id' => $environment . '-SENDER',
+                                'password' => $environment . '-PASSWORD',
+                                'software_reference' => $environment === 'TEST' ? '1234' : '9348',
+                                'product' => 'EEL Accounts Tests',
+                                'version' => '1.0',
+                                'email' => 'tests@example.test',
+                            ];
+                        },
+                        static function () use (&$transactionSequence): string {
+                            $transactionSequence++;
+                            return sprintf('FACE%012X', $transactionSequence);
+                        }
+                    );
                     $before = (int)InterfaceDB::fetchColumn(
                         'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
                         ['company_id' => $companyId]
@@ -413,35 +459,116 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         transport: $transport,
                         artifactRoot: $artifactRoot,
                         packagePreparer: $package,
-                        xmlEnvironmentResolver: static fn(): string => 'TEST'
+                        xmlEnvironmentResolver: static fn(): string => 'LIVE'
                     );
-                    $generated = $service->generateRequestFile($companyId, $ctPeriodId, 42);
+                    $generatedByMode = [];
+                    foreach (['TEST', 'TIL', 'LIVE'] as $mode) {
+                        $generatedByMode[$mode] = $service->generateRequestFile(
+                            $companyId,
+                            $ctPeriodId,
+                            42,
+                            null,
+                            $mode
+                        );
+                    }
+                    $defaultLive = $service->generateRequestFile($companyId, $ctPeriodId, 42);
                     $after = (int)InterfaceDB::fetchColumn(
                         'SELECT COUNT(*) FROM hmrc_ct600_submissions WHERE company_id = :company_id',
                         ['company_id' => $companyId]
                     );
 
-                    $h->assertTrue((bool)$generated['success']);
-                    $h->assertSame('not_sent', (string)$generated['protocol_state']);
-                    $h->assertSame('TEST', (string)$generated['mode']);
-                    $h->assertSame(0, $transport->submitCalls);
-                    $h->assertSame([], $transport->configurationEnvironments);
+                    $h->assertFalse($transportCalled);
                     $h->assertSame($before, $after);
-                    $h->assertTrue((bool)$generated['credentials_placeholder']);
+                    $h->assertSame(['TEST', 'LIVE', 'LIVE', 'LIVE'], $loadedCredentialProfiles);
+                    $h->assertSame(true, (bool)$defaultLive['success']);
+                    $h->assertSame('LIVE', (string)$defaultLive['mode']);
+                    $expectations = [
+                        'TEST' => [
+                            'endpoint' => 'https://test-transaction-engine.tax.service.gov.uk/submission',
+                            'class' => 'HMRC-CT-CT600',
+                            'gateway_test' => '1',
+                            'sender' => 'TEST-SENDER',
+                            'password' => 'TEST-PASSWORD',
+                            'vendor' => '1234',
+                        ],
+                        'TIL' => [
+                            'endpoint' => 'https://transaction-engine.tax.service.gov.uk/submission',
+                            'class' => 'HMRC-CT-CT600-TIL',
+                            'gateway_test' => '0',
+                            'sender' => 'LIVE-SENDER',
+                            'password' => 'LIVE-PASSWORD',
+                            'vendor' => '9348',
+                        ],
+                        'LIVE' => [
+                            'endpoint' => 'https://transaction-engine.tax.service.gov.uk/submission',
+                            'class' => 'HMRC-CT-CT600',
+                            'gateway_test' => '0',
+                            'sender' => 'LIVE-SENDER',
+                            'password' => 'LIVE-PASSWORD',
+                            'vendor' => '9348',
+                        ],
+                    ];
+                    foreach ($expectations as $mode => $expected) {
+                        $generated = $generatedByMode[$mode];
+                        $h->assertSame([], (array)($generated['errors'] ?? []));
+                        $h->assertSame(true, (bool)$generated['success']);
+                        $h->assertSame('not_sent', (string)$generated['protocol_state']);
+                        $h->assertSame($mode, (string)$generated['mode']);
+                        $h->assertSame($expected['endpoint'], (string)$generated['endpoint']);
+                        $h->assertFalse((bool)$generated['credentials_placeholder']);
+                        $h->assertTrue(str_contains(
+                            implode(' ', (array)$generated['warnings']),
+                            'contains configured HMRC sender credentials'
+                        ));
+                        $h->assertSame($artifactDirectory, dirname((string)$generated['path']));
+                        $h->assertTrue(is_file((string)$generated['path']));
+                        $h->assertTrue(str_starts_with(
+                            (string)$generated['filename'],
+                            'govtalk_ctperiod-98623_' . strtolower($mode) . '_'
+                        ));
+                        $stored = (string)file_get_contents((string)$generated['path']);
+                        $h->assertTrue(str_contains($stored, '<Class>' . $expected['class'] . '</Class>'));
+                        $h->assertTrue(str_contains(
+                            $stored,
+                            '<GatewayTest>' . $expected['gateway_test'] . '</GatewayTest>'
+                        ));
+                        $h->assertTrue(str_contains($stored, '<SenderID>' . $expected['sender'] . '</SenderID>'));
+                        $h->assertTrue(str_contains($stored, '<Value>' . $expected['password'] . '</Value>'));
+                        $h->assertTrue(str_contains($stored, '<URI>' . $expected['vendor'] . '</URI>'));
+                        $h->assertSame(hash('sha256', $stored), (string)$generated['sha256']);
+                        $h->assertSame(strlen($stored), (int)$generated['bytes']);
+                    }
+
+                    $testConfiguredService = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService(
+                        transport: $transport,
+                        artifactRoot: $artifactRoot,
+                        packagePreparer: $package,
+                        xmlEnvironmentResolver: static fn(): string => 'TEST'
+                    );
+                    $disallowed = $testConfiguredService->generateRequestFile(
+                        $companyId,
+                        $ctPeriodId,
+                        42,
+                        null,
+                        'TIL'
+                    );
+                    $h->assertFalse((bool)$disallowed['success']);
                     $h->assertTrue(str_contains(
-                        implode(' ', (array)$generated['warnings']),
-                        'placeholder sender credentials'
+                        implode(' ', (array)$disallowed['errors']),
+                        'not permitted'
                     ));
-                    $h->assertSame($artifactDirectory, dirname((string)$generated['path']));
-                    $h->assertTrue(is_file((string)$generated['path']));
-                    $h->assertTrue(str_starts_with(
-                        (string)$generated['filename'],
-                        'govtalk_ctperiod-98623_test_'
+                    $invalid = $service->generateRequestFile(
+                        $companyId,
+                        $ctPeriodId,
+                        42,
+                        null,
+                        'PRODUCTION'
+                    );
+                    $h->assertFalse((bool)$invalid['success']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$invalid['errors']),
+                        'must be TEST, TIL or LIVE'
                     ));
-                    $stored = (string)file_get_contents((string)$generated['path']);
-                    $h->assertTrue(str_contains($stored, '<GovTalkMessage>'));
-                    $h->assertSame(hash('sha256', $stored), (string)$generated['sha256']);
-                    $h->assertSame(strlen($stored), (int)$generated['bytes']);
                 } finally {
                     InterfaceDB::prepareExecute('DELETE FROM companies WHERE id = :id', ['id' => $companyId]);
                 }
@@ -537,49 +664,63 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         . '<IRmark Type="generic">FIXTURE</IRmark></IRheader>'
                         . '<CompanyTaxReturn/></IRenvelope>';
                     $bodyHash = hash('sha256', $body);
-                    $package = static fn(int $requestedCompanyId, int $requestedCtPeriodId, string $mode): array => [
-                        'ok' => true,
-                        'errors' => [],
-                        'warnings' => [],
-                        'company_id' => $requestedCompanyId,
-                        'accounting_period_id' => $accountingPeriodId,
-                        'ct_period_id' => $requestedCtPeriodId,
-                        'utr' => '0123456789',
-                        'filing_body_xml' => $body,
-                        'source_manifest' => $manifest,
-                        'body_sha256' => $bodyHash,
-                        'accounts_ixbrl_path' => 'fixture/accounts.html',
-                        'accounts_artifact_id' => 11,
-                        'accounts_validation_run_id' => 12,
-                        'accounts_run_id' => 1,
-                        'accounts_sha256' => str_repeat('a', 64),
-                        'computations_ixbrl_path' => 'fixture/computations.html',
-                        'computation_run_id' => 2,
-                        'computation_validation_run_id' => 13,
-                        'computations_sha256' => str_repeat('b', 64),
-                        'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
-                        'year_end_locked_at' => '2026-07-18 10:00:00',
-                        'irmark' => 'FIXTURE',
-                        'schema_version' => 'V3/V1.994',
-                        'validation' => ['status' => 'passed', 'mode' => $mode],
-                        'approval_declaration' => [
-                            'declarant_name' => 'Jane Director',
-                            'declarant_status' => 'Director',
-                            'declaration_at' => '2026-07-19 10:00:00',
-                            'approved_at' => '2026-07-19 10:00:00',
-                            'approved_by' => 'user:42',
-                            'declaration_confirmed' => true,
-                            'authority_confirmed' => true,
-                            'original_unfiled_confirmed' => true,
-                        ],
-                    ];
-                    $currentManifest = static fn(int $requestedCompanyId, int $requestedCtPeriodId): array => [
-                        'ok' => $requestedCompanyId === $companyId && $requestedCtPeriodId === $ctPeriodId,
-                        'errors' => [],
-                        'warnings' => [],
-                        'source_manifest' => $manifest,
-                        'body_sha256' => $bodyHash,
-                    ];
+                    $currentBody = $body;
+                    $currentManifestData = $manifest;
+                    $package = static function (
+                        int $requestedCompanyId,
+                        int $requestedCtPeriodId,
+                        string $mode
+                    ) use ($accountingPeriodId, &$currentBody, &$currentManifestData): array {
+                        return [
+                            'ok' => true,
+                            'errors' => [],
+                            'warnings' => [],
+                            'company_id' => $requestedCompanyId,
+                            'accounting_period_id' => $accountingPeriodId,
+                            'ct_period_id' => $requestedCtPeriodId,
+                            'utr' => '0123456789',
+                            'filing_body_xml' => $currentBody,
+                            'source_manifest' => $currentManifestData,
+                            'body_sha256' => hash('sha256', $currentBody),
+                            'accounts_ixbrl_path' => 'fixture/accounts.html',
+                            'accounts_artifact_id' => 11,
+                            'accounts_validation_run_id' => 12,
+                            'accounts_run_id' => 1,
+                            'accounts_sha256' => str_repeat('a', 64),
+                            'computations_ixbrl_path' => 'fixture/computations.html',
+                            'computation_run_id' => 2,
+                            'computation_validation_run_id' => 13,
+                            'computations_sha256' => str_repeat('b', 64),
+                            'hmrc_ct_filing_approval_hash' => str_repeat('c', 64),
+                            'year_end_locked_at' => '2026-07-18 10:00:00',
+                            'irmark' => 'FIXTURE',
+                            'schema_version' => 'V3/V1.994',
+                            'validation' => ['status' => 'passed', 'mode' => $mode],
+                            'approval_declaration' => [
+                                'declarant_name' => 'Jane Director',
+                                'declarant_status' => 'Director',
+                                'declaration_at' => '2026-07-19 10:00:00',
+                                'approved_at' => '2026-07-19 10:00:00',
+                                'approved_by' => 'user:42',
+                                'declaration_confirmed' => true,
+                                'authority_confirmed' => true,
+                                'original_unfiled_confirmed' => true,
+                            ],
+                        ];
+                    };
+                    $currentManifest = static function (
+                        int $requestedCompanyId,
+                        int $requestedCtPeriodId
+                    ) use ($companyId, $ctPeriodId, &$currentBody, &$currentManifestData): array {
+                        return [
+                            'ok' => $requestedCompanyId === $companyId
+                                && $requestedCtPeriodId === $ctPeriodId,
+                            'errors' => [],
+                            'warnings' => [],
+                            'source_manifest' => $currentManifestData,
+                            'body_sha256' => hash('sha256', $currentBody),
+                        ];
+                    };
                     $transport = new HmrcCtTestTransport();
                     $transport->submitResponses[] = [
                         'success' => true,
@@ -680,6 +821,13 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                         xmlEnvironmentResolver: static fn(): string => 'LIVE',
                         filingReadinessResolver: $filingReadiness
                     );
+                    $beforeTil = $service->submitLive($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$beforeTil['success']);
+                    $h->assertTrue(str_contains(
+                        implode(' ', (array)$beforeTil['errors']),
+                        'must pass HMRC Test in Live'
+                    ));
+                    $h->assertSame(0, $transport->submitCalls);
                     $submitted = $service->submitTest($companyId, $ctPeriodId, 42);
                     $h->assertSame(true, (bool)$submitted['success']);
                     $h->assertSame(true, (bool)$submitted['needs_poll']);
@@ -976,6 +1124,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     $h->assertSame('The computation artifact filing basis is stale.', (string)($dependencies[3]['detail'] ?? ''));
                     $h->assertFalse(array_key_exists('declaration', $status['periods'][0]));
                     $h->assertFalse((bool)$status['periods'][0]['live_ready']);
+
+                    $currentBody = str_replace('<CompanyTaxReturn/>', '<CompanyTaxReturn><Changed/></CompanyTaxReturn>', $body);
+                    $changedBody = $service->submitLive($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$changedBody['success']);
+                    $h->assertSame(1, $transport->submitCalls);
+                    $currentBody = $body;
+                    $currentManifestData = array_replace($manifest, ['basis' => 'fixture-b']);
+                    $changedManifest = $service->submitLive($companyId, $ctPeriodId, 42);
+                    $h->assertFalse((bool)$changedManifest['success']);
+                    $h->assertSame(1, $transport->submitCalls);
+                    $currentManifestData = $manifest;
 
                     $transport->submitResponses[] = [
                         'success' => true,

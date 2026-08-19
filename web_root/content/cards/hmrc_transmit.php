@@ -317,7 +317,6 @@ final class _hmrc_transmitCard extends CardBaseFramework
             $requestModes = match ($xmlEnvironment) {
                 'TEST' => ['TEST' => 'TEST'],
                 'LIVE' => [
-                    'TEST' => 'TEST',
                     'TIL' => 'Test-In-Live',
                     'LIVE' => 'LIVE',
                 ],

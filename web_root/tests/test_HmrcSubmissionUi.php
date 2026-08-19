@@ -307,7 +307,7 @@ $harness->run(_hmrc_transmitCard::class, static function (
         }
     });
 
-    $harness->check(_hmrc_transmitCard::class, 'renders explicit TEST TIL and LIVE request-file controls in LIVE mode', static function () use ($harness, $card): void {
+    $harness->check(_hmrc_transmitCard::class, 'renders only TIL and LIVE request-file controls in LIVE mode', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],
             'services' => ['hmrc_ct600_status' => [
@@ -342,14 +342,15 @@ $harness->run(_hmrc_transmitCard::class, static function (
             AppConfigurationStore::set('developer_options', true);
             $html = $card->render($context);
             foreach ([
-                'TEST' => 'Generate TEST Request File',
                 'TIL' => 'Generate Test-In-Live Request File',
                 'LIVE' => 'Generate LIVE Request File',
             ] as $mode => $label) {
                 $harness->assertTrue(str_contains($html, 'name="request_environment" value="' . $mode . '"'));
                 $harness->assertTrue(str_contains($html, '>' . $label . '</button>'));
             }
-            $harness->assertSame(3, substr_count($html, 'name="intent" value="hmrc_generate_request"'));
+            $harness->assertFalse(str_contains($html, 'name="request_environment" value="TEST"'));
+            $harness->assertFalse(str_contains($html, '>Generate TEST Request File</button>'));
+            $harness->assertSame(2, substr_count($html, 'name="intent" value="hmrc_generate_request"'));
 
             $context['services']['hmrc_ct600_status']['periods'][0]['request_artifacts'] = [
                 'TEST' => [
@@ -373,26 +374,26 @@ $harness->run(_hmrc_transmitCard::class, static function (
             ];
             $withArtifacts = $card->render($context);
             $harness->assertSame(
-                2,
+                1,
                 substr_count($withArtifacts, 'name="intent" value="hmrc_download_request_artifact"')
             );
             $harness->assertSame(
                 1,
                 substr_count($withArtifacts, 'name="intent" value="hmrc_generate_request"')
             );
-            $harness->assertTrue(str_contains($withArtifacts, '>Download TEST Artefact</button>'));
+            $harness->assertFalse(str_contains($withArtifacts, '>Download TEST Artefact</button>'));
             $harness->assertTrue(str_contains($withArtifacts, '>Download Test-In-Live Artefact</button>'));
             $harness->assertTrue(str_contains($withArtifacts, '>Generate LIVE Request File</button>'));
             $harness->assertTrue(str_contains(
                 $withArtifacts,
                 'Download the exact outbound XML sent to HMRC?'
             ));
-            $harness->assertTrue(str_contains(
+            $harness->assertFalse(str_contains(
                 $withArtifacts,
                 'Download the immutable generated HMRC GovTalk XML?'
             ));
             $harness->assertSame(
-                2,
+                1,
                 substr_count($withArtifacts, '<form method="post" action="?page=transmit">')
             );
             $harness->assertFalse(str_contains($withArtifacts, 'generated-test.xml'));

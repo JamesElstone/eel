@@ -10,6 +10,7 @@ declare(strict_types=1);
 class _govtalk_transmission_historyCard extends CardBaseFramework
 {
     private const EXCHANGE_PAGE_SIZE = 10;
+    private const SUBMISSION_AUTHORITY_FIELD = 'submission_history_authority';
 
     public function key(): string { return 'govtalk_transmission_history'; }
 
@@ -33,6 +34,15 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             'history_conversation_authority',
             ''
         )));
+        $submissionAuthority = strtolower(trim((string)$request->input(
+            self::SUBMISSION_AUTHORITY_FIELD,
+            (string)(($pageContext['govtalk_submission_filters'] ?? [])['authority'] ?? '')
+        )));
+        $pageContext['govtalk_submission_filters'] = [
+            'authority' => in_array($submissionAuthority, ['companies_house', 'hmrc'], true)
+                ? $submissionAuthority
+                : '',
+        ];
         $pageContext['govtalk_history'] = [
             'authority' => in_array($authority, ['companies_house', 'hmrc'], true)
                 ? $authority
@@ -64,8 +74,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                    'authority' => ':govtalk_history.authority',
-                    'environment' => ':govtalk_history.environment',
+                    'authority' => ':govtalk_submission_filters.authority',
+                    'environment' => '',
                 ],
             ],
         ];
@@ -85,6 +95,19 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        $company = (array)($context['company'] ?? []);
+
+        return [$this->submissionHistoryTable(
+            (array)(($context['services'] ?? [])['govtalk_submission_history'] ?? []),
+            (int)($company['id'] ?? 0),
+            (int)($company['accounting_period_id'] ?? 0),
+            (bool)AppConfigurationStore::get('developer_options', false),
+            (string)(($context['govtalk_submission_filters'] ?? [])['authority'] ?? '')
+        )];
+    }
+
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
@@ -95,117 +118,211 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         }
 
         $services = (array)($context['services'] ?? []);
-        $submissions = (array)($services['govtalk_submission_history'] ?? []);
+        $table = $this->submissionHistoryTable(
+            (array)($services['govtalk_submission_history'] ?? []),
+            $companyId,
+            $accountingPeriodId,
+            (bool)AppConfigurationStore::get('developer_options', false),
+            (string)(($context['govtalk_submission_filters'] ?? [])['authority'] ?? '')
+        );
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? 'transmit'),
+            'show_card' => $this->key(),
+            self::SUBMISSION_AUTHORITY_FIELD => (string)(
+                ($context['govtalk_submission_filters'] ?? [])['authority'] ?? ''
+            ),
+            '_invalidate_fact' => 'page.context',
+            'cards[]' => [$this->key()],
+        ];
 
-        $developerOptions = (bool)AppConfigurationStore::get('developer_options', false);
-
-        return '<div class="settings-stack">'
-            . $this->submissionTable(
-                $submissions,
-                $companyId,
-                $accountingPeriodId,
-                $developerOptions
-            )
-            . '</div>';
+        return '<div class="settings-stack"><section class="panel-soft">'
+            . $table->render($context, $hiddenFields)
+            . '</section></div>';
     }
 
-    private function submissionTable(
+    protected function submissionHistoryTable(
         array $submissions,
         int $companyId,
         int $accountingPeriodId,
-        bool $developerOptions
-    ): string
+        bool $developerOptions,
+        string $authority
+    ): TableFramework
     {
-        if ($submissions === []) {
-            return '<section class="panel-soft">'
-                . '<div class="helper">No HMRC or Companies House submission attempts are recorded for the current accounting period.</div></section>';
-        }
-        $rows = '';
-        foreach ($submissions as $submission) {
-            if (!is_array($submission)) {
-                continue;
-            }
-            $submissionId = (int)($submission['conversation_id'] ?? 0);
-            $authority = (string)($submission['authority'] ?? '');
-            $statusKey = strtolower(trim((string)($submission['status_key'] ?? '')));
-            $statusAction = '';
-            if ($authority === 'companies_house' && $statusKey === 'pending') {
-                $statusAction = $this->checkCompaniesHouseSubmissionStatusButton(
-                    $companyId,
-                    $accountingPeriodId,
-                    $submissionId
-                );
-            } elseif ($authority === 'hmrc'
-                && in_array($statusKey, ['awaiting_poll', 'delete_pending'], true)) {
-                $statusAction = $this->checkHmrcSubmissionStatusButton(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)($submission['ct_period_id'] ?? 0),
-                    $submissionId,
-                    $statusKey
-                );
-            }
-            $reprocessAction = $authority === 'hmrc'
-                && $developerOptions
-                && !empty($submission['response_reprocess_available'])
-                && (int)($submission['response_reprocess_exchange_id'] ?? 0) > 0
-                ? $this->reprocessHmrcResponseButton(
-                    $companyId,
-                    $accountingPeriodId,
-                    (int)($submission['ct_period_id'] ?? 0),
-                    $submissionId,
-                    (int)$submission['response_reprocess_exchange_id']
-                )
-                : '';
-            $rows .= '<tr><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($submission['authority_label'] ?? '')
-                )
-                . '</td><td>' . $this->submissionReference(
+        $authority = in_array($authority, ['companies_house', 'hmrc'], true) ? $authority : '';
+        $filterFields = [
+            'page' => 'transmit',
+            'show_card' => $this->key(),
+            '_card_refresh' => '1',
+            '_invalidate_fact' => 'page.context',
+            'cards[]' => [$this->key()],
+        ];
+
+        return \eel_accounts\Support\Utf8Table::make('govtalk_submission_history', $submissions)
+            ->filename('govtalk-submission-history')
+            ->exports(true)
+            ->exportLimit(1000)
+            ->empty($authority === ''
+                ? 'No HMRC or Companies House submission attempts are recorded for the current accounting period.'
+                : 'No submission attempts match the selected authority for the current accounting period.')
+            ->classes(wrapperClass: 'table-scroll')
+            ->filterSelect(
+                self::SUBMISSION_AUTHORITY_FIELD,
+                'Authority',
+                [
+                    '' => 'All authorities',
+                    'companies_house' => 'Companies House',
+                    'hmrc' => 'HMRC',
+                ],
+                $authority,
+                $filterFields
+            )
+            ->textColumn('authority_label', 'Authority')
+            ->column(
+                'submission_reference',
+                'Submission',
+                html: fn(array $submission): string => $this->submissionReference(
                     (string)($submission['submission_reference'] ?? ''),
-                    $authority === 'hmrc'
+                    (string)($submission['authority'] ?? '') === 'hmrc'
                         ? (string)($submission['hmrc_document_reference'] ?? '')
                         : ''
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html(
+                ),
+                export: static function (array $submission): string {
+                    return implode("\n", array_filter([
+                        trim((string)($submission['submission_reference'] ?? '')),
+                        trim((string)($submission['hmrc_document_reference'] ?? '')) !== ''
+                            ? 'HMRC ref ' . trim((string)$submission['hmrc_document_reference'])
+                            : '',
+                    ], static fn(string $value): bool => $value !== ''));
+                },
+                preserveExportLineBreaks: true
+            )
+            ->column(
+                'filing_context',
+                'Filing / Period',
+                html: static fn(array $submission): string => \eel_accounts\Support\Utf8::html(
                     (string)($submission['filing_context'] ?? '')
-                )
-                . '<div class="helper">' . \eel_accounts\Support\Utf8::html(
+                ) . '<div class="helper">' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['filing_type'] ?? '')
-                )
-                . '</div></td><td>' . \eel_accounts\Support\Utf8::html(
-                    (string)($submission['environment'] ?? '')
-                )
-                . '</td><td>' . $this->identifierPair(
+                ) . '</div>',
+                export: static function (array $submission): string {
+                    return implode("\n", array_filter([
+                        trim((string)($submission['filing_context'] ?? '')),
+                        trim((string)($submission['filing_type'] ?? '')),
+                    ], static fn(string $value): bool => $value !== ''));
+                },
+                preserveExportLineBreaks: true
+            )
+            ->textColumn('environment', 'Environment')
+            ->column(
+                'transaction_id',
+                'Transaction / Correlation ID',
+                html: fn(array $submission): string => $this->identifierPair(
                     (string)($submission['transaction_id'] ?? ''),
-                    $authority === 'hmrc' ? (string)($submission['correlation_id'] ?? '') : ''
-                )
-                . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['prepared_at'] ?? '')))
-                . '</td><td>' . \eel_accounts\Support\Utf8::html($this->timestamp((string)($submission['submitted_at'] ?? '')))
-                . '</td><td><span class="badge ' . $this->badge((string)(
+                    (string)($submission['authority'] ?? '') === 'hmrc'
+                        ? (string)($submission['correlation_id'] ?? '')
+                        : ''
+                ),
+                export: static function (array $submission): string {
+                    return implode("\n", array_filter([
+                        trim((string)($submission['transaction_id'] ?? '')),
+                        trim((string)($submission['correlation_id'] ?? '')),
+                    ], static fn(string $value): bool => $value !== ''));
+                },
+                preserveExportLineBreaks: true
+            )
+            ->column(
+                'prepared_at',
+                'Prepared',
+                html: fn(array $submission): string => \eel_accounts\Support\Utf8::html(
+                    $this->timestamp((string)($submission['prepared_at'] ?? ''))
+                ),
+                export: static fn(array $submission): string => (string)($submission['prepared_at'] ?? '')
+            )
+            ->column(
+                'submitted_at',
+                'Submitted',
+                html: fn(array $submission): string => \eel_accounts\Support\Utf8::html(
+                    $this->timestamp((string)($submission['submitted_at'] ?? ''))
+                ),
+                export: static fn(array $submission): string => (string)($submission['submitted_at'] ?? '')
+            )
+            ->column(
+                'latest_status',
+                'Latest status',
+                html: fn(array $submission): string => '<span class="badge ' . $this->badge((string)(
                     $submission['status_tone'] ?? $submission['status_key'] ?? ''
-                )) . '">'
-                . \eel_accounts\Support\Utf8::html(
+                )) . '">' . \eel_accounts\Support\Utf8::html(
                     (string)($submission['latest_status'] ?? 'Unknown')
+                ) . '</span>',
+                export: static fn(array $submission): string => (string)(
+                    $submission['latest_status'] ?? 'Unknown'
                 )
-                . '</span></td><td><form method="post" action="?page=transmit" data-ajax="true">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
-                . '<input type="hidden" name="page" value="transmit">'
-                . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
-                . '<input type="hidden" name="_card_refresh" value="1">'
-                . '<input type="hidden" name="_invalidate_fact" value="govtalk.exchanges.selection">'
-                . '<input type="hidden" name="cards[]" value="govtalk_exchanges">'
-                . '<input type="hidden" name="history_conversation_authority" value="'
-                . \eel_accounts\Support\Utf8::html($authority) . '">'
-                . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
-                . '<button class="button primary" type="submit">View Conversation</button></form>'
-                . $statusAction . $reprocessAction . '</td></tr>';
-        }
+            )
+            ->column(
+                'actions',
+                'Actions',
+                html: fn(array $submission): string => $this->submissionActions(
+                    $submission,
+                    $companyId,
+                    $accountingPeriodId,
+                    $developerOptions
+                ),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
 
-        return '<section class="panel-soft">'
-            . '<div class="table-scroll"><table><thead><tr><th>Authority</th><th>Submission</th>'
-            . '<th>Filing / Period</th><th>Environment</th><th>Transaction / Correlation ID</th><th>Prepared</th>'
-            . '<th>Submitted</th><th>Latest status</th>'
-            . '<th>Actions</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
+    private function submissionActions(
+        array $submission,
+        int $companyId,
+        int $accountingPeriodId,
+        bool $developerOptions
+    ): string {
+        $submissionId = (int)($submission['conversation_id'] ?? 0);
+        $authority = (string)($submission['authority'] ?? '');
+        $statusKey = strtolower(trim((string)($submission['status_key'] ?? '')));
+        $statusAction = '';
+        if ($authority === 'companies_house' && $statusKey === 'pending') {
+            $statusAction = $this->checkCompaniesHouseSubmissionStatusButton(
+                $companyId,
+                $accountingPeriodId,
+                $submissionId
+            );
+        } elseif ($authority === 'hmrc'
+            && in_array($statusKey, ['awaiting_poll', 'delete_pending'], true)) {
+            $statusAction = $this->checkHmrcSubmissionStatusButton(
+                $companyId,
+                $accountingPeriodId,
+                (int)($submission['ct_period_id'] ?? 0),
+                $submissionId,
+                $statusKey
+            );
+        }
+        $reprocessAction = $authority === 'hmrc'
+            && $developerOptions
+            && !empty($submission['response_reprocess_available'])
+            && (int)($submission['response_reprocess_exchange_id'] ?? 0) > 0
+            ? $this->reprocessHmrcResponseButton(
+                $companyId,
+                $accountingPeriodId,
+                (int)($submission['ct_period_id'] ?? 0),
+                $submissionId,
+                (int)$submission['response_reprocess_exchange_id']
+            )
+            : '';
+
+        return '<form method="post" action="?page=transmit" data-ajax="true">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
+            . '<input type="hidden" name="page" value="transmit">'
+            . '<input type="hidden" name="show_card" value="govtalk_transmission_history">'
+            . '<input type="hidden" name="_card_refresh" value="1">'
+            . '<input type="hidden" name="_invalidate_fact" value="govtalk.exchanges.selection">'
+            . '<input type="hidden" name="cards[]" value="govtalk_exchanges">'
+            . '<input type="hidden" name="history_conversation_authority" value="'
+            . \eel_accounts\Support\Utf8::html($authority) . '">'
+            . '<input type="hidden" name="history_conversation_id" value="' . $submissionId . '">'
+            . '<button class="button primary" type="submit">View Conversation</button></form>'
+            . $statusAction . $reprocessAction;
     }
 
     private function checkCompaniesHouseSubmissionStatusButton(

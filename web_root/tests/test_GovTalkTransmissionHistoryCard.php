@@ -23,11 +23,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     (string)$services[0]['params']['accountingPeriodId']
                 );
                 $harness->assertSame(
-                    ':govtalk_history.authority',
+                    ':govtalk_submission_filters.authority',
                     (string)$services[0]['params']['authority']
                 );
                 $harness->assertSame(
-                    ':govtalk_history.environment',
+                    '',
                     (string)$services[0]['params']['environment']
                 );
                 $harness->assertTrue(str_contains(
@@ -45,7 +45,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 AppConfigurationStore::set('developer_options', false);
                 try {
                     $context = [
+                        'page' => [
+                            'page_id' => 'transmit',
+                            'csrf_token' => 'test-csrf-token',
+                        ],
                         'company' => ['id' => 49, 'accounting_period_id' => 79],
+                        'govtalk_submission_filters' => ['authority' => ''],
                         'govtalk_history' => [
                             'authority' => '',
                             'environment' => '',
@@ -145,6 +150,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->assertTrue(str_contains($html, 'Submission History'));
                     $harness->assertTrue(str_contains(
                         $html,
+                        'data-table-key="govtalk_submission_history"'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        '<label for="table-filter-govtalk_submission_history-submission_history_authority">Authority</label>'
+                    ));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'name="submission_history_authority"'
+                    ));
+                    $submissionFilterPosition = strpos(
+                        $html,
+                        'table-filter-govtalk_submission_history-submission_history_authority'
+                    );
+                    $submissionExportPosition = strpos(
+                        $html,
+                        'name="table_key" value="govtalk_submission_history"'
+                    );
+                    $harness->assertTrue($submissionFilterPosition !== false);
+                    $harness->assertTrue($submissionExportPosition !== false);
+                    $harness->assertTrue($submissionFilterPosition < $submissionExportPosition);
+                    $harness->assertTrue(str_contains(
+                        $html,
                         '<th>Transaction / Correlation ID</th>'
                     ));
                     $harness->assertTrue(str_contains(
@@ -206,7 +234,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'name="_invalidate_fact" value="govtalk.exchanges.selection"'
                     ));
                     $harness->assertTrue(str_contains($html, 'name="cards[]" value="govtalk_exchanges"'));
-                    $harness->assertFalse(str_contains($html, 'name="cards[]" value="govtalk_transmission_history"'));
+                    $harness->assertTrue(str_contains(
+                        $html,
+                        'name="cards[]" value="govtalk_transmission_history"'
+                    ));
                     $harness->assertFalse(str_contains($html, 'Get Submission Status'));
                     $harness->assertSame(2, substr_count($html, 'Check Submission Status'));
                     $harness->assertTrue(str_contains(
@@ -238,9 +269,82 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         $table->exportCsv(),
                         "HMRC-EX-TXN\nHMRC-EX-CORR"
                     ));
+
+                    $submissionTables = $card->tables($context);
+                    $harness->assertCount(1, $submissionTables);
+                    $harness->assertSame(
+                        'govtalk_submission_history',
+                        $submissionTables[0]->key()
+                    );
+                    $submissionCsv = $submissionTables[0]->exportCsv();
+                    $harness->assertTrue(str_contains(
+                        $submissionCsv,
+                        "HMRC-TXN-4\nHMRC-CORR-4"
+                    ));
+                    $harness->assertFalse(str_contains($submissionCsv, 'Actions'));
                 } finally {
                     AppConfigurationStore::set('developer_options', (bool)$previous);
                 }
+            }
+        );
+
+        $harness->check(
+            _govtalk_transmission_historyCard::class,
+            'renders the selected authority and keeps submission and exchange filters independent',
+            static function () use ($harness, $card): void {
+                $request = new RequestFramework(
+                    ['page' => 'transmit'],
+                    [
+                        'submission_history_authority' => 'HMRC',
+                        'history_authority' => 'companies_house',
+                    ],
+                    ['REQUEST_METHOD' => 'POST'],
+                    [],
+                    []
+                );
+                $handled = $card->handle(
+                    $request,
+                    new PageServiceFramework(new AppService(test_tmp_directory())),
+                    ['page' => []],
+                    ActionResultFramework::none()
+                );
+                $harness->assertSame(
+                    'hmrc',
+                    (string)$handled['govtalk_submission_filters']['authority']
+                );
+                $harness->assertSame(
+                    'companies_house',
+                    (string)$handled['govtalk_history']['authority']
+                );
+
+                $context = [
+                    'page' => [
+                        'page_id' => 'transmit',
+                        'csrf_token' => 'test-csrf-token',
+                    ],
+                    'company' => ['id' => 49, 'accounting_period_id' => 79],
+                    'govtalk_submission_filters' => ['authority' => 'hmrc'],
+                    'govtalk_history' => ['authority' => 'companies_house'],
+                    'services' => ['govtalk_submission_history' => []],
+                ];
+
+                $html = $card->render($context);
+                $harness->assertTrue(str_contains(
+                    $html,
+                    '<option value="hmrc" selected>HMRC</option>'
+                ));
+                $harness->assertTrue(str_contains(
+                    $html,
+                    'No submission attempts match the selected authority'
+                ));
+                $harness->assertTrue(str_contains(
+                    $html,
+                    'name="submission_history_authority" value="hmrc"'
+                ));
+                $harness->assertFalse(str_contains(
+                    $html,
+                    'name="history_authority" value="companies_house"'
+                ));
             }
         );
 

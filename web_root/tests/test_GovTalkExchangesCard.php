@@ -19,6 +19,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $card->invalidationFacts(),
                 true
             ));
+            $tables = $card->tables([
+                'company' => ['id' => 49],
+                'govtalk_history' => [],
+                'services' => ['govtalk_exchange_history' => []],
+            ]);
+            $harness->assertCount(1, $tables);
+            $harness->assertSame('govtalk_xml_exchange_history', $tables[0]->key());
             $source = (string)file_get_contents(
                 dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'cards'
                 . DIRECTORY_SEPARATOR . 'govtalk_transmission_history.php'

@@ -39,6 +39,15 @@ final class _govtalk_exchangesCard extends _govtalk_transmission_historyCard
         ];
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->exchangeHistoryTable(
+            (int)(($context['company'] ?? [])['id'] ?? 0),
+            (array)(($context['services'] ?? [])['govtalk_exchange_history'] ?? []),
+            (array)($context['govtalk_history'] ?? [])
+        )];
+    }
+
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);

@@ -692,7 +692,236 @@ $harness->run(HmrcSubmissionAction::class, static function (
                 'submission' => ['environment' => 'LIVE'],
             ])
         );
+        $harness->assertSame(
+            'HMRC Test in Live accepted this filing body. Conversation cleanup remains pending.',
+            $message->invoke($action, 'hmrc_poll', [
+                'business_outcome' => 'til_validated',
+                'protocol_state' => 'delete_pending',
+                'needs_poll' => true,
+                'submission' => ['environment' => 'TIL'],
+            ])
+        );
     });
+
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'automatically completes accepted TEST TIL and LIVE cleanup after the required wait',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'pollWithAutomaticCleanup');
+            $workflow->setAccessible(true);
+            $outcomes = [
+                'TEST' => 'sandbox_passed',
+                'TIL' => 'til_validated',
+                'LIVE' => 'live_accepted',
+            ];
+            foreach ($outcomes as $environment => $outcome) {
+                $slept = [];
+                $reports = [];
+                $calls = 0;
+                $queue = [[
+                    'success' => true,
+                    'protocol_state' => 'delete_pending',
+                    'business_outcome' => $outcome,
+                    'needs_poll' => true,
+                    'poll_after_seconds' => 10,
+                    'errors' => [],
+                    'warnings' => [],
+                    'submission' => ['environment' => $environment],
+                ], [
+                    'success' => true,
+                    'protocol_state' => 'closed',
+                    'business_outcome' => $outcome,
+                    'needs_poll' => false,
+                    'poll_after_seconds' => null,
+                    'errors' => [],
+                    'warnings' => [],
+                    'submission' => [
+                        'environment' => $environment,
+                        'protocol_state' => 'closed',
+                        'business_outcome' => $outcome,
+                    ],
+                ]];
+                $poll = static function (callable $phaseReport) use (&$calls, &$queue): array {
+                    $calls++;
+                    $phaseReport('Fake HMRC protocol phase.', 50);
+                    return (array)array_shift($queue);
+                };
+                $report = static function (string $message, int $percent) use (&$reports): void {
+                    $reports[] = ['message' => $message, 'percent' => $percent];
+                };
+                $subject = new HmrcSubmissionAction(
+                    static function (int $seconds) use (&$slept): void {
+                        $slept[] = $seconds;
+                    }
+                );
+
+                $result = $workflow->invoke($subject, $poll, $report, 'awaiting_poll');
+
+                $harness->assertTrue((bool)$result['success']);
+                $harness->assertSame('closed', (string)$result['protocol_state']);
+                $harness->assertSame($outcome, (string)$result['business_outcome']);
+                $harness->assertSame(2, $calls);
+                $harness->assertSame([5, 5], $slept);
+                $harness->assertTrue(str_contains(
+                    implode(' ', array_column($reports, 'message')),
+                    'Sending the required HMRC conversation cleanup request'
+                ));
+            }
+        }
+    );
+
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'preserves rejection and stops after one failed automatic cleanup attempt',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'pollWithAutomaticCleanup');
+            $workflow->setAccessible(true);
+            $sleeper = static function (int $seconds): void {
+                unset($seconds);
+            };
+            $report = static function (string $message, int $percent): void {
+                unset($message, $percent);
+            };
+
+            $rejectionCalls = 0;
+            $rejectionQueue = [[
+                'success' => false,
+                'protocol_state' => 'delete_pending',
+                'business_outcome' => 'rejected',
+                'needs_poll' => true,
+                'poll_after_seconds' => 0,
+                'errors' => ['HMRC rejected the filing body.'],
+                'warnings' => [],
+            ], [
+                'success' => true,
+                'protocol_state' => 'closed',
+                'business_outcome' => 'rejected',
+                'needs_poll' => false,
+                'errors' => [],
+                'warnings' => [],
+            ]];
+            $rejected = $workflow->invoke(
+                new HmrcSubmissionAction($sleeper),
+                static function (callable $phaseReport) use (&$rejectionCalls, &$rejectionQueue): array {
+                    unset($phaseReport);
+                    $rejectionCalls++;
+                    return (array)array_shift($rejectionQueue);
+                },
+                $report,
+                'awaiting_poll'
+            );
+            $harness->assertFalse((bool)$rejected['success']);
+            $harness->assertSame('closed', (string)$rejected['protocol_state']);
+            $harness->assertSame('rejected', (string)$rejected['business_outcome']);
+            $harness->assertSame(['HMRC rejected the filing body.'], (array)$rejected['errors']);
+            $harness->assertSame(2, $rejectionCalls);
+
+            $failureCalls = 0;
+            $failureQueue = [[
+                'success' => true,
+                'protocol_state' => 'delete_pending',
+                'business_outcome' => 'til_validated',
+                'needs_poll' => true,
+                'poll_after_seconds' => 0,
+                'errors' => [],
+                'warnings' => [],
+            ], [
+                'success' => false,
+                'protocol_state' => 'delete_pending',
+                'business_outcome' => 'til_validated',
+                'needs_poll' => true,
+                'poll_after_seconds' => 10,
+                'errors' => ['HMRC cleanup failed.'],
+                'warnings' => [],
+            ]];
+            $cleanupFailed = $workflow->invoke(
+                new HmrcSubmissionAction($sleeper),
+                static function (callable $phaseReport) use (&$failureCalls, &$failureQueue): array {
+                    unset($phaseReport);
+                    $failureCalls++;
+                    return (array)array_shift($failureQueue);
+                },
+                $report,
+                'awaiting_poll'
+            );
+            $harness->assertFalse((bool)$cleanupFailed['success']);
+            $harness->assertSame('delete_pending', (string)$cleanupFailed['protocol_state']);
+            $harness->assertSame('til_validated', (string)$cleanupFailed['business_outcome']);
+            $harness->assertSame(2, $failureCalls);
+        }
+    );
+
+    $harness->check(
+        HmrcSubmissionAction::class,
+        'does not loop ordinary polls existing cleanup attempts or waits over sixty seconds',
+        static function () use ($harness): void {
+            $workflow = new ReflectionMethod(HmrcSubmissionAction::class, 'pollWithAutomaticCleanup');
+            $workflow->setAccessible(true);
+            $slept = [];
+            $subject = new HmrcSubmissionAction(
+                static function (int $seconds) use (&$slept): void {
+                    $slept[] = $seconds;
+                }
+            );
+            $report = static function (string $message, int $percent): void {
+                unset($message, $percent);
+            };
+
+            foreach ([
+                ['initial' => 'awaiting_poll', 'state' => 'awaiting_poll', 'wait' => 10],
+                ['initial' => 'delete_pending', 'state' => 'delete_pending', 'wait' => 10],
+                ['initial' => 'awaiting_poll', 'state' => 'closed', 'wait' => 0],
+            ] as $case) {
+                $calls = 0;
+                $single = $workflow->invoke(
+                    $subject,
+                    static function (callable $phaseReport) use (&$calls, $case): array {
+                        unset($phaseReport);
+                        $calls++;
+                        return [
+                            'success' => true,
+                            'protocol_state' => $case['state'],
+                            'business_outcome' => '',
+                            'needs_poll' => $case['state'] !== 'closed',
+                            'poll_after_seconds' => $case['wait'],
+                            'errors' => [],
+                            'warnings' => [],
+                        ];
+                    },
+                    $report,
+                    $case['initial']
+                );
+                unset($single);
+                $harness->assertSame(1, $calls);
+            }
+
+            $longWaitCalls = 0;
+            $longWait = $workflow->invoke(
+                $subject,
+                static function (callable $phaseReport) use (&$longWaitCalls): array {
+                    unset($phaseReport);
+                    $longWaitCalls++;
+                    return [
+                        'success' => true,
+                        'protocol_state' => 'delete_pending',
+                        'business_outcome' => 'live_accepted',
+                        'needs_poll' => true,
+                        'poll_after_seconds' => 61,
+                        'errors' => [],
+                        'warnings' => [],
+                    ];
+                },
+                $report,
+                'awaiting_poll'
+            );
+            $harness->assertSame(1, $longWaitCalls);
+            $harness->assertSame([], $slept);
+            $harness->assertTrue(str_contains(
+                implode(' ', (array)$longWait['warnings']),
+                'Use Complete HMRC Cleanup'
+            ));
+        }
+    );
 
     $harness->check(
         HmrcSubmissionAction::class,

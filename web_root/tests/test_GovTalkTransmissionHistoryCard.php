@@ -323,7 +323,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertTrue(str_contains($html, 'Rejected — cleanup required'));
                 $harness->assertTrue(str_contains($html, 'name="intent" value="hmrc_poll"'));
-                $harness->assertTrue(str_contains($html, '>Check Submission Status</button>'));
+                $harness->assertTrue(str_contains($html, '>Complete HMRC Cleanup</button>'));
             }
         );
 
@@ -361,7 +361,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $html,
                     '<span class="badge success">Submitted — cleanup required</span>'
                 ));
-                $harness->assertTrue(str_contains($html, '>Check Submission Status</button>'));
+                $harness->assertTrue(str_contains($html, '>Complete HMRC Cleanup</button>'));
 
                 $tableMethod = new ReflectionMethod($card, 'exchangeHistoryTable');
                 $tableMethod->setAccessible(true);

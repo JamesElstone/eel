@@ -141,7 +141,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
                     $companyId,
                     $accountingPeriodId,
                     (int)($submission['ct_period_id'] ?? 0),
-                    $submissionId
+                    $submissionId,
+                    $statusKey
                 );
             }
             $reprocessAction = $authority === 'hmrc'
@@ -230,7 +231,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         int $ctPeriodId,
-        int $submissionId
+        int $submissionId,
+        string $statusKey
     ): string {
         if ($companyId <= 0
             || $accountingPeriodId <= 0
@@ -238,6 +240,10 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             || $submissionId <= 0) {
             return '';
         }
+
+        $buttonLabel = strtolower(trim($statusKey)) === 'delete_pending'
+            ? 'Complete HMRC Cleanup'
+            : 'Check Submission Status';
 
         return '<form method="post" action="?page=transmit" data-ajax="true" class="actions-row">'
             . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken())
@@ -247,7 +253,8 @@ class _govtalk_transmission_historyCard extends CardBaseFramework
             . '<input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
             . '<input type="hidden" name="ct_period_id" value="' . $ctPeriodId . '">'
             . '<input type="hidden" name="submission_id" value="' . $submissionId . '">'
-            . '<button class="button primary" type="submit">Check Submission Status</button></form>';
+            . '<button class="button primary" type="submit">'
+            . \eel_accounts\Support\Utf8::html($buttonLabel) . '</button></form>';
     }
 
     private function reprocessHmrcResponseButton(

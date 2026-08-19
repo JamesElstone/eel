@@ -9,6 +9,22 @@ declare(strict_types=1);
 
 final class HmrcSubmissionAction implements ActionInterfaceFramework
 {
+    private const AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS = 60;
+    private const WAIT_PROGRESS_CHUNK_SECONDS = 5;
+
+    private readonly Closure $sleeper;
+
+    public function __construct(?callable $sleeper = null)
+    {
+        $this->sleeper = $sleeper === null
+            ? static function (int $seconds): void {
+                if ($seconds > 0) {
+                    sleep($seconds);
+                }
+            }
+            : Closure::fromCallable($sleeper);
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $changedFacts = ['hmrc.ct600.submissions', 'ct.filing', 'page.context'];
@@ -150,7 +166,15 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                         );
                     }
                     $progress->report('Preparing to check the pending HMRC conversation…', 10);
-                    $command = $service->poll($submissionId, $actor, $report);
+                    $command = $this->pollWithAutomaticCleanup(
+                        static fn(callable $phaseReport): array => $service->poll(
+                            $submissionId,
+                            $actor,
+                            $phaseReport
+                        ),
+                        $report,
+                        strtolower(trim((string)($pending['protocol_state'] ?? '')))
+                    );
                 }
             }
             if (!empty($command['success'])) {
@@ -174,6 +198,85 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             $changedFacts,
             (array)($command['warnings'] ?? [])
         );
+    }
+
+    /**
+     * Advance one pending HMRC conversation and, when a status poll discovers
+     * required cleanup, honour HMRC's delay and perform exactly one follow-up.
+     *
+     * @param callable(callable(string,int):void):array<string,mixed> $poll
+     * @param callable(string,int):void $report
+     * @return array<string,mixed>
+     */
+    private function pollWithAutomaticCleanup(
+        callable $poll,
+        callable $report,
+        string $initialProtocolState
+    ): array {
+        $first = $poll($this->phaseReporter($report, 12, 70));
+        $state = strtolower(trim((string)($first['protocol_state'] ?? '')));
+        if ($initialProtocolState !== 'awaiting_poll' || $state !== 'delete_pending') {
+            return $first;
+        }
+
+        $waitSeconds = max(0, (int)($first['poll_after_seconds'] ?? 0));
+        if ($waitSeconds > self::AUTOMATIC_CLEANUP_WAIT_LIMIT_SECONDS) {
+            $first['warnings'] = array_values(array_unique(array_merge(
+                (array)($first['warnings'] ?? []),
+                [
+                    'HMRC returned the final result, but requested a wait of '
+                        . $waitSeconds . ' seconds before conversation cleanup. '
+                        . 'Use Complete HMRC Cleanup after that interval.',
+                ]
+            )));
+            return $first;
+        }
+
+        $remaining = $waitSeconds;
+        $report(
+            'HMRC returned the final result and requires conversation cleanup. '
+                . 'Waiting ' . $remaining . ' seconds before the delete request…',
+            72
+        );
+        while ($remaining > 0) {
+            $chunk = min(self::WAIT_PROGRESS_CHUNK_SECONDS, $remaining);
+            ($this->sleeper)($chunk);
+            $remaining -= $chunk;
+            $elapsed = $waitSeconds - $remaining;
+            $percent = 72 + (int)floor(($elapsed / max(1, $waitSeconds)) * 12);
+            $report(
+                $remaining > 0
+                    ? 'Waiting ' . $remaining . ' more seconds before HMRC conversation cleanup…'
+                    : 'HMRC cleanup wait complete; preparing the delete request…',
+                min(84, $percent)
+            );
+        }
+
+        $report('Sending the required HMRC conversation cleanup request…', 85);
+        $cleanup = $poll($this->phaseReporter($report, 86, 98));
+        $firstOutcome = strtolower(trim((string)($first['business_outcome'] ?? '')));
+        $cleanup['warnings'] = array_values(array_unique(array_merge(
+            (array)($first['warnings'] ?? []),
+            (array)($cleanup['warnings'] ?? [])
+        )));
+        if ($firstOutcome === 'rejected') {
+            $cleanup['success'] = false;
+            $cleanup['errors'] = array_values(array_unique(array_merge(
+                (array)($first['errors'] ?? []),
+                (array)($cleanup['errors'] ?? [])
+            )));
+        }
+
+        return $cleanup;
+    }
+
+    /** @return Closure(string,int):void */
+    private function phaseReporter(callable $report, int $start, int $end): Closure
+    {
+        return static function (string $message, int $percent) use ($report, $start, $end): void {
+            $mapped = $start + (int)floor((max(0, min(100, $percent)) / 100) * ($end - $start));
+            $report($message, min($end, $mapped));
+        };
     }
 
     /** @return array{user_id?:int,error?:string} */
@@ -265,29 +368,35 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return 'The archived HMRC response was reprocessed locally and its recorded result was applied. '
                 . 'No request was sent to HMRC.';
         }
-        if (!empty($command['needs_poll'])) {
-            return 'HMRC acknowledged the submission. Use Check Submission Status after the requested polling interval.';
-        }
         $outcome = strtolower(trim((string)($command['business_outcome']
             ?? ($command['submission']['business_outcome'] ?? '')
             ?? '')));
         $mode = strtoupper(trim((string)($command['mode']
             ?? ($command['submission']['environment'] ?? ''))));
+        $cleanupPending = strtolower(trim((string)($command['protocol_state']
+            ?? ($command['submission']['protocol_state'] ?? '')))) === 'delete_pending';
         if ($outcome === 'sandbox_passed') {
-            return 'HMRC Test accepted this filing body.';
+            return 'HMRC Test accepted this filing body.'
+                . ($cleanupPending ? ' Conversation cleanup remains pending.' : '');
         }
         if ($outcome === 'til_validated') {
-            return 'HMRC Test in Live accepted this filing body.';
+            return 'HMRC Test in Live accepted this filing body.'
+                . ($cleanupPending ? ' Conversation cleanup remains pending.' : '');
         }
         if ($outcome === 'live_accepted') {
-            return 'HMRC accepted the Corporation Tax return.';
+            return 'HMRC accepted the Corporation Tax return.'
+                . ($cleanupPending ? ' Conversation cleanup remains pending.' : '');
         }
         if ($outcome === 'accepted') {
-            return match ($mode) {
+            $message = match ($mode) {
                 'TEST' => 'HMRC Test accepted this filing body.',
                 'TIL' => 'HMRC Test in Live accepted this filing body.',
                 default => 'HMRC accepted the Corporation Tax return.',
             };
+            return $message . ($cleanupPending ? ' Conversation cleanup remains pending.' : '');
+        }
+        if (!empty($command['needs_poll'])) {
+            return 'HMRC acknowledged the submission. Use Check Submission Status after the requested polling interval.';
         }
         return match ($intent) {
             'hmrc_submit_test' => $mode === 'TEST'

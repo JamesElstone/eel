@@ -505,8 +505,7 @@ final class IxbrlAccountsFilingApprovalService
         $progressReport('Checking accounts disclosure completeness and filing profile…');
         $disclosureStatus = (new IxbrlAccountsDisclosureService())->fetch($companyId, $accountingPeriodId);
         if (empty($disclosureStatus['complete']) || empty($disclosureStatus['profile_supported'])) {
-            $errors = (array)($disclosureStatus['profile_errors'] ?? $disclosureStatus['missing_labels'] ?? []);
-            throw new \RuntimeException((string)($errors[0] ?? 'Complete all supported accounts disclosures before approval.'));
+            throw new \RuntimeException($this->disclosureApprovalError($disclosureStatus));
         }
         $progressReport('Checking the supported FRS 105 statutory-accounts profile…');
         $profile = (new Frs105YearEndProfileService())->fetch($companyId, $accountingPeriodId);
@@ -1313,8 +1312,26 @@ final class IxbrlAccountsFilingApprovalService
             'can_approve' => $canApprove, 'approval' => $approval, 'candidate_hash' => $candidate['basis_hash'] ?? null,
             'approval_source' => (string)($approval['approval_source'] ?? 'statutory_accounts'),
             'latest_approval' => $latestApproval ?? $approval,
-            'errors' => array_values(array_unique(array_map('strval', $errors))),
+            'errors' => array_values(array_unique(array_filter(array_map(
+                static fn(mixed $error): string => trim((string)$error),
+                $errors
+            ), static fn(string $error): bool => $error !== ''))),
         ];
+    }
+
+    /** @param array<string,mixed> $status */
+    private function disclosureApprovalError(array $status): string
+    {
+        foreach (['profile_errors', 'missing_labels', 'approval_blockers', 'errors'] as $key) {
+            foreach ((array)($status[$key] ?? []) as $error) {
+                $error = trim((string)$error);
+                if ($error !== '') {
+                    return $error;
+                }
+            }
+        }
+
+        return 'Complete all supported accounts disclosures before approval.';
     }
 
     private function schemaReady(): bool

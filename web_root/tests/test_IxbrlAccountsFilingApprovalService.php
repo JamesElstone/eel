@@ -63,6 +63,30 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ], $errors);
         });
 
+        $h->check($service::class, 'selects the first non-empty disclosure approval error', static function () use ($h, $service): void {
+            $method = new ReflectionMethod($service, 'disclosureApprovalError');
+            $method->setAccessible(true);
+
+            $h->assertSame(
+                'Unsupported profile detail.',
+                $method->invoke($service, [
+                    'profile_errors' => ['', 'Unsupported profile detail.'],
+                    'missing_labels' => ['Companies House revised accounts public-register confirmation'],
+                ])
+            );
+            $h->assertSame(
+                'Companies House revised accounts public-register confirmation',
+                $method->invoke($service, [
+                    'profile_errors' => [],
+                    'missing_labels' => ['', 'Companies House revised accounts public-register confirmation'],
+                ])
+            );
+            $h->assertSame(
+                'Complete all supported accounts disclosures before approval.',
+                $method->invoke($service, ['profile_errors' => [''], 'missing_labels' => []])
+            );
+        });
+
         $h->check($service::class, 'versions the separated accounts and CT filing contracts', static function () use ($h, $service): void {
             $h->assertSame('accounts-filing-approval-v10', $service::BASIS_VERSION);
             $h->assertSame('ct-period-filing-model-v12', $service::CT_BASIS_VERSION);

@@ -1429,6 +1429,40 @@ $harness->run(_ixbrl_generationCard::class, static function (GeneratedServiceCla
         $harness->assertFalse(str_contains((string)$panel, 'Corporation Tax Period 1 Computation iXBRL'));
         $harness->assertFalse(str_contains((string)$panel, 'Companies House Accounting iXBRL'));
     });
+    $harness->check(_ixbrl_generationCard::class, 'shows the exact accounts filing approval error in the generation blocker', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 49, 'accounting_period_id' => 81],
+            'ixbrl' => [
+                'readiness' => [
+                    'can_generate' => false,
+                    'year_end_locked' => true,
+                    'filing_approval' => [
+                        'state' => 'stale',
+                        'errors' => [
+                            'Companies House revised accounts public-register confirmation',
+                        ],
+                    ],
+                    'generation_errors' => ['A downstream error that should be collapsed.'],
+                ],
+                'latest_run' => [],
+                'computation_periods' => [],
+            ],
+            'services' => [
+                'companies_house_ixbrl' => ['filing_required' => false],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $panel = strstr($html, '<section class="panel-soft warn ixbrl-generation-blockers">');
+        $panel = is_string($panel) ? strstr($panel, '</section>', true) : false;
+        $harness->assertTrue(is_string($panel));
+        $harness->assertTrue(str_contains(
+            (string)$panel,
+            'Companies House revised accounts public-register confirmation'
+        ));
+        $harness->assertTrue(str_contains((string)$panel, 'Accounts filing approval status'));
+        $harness->assertFalse(str_contains((string)$panel, 'A downstream error that should be collapsed.'));
+    });
     $harness->check(_ixbrl_generationCard::class, 'shows a previous-run Companies House artifact as not generated and blocks current download', static function () use ($harness, $card): void {
         $context = [
             'company' => ['id' => 49, 'accounting_period_id' => 79],

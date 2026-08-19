@@ -29,7 +29,7 @@ final class IxbrlDirectorsReportContentService
             return $this->unavailable('The Year End review could not be found.');
         }
 
-        $reviewNotes = trim((string)($review['review_notes'] ?? ''));
+        $reviewNotes = trim($this->canonicalNarrativeText($review['review_notes'] ?? ''));
         $acknowledgements = [];
         if (\InterfaceDB::tableExists('year_end_review_acknowledgements')) {
             foreach (\InterfaceDB::fetchAll(
@@ -46,7 +46,7 @@ final class IxbrlDirectorsReportContentService
                 if (!is_array($row)) {
                     continue;
                 }
-                $note = trim((string)($row['note'] ?? ''));
+                $note = trim($this->canonicalNarrativeText($row['note'] ?? ''));
                 if ($note === '') {
                     continue;
                 }
@@ -102,6 +102,18 @@ final class IxbrlDirectorsReportContentService
             static fn(string $part): string => trim((string)preg_replace('/\s+/u', ' ', $part)),
             $parts
         ), static fn(string $part): bool => $part !== ''));
+    }
+
+    private function canonicalNarrativeText(mixed $value): string
+    {
+        // One historical Windows ODBC path persisted a UTF-8 right apostrophe
+        // as this valid-UTF-8 mojibake token. Canonicalise only that exact token
+        // so immutable narrative hashes remain stable across database drivers.
+        return str_replace(
+            "\u{00E2}\u{20AC}\u{2122}",
+            "\u{2019}",
+            (string)$value
+        );
     }
 
     /** @return array<string,mixed> */

@@ -11,6 +11,35 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndCompaniesHouseComparisonService::class, static function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(
+        \eel_accounts\Support\IxbrlNumericFactValue::class,
+        'derives semantic values from unsigned, AP81 sign-and-presentation, and already-signed facts',
+        static function () use ($harness): void {
+            $harness->assertSame(
+                125.5,
+                \eel_accounts\Support\IxbrlNumericFactValue::semantic('125.50', null)
+            );
+            $harness->assertSame(
+                -4784.39,
+                \eel_accounts\Support\IxbrlNumericFactValue::semantic(
+                    '4784.39',
+                    'ix_sign+presentation_parentheses'
+                )
+            );
+            $harness->assertSame(
+                -4784.39,
+                \eel_accounts\Support\IxbrlNumericFactValue::semantic(
+                    '-4784.39',
+                    'IX_SIGN+presentation_parentheses'
+                )
+            );
+            $harness->assertSame(
+                null,
+                \eel_accounts\Support\IxbrlNumericFactValue::semantic('', 'ix_sign')
+            );
+        }
+    );
+
     $harness->check(\eel_accounts\Service\YearEndCompaniesHouseComparisonService::class, 'selects only an exact reporting-period filing for numeric comparison', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndCompaniesHouseComparisonService();
         $findExact = new ReflectionMethod($service, 'findExactSummary');
@@ -219,12 +248,109 @@ $harness->run(\eel_accounts\Service\YearEndCompaniesHouseComparisonService::clas
             InterfaceDB::beginTransaction();
             try {
                 yearEndCompaniesHouseRevisionSeed($fixture);
+                yearEndCompaniesHouseInsertNumericFact(
+                    $fixture,
+                    $fixture['original_document_id'],
+                    $fixture['original_context_id'],
+                    $fixture['net_assets_concept_id'],
+                    20.00,
+                    30,
+                    'ix_sign+presentation_parentheses'
+                );
+                yearEndCompaniesHouseInsertNumericFact(
+                    $fixture,
+                    $fixture['original_document_id'],
+                    $fixture['original_context_id'],
+                    $fixture['equity_concept_id'],
+                    20.00,
+                    31,
+                    'ix_sign+presentation_parentheses'
+                );
+                yearEndCompaniesHouseInsertNumericFact(
+                    $fixture,
+                    $fixture['original_document_id'],
+                    $fixture['original_context_id'],
+                    $fixture['creditors_within_concept_id'],
+                    50.00,
+                    32,
+                    'ix_sign+presentation_parentheses'
+                );
                 $service = new \eel_accounts\Service\YearEndCompaniesHouseComparisonService();
                 $period = [
                     'id' => $fixture['accounting_period_id'],
                     'period_start' => '2023-10-01',
                     'period_end' => '2024-09-30',
                 ];
+                $signAwareMetrics = [
+                    'current_assets' => 100.00,
+                    'creditors_within_one_year' => 50.00,
+                    'net_assets_liabilities' => -20.00,
+                    'equity_capital_reserves' => -20.00,
+                    'reliable_closing_balance' => true,
+                ];
+                $legacyBeforeCurrentRead = $service->fetchComparison(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $period,
+                    $signAwareMetrics
+                );
+                $legacyHashBeforeCurrentRead = hash(
+                    'sha256',
+                    (string)json_encode(
+                        $legacyBeforeCurrentRead,
+                        JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+                    )
+                );
+                $currentComparison = $service->fetchCurrentComparison(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $period,
+                    $signAwareMetrics
+                );
+                $legacyAfterCurrentRead = $service->fetchComparison(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $period,
+                    $signAwareMetrics
+                );
+                $harness->assertSame($legacyHashBeforeCurrentRead, hash(
+                    'sha256',
+                    (string)json_encode(
+                        $legacyAfterCurrentRead,
+                        JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+                    )
+                ));
+                $legacyRows = [];
+                foreach ((array)($legacyBeforeCurrentRead['rows'] ?? []) as $row) {
+                    $legacyRows[(string)($row['metric_key'] ?? '')] = $row;
+                }
+                $currentRows = [];
+                foreach ((array)($currentComparison['rows'] ?? []) as $row) {
+                    $currentRows[(string)($row['metric_key'] ?? '')] = $row;
+                }
+                $harness->assertSame(4, (int)($legacyBeforeCurrentRead['comparable_count'] ?? 0));
+                $harness->assertSame(2, (int)($legacyBeforeCurrentRead['matched_count'] ?? 0));
+                $harness->assertSame(2, (int)($legacyBeforeCurrentRead['mismatch_count'] ?? 0));
+                $harness->assertSame(20.0, (float)($legacyRows['net_assets_liabilities']['filed_value'] ?? 0));
+                $harness->assertSame(20.0, (float)($legacyRows['equity_capital_reserves']['filed_value'] ?? 0));
+                $harness->assertSame(4, (int)($currentComparison['comparable_count'] ?? 0));
+                $harness->assertSame(4, (int)($currentComparison['matched_count'] ?? 0));
+                $harness->assertSame(0, (int)($currentComparison['mismatch_count'] ?? -1));
+                $harness->assertSame(100.0, (float)($currentRows['current_assets']['filed_value'] ?? 0));
+                $harness->assertSame(50.0, (float)($currentRows['creditors_within_one_year']['filed_value'] ?? 0));
+                $harness->assertSame(-20.0, (float)($currentRows['net_assets_liabilities']['filed_value'] ?? 0));
+                $harness->assertSame(-20.0, (float)($currentRows['equity_capital_reserves']['filed_value'] ?? 0));
+
+                $noRevisionRequired = $service->fetchRevisedObservation(
+                    $fixture['company_id'],
+                    $fixture['accounting_period_id'],
+                    $period,
+                    $signAwareMetrics
+                );
+                $harness->assertSame(false, !empty($noRevisionRequired['has_revised_filing']));
+                $harness->assertSame(false, !empty($noRevisionRequired['filing_outstanding']));
+                $harness->assertSame(false, !empty($noRevisionRequired['action_required']));
+
                 $appMetrics = [
                     'fixed_assets' => 0.00,
                     'current_assets' => 200.00,

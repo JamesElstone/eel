@@ -42,6 +42,15 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                 ],
             ],
             [
+                'key' => 'currentComparison',
+                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
+                'method' => 'fetchCurrentComparison',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+            [
                 'key' => 'revisedObservation',
                 'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchRevisedObservation',
@@ -65,7 +74,11 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             return $this->renderErrors((array)($sectionReview['errors'] ?? ['Companies House comparison is unavailable.']));
         }
         $review = (array)($sectionReview['display'] ?? []);
-        $comparison = (array)($review['comparison'] ?? []);
+        $approvalComparison = (array)($review['comparison'] ?? []);
+        $currentComparison = (array)($context['services']['currentComparison'] ?? []);
+        $comparison = !empty($currentComparison['available'])
+            ? $currentComparison
+            : $approvalComparison;
         $revisedObservation = (array)($context['services']['revisedObservation'] ?? []);
         $revisedServiceError = (array)($context['service_errors']['revisedObservation'] ?? []);
         if ($revisedObservation === [] && $revisedServiceError !== []) {
@@ -88,7 +101,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         $acknowledgement = is_array($sectionReview['acknowledgement'] ?? null)
             ? $sectionReview['acknowledgement']
             : null;
-        $mismatchCount = (int)($review['mismatch_count'] ?? 0);
+        $mismatchCount = $this->mismatchCount($comparison);
         $lockNotice = !empty($access['is_locked'])
             ? '<div class="helper">The Accounting Period has been locked. No changes can be made until it is unlocked.</div>'
             : '';
@@ -96,7 +109,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $lockNotice . '
             ' . $this->renderComparisonPanel($comparison, $revisedObservation, $companySettings, $companyId, $accountingPeriodId) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $sectionReview) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $sectionReview) . '
         </section>';
     }
 
@@ -313,9 +326,23 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         array $comparison,
         ?array $acknowledgement,
         array $access,
-        int $mismatchCount,
         array $sectionReview
     ): string {
+        if ($this->originalFilingReconciled($comparison)) {
+            $matchedCount = (int)($comparison['matched_count'] ?? 0);
+            $comparableCount = (int)($comparison['comparable_count'] ?? 0);
+            return '<section class="settings-stack" id="companies-house-mismatch-acknowledgement">
+                <div class="status-head">
+                    <h3 class="card-title">Original Filing Comparison</h3>
+                    <span class="badge success">Reconciled</span>
+                </div>
+                <section class="panel-soft success">
+                    <div class="summary-value">The exact-period original Companies House filing matches the current accounts.</div>
+                    <div class="helper">All ' . $matchedCount . ' of ' . $comparableCount . ' comparable values match. The earlier Year End confirmation remains preserved as historical evidence; no new approval is required.</div>
+                </section>
+            </section>';
+        }
+
         $isAcknowledged = !empty($sectionReview['acknowledgement_current']);
         $disabled = empty($comparison['can_acknowledge']);
         $disabledReason = $disabled
@@ -352,6 +379,29 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             <div class="helper">This approval applies only to the App versus Original Filing comparison. The Latest Revised Filing is read-only reconciliation evidence and does not change this approval.</div>
             ' . $form . '
         </section>';
+    }
+
+    private function originalFilingReconciled(array $comparison): bool
+    {
+        return !empty($comparison['available'])
+            && !empty($comparison['has_exact_filing'])
+            && !empty($comparison['can_acknowledge'])
+            && (string)($comparison['comparison_scope'] ?? '') === 'exact_filing'
+            && (int)($comparison['comparable_count'] ?? 0) > 0
+            && $this->mismatchCount($comparison) === 0;
+    }
+
+    private function mismatchCount(array $comparison): int
+    {
+        if (array_key_exists('mismatch_count', $comparison)) {
+            return max(0, (int)$comparison['mismatch_count']);
+        }
+
+        return count(array_filter(
+            (array)($comparison['rows'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+                && in_array((string)($row['status'] ?? ''), ['warning', 'fail'], true)
+        ));
     }
 
 

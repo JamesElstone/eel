@@ -1182,7 +1182,10 @@ final class IxbrlAccountsDisclosureService
     private function companiesHouseRevisionRequired(int $companyId, int $accountingPeriodId): bool
     {
         try {
-            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchCurrentComparison(
+                $companyId,
+                $accountingPeriodId
+            );
             if (empty($comparison['has_exact_filing'])) {
                 return false;
             }

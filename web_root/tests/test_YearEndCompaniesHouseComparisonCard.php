@@ -17,7 +17,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
     $harness->check(_year_end_companies_house_comparisonCard::class, 'renders comparison gates inside the single section approval', static function () use ($harness, $card): void {
         $html = $card->render(companiesHouseComparisonCardContext());
 
-        $harness->assertCount(2, $card->services());
+        $harness->assertCount(3, $card->services());
         $harness->assertSame(true, str_contains($html, 'Companies House Comparison'));
         $harness->assertSame(true, str_contains($html, 'Is this Company eligible to submit revised accounts using the Companies House XML Gateway Service?'));
         $harness->assertSame(true, str_contains($html, 'name="approval_answers[companies_house.xml_eligibility]"'));
@@ -125,6 +125,47 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Companies House revised filing lookup failed.'));
         $harness->assertSame(true, str_contains($html, 'current Companies House state could not be checked'));
         $harness->assertSame(false, str_contains($html, 'no amended filing has been imported'));
+    });
+
+    $harness->check(_year_end_companies_house_comparisonCard::class, 'shows the current semantic original comparison without requesting another approval', static function () use ($harness, $card): void {
+        $context = companiesHouseComparisonCardContext();
+        $context['services']['sectionReview']['acknowledgement'] = [
+            'acknowledged_at' => '2026-07-23 04:23:17',
+            'acknowledged_by' => 'Fixture user',
+        ];
+        $context['services']['sectionReview']['acknowledgement_state'] = 'stale';
+        $context['services']['sectionReview']['acknowledgement_current'] = false;
+        $context['services']['currentComparison'] = [
+            'available' => true,
+            'has_exact_filing' => true,
+            'filing_kind' => 'revised',
+            'comparison_scope' => 'exact_filing',
+            'comparison_note' => 'All six comparable values match the current accounts.',
+            'comparable_count' => 6,
+            'matched_count' => 6,
+            'mismatch_count' => 0,
+            'can_acknowledge' => true,
+            'filing' => ['filing_date' => '2026-08-10'],
+            'rows' => [[
+                'metric_key' => 'net_assets_liabilities',
+                'label' => 'Net assets/liabilities',
+                'app_value' => -4784.39,
+                'filed_value' => -4784.39,
+                'variance' => 0.0,
+                'status' => 'pass',
+            ]],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'All six comparable values match the current accounts.'));
+        $harness->assertTrue(str_contains($html, 'Reconciled'));
+        $harness->assertTrue(str_contains($html, 'All 6 of 6 comparable values match.'));
+        $harness->assertTrue(str_contains($html, 'no new approval is required'));
+        $harness->assertTrue(str_contains($html, 'Pass'));
+        $harness->assertFalse(str_contains($html, 'Difference identified'));
+        $harness->assertFalse(str_contains($html, 'Review required — underlying data changed.'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="approve_section_review"'));
     });
 });
 

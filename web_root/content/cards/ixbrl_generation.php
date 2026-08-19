@@ -422,12 +422,20 @@ final class _ixbrl_generationCard extends CardBaseFramework
             $nextStep = $yearEndLocked
                 ? 'Approve the Accounts Disclosures filing basis.'
                 : 'Complete and lock Year End, then approve the Accounts Disclosures filing basis.';
-            return '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
+            $approvalErrors = $this->uniqueMessages(
+                (array)($filingApproval['errors'] ?? []),
+                $nextStep
+            );
+            $html = '<section class="panel-soft warn ixbrl-generation-blockers"><div class="status-head">'
                 . '<h3 class="card-title">iXBRL generation blocked</h3>'
                 . '<span class="badge warning">Action required</span></div>'
                 . '<div class="helper"><strong>' . \eel_accounts\Support\Utf8::html($nextStep) . '</strong> '
                 . 'This is the next step before generating HMRC Accounting, Corporation Tax, or Companies House iXBRL.</div>'
-                . '</section>';
+                . '<div class="helper"><strong>Accounts filing approval status</strong><ul>';
+            foreach ($approvalErrors as $approvalError) {
+                $html .= '<li>' . \eel_accounts\Support\Utf8::html($approvalError) . '</li>';
+            }
+            return $html . '</ul></div></section>';
         }
         if (empty($readiness['can_generate'])) {
             $groups['HMRC Accounting iXBRL'] = $this->uniqueMessages(

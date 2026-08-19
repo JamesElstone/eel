@@ -91,6 +91,24 @@ $harness->run(\eel_accounts\Service\IxbrlAccountsDisclosureService::class, stati
 
     $harness->check(
         \eel_accounts\Service\IxbrlAccountsDisclosureService::class,
+        'uses the current semantic Companies House comparison for post-filing disclosure requirements',
+        static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'companiesHouseRevisionRequired');
+            $source = file($method->getFileName());
+            $harness->assertTrue(is_array($source));
+            $body = implode('', array_slice(
+                $source,
+                $method->getStartLine() - 1,
+                $method->getEndLine() - $method->getStartLine() + 1
+            ));
+
+            $harness->assertTrue(str_contains($body, 'fetchCurrentComparison('));
+            $harness->assertFalse(str_contains($body, '->fetchComparison('));
+        }
+    );
+
+    $harness->check(
+        \eel_accounts\Service\IxbrlAccountsDisclosureService::class,
         'requires explicit simple-note answers and treats only positive answers as unsupported',
         static function () use ($harness, $service): void {
             $period = ['period_end' => '2025-12-31'];

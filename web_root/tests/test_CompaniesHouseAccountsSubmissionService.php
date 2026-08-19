@@ -60,8 +60,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         ],
                     ],
                 ];
+                $currentComparison = [
+                    'available' => true,
+                    'has_exact_filing' => true,
+                    'filing_kind' => 'revised',
+                    'filing_reason' => 'current_exact_period_filing_found',
+                    'filing_evidence' => ['document_row_id' => 101],
+                    'mismatch_count' => 1,
+                ];
 
-                $classification = $invokePrivate($service, 'classificationFromReview', $review);
+                $classification = $invokePrivate(
+                    $service,
+                    'classificationFromReview',
+                    $review,
+                    $currentComparison
+                );
 
                 $harness->assertSame('approved_basis', (string)$classification['source']);
                 $harness->assertSame('revised', (string)$classification['filing_kind']);
@@ -70,10 +83,88 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame($basisHash, (string)$classification['approval_basis_hash']);
 
                 $review['acknowledgement']['basis_hash'] = hash('sha256', 'tampered-review-basis');
-                $fallback = $invokePrivate($service, 'classificationFromReview', $review);
+                $fallback = $invokePrivate(
+                    $service,
+                    'classificationFromReview',
+                    $review,
+                    $currentComparison
+                );
                 $harness->assertSame('live_comparison', (string)$fallback['source']);
-                $harness->assertSame('original', (string)$fallback['filing_kind']);
+                $harness->assertSame('revised', (string)$fallback['filing_kind']);
+                $harness->assertTrue((bool)$fallback['correction_required']);
                 $harness->assertFalse((bool)$fallback['approved']);
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'routes post-filing decisions and first-amendment preparation through the current comparison',
+            static function () use ($harness, $service): void {
+                foreach (['comparisonNeedsRevision', 'savedRevisionDeclarations'] as $methodName) {
+                    $method = new ReflectionMethod($service, $methodName);
+                    $source = file($method->getFileName());
+                    $harness->assertTrue(is_array($source));
+                    $body = implode('', array_slice(
+                        $source,
+                        $method->getStartLine() - 1,
+                        $method->getEndLine() - $method->getStartLine() + 1
+                    ));
+                    $harness->assertTrue(str_contains($body, 'fetchCurrentComparison('));
+                    $harness->assertFalse(str_contains($body, '->fetchComparison('));
+                }
+
+                $classificationMethod = new ReflectionMethod($service, 'filingClassification');
+                $classificationSource = file($classificationMethod->getFileName());
+                $harness->assertTrue(is_array($classificationSource));
+                $classificationBody = implode('', array_slice(
+                    $classificationSource,
+                    $classificationMethod->getStartLine() - 1,
+                    $classificationMethod->getEndLine() - $classificationMethod->getStartLine() + 1
+                ));
+                $harness->assertTrue(str_contains($classificationBody, 'fetchCurrentComparison('));
+            }
+        );
+
+        $harness->check(
+            $service::class,
+            'marks a matching imported original as reconciled without rebasing its signed classification',
+            static function () use ($harness, $service, $invokePrivate): void {
+                $classification = [
+                    'available' => true,
+                    'approved' => true,
+                    'source' => 'approved_basis',
+                    'filing_kind' => 'original',
+                    'correction_required' => false,
+                    'approval_basis_hash' => str_repeat('a', 64),
+                ];
+                $comparison = [
+                    'available' => true,
+                    'has_exact_filing' => true,
+                    'can_acknowledge' => true,
+                    'comparison_scope' => 'exact_filing',
+                    'comparable_count' => 12,
+                    'mismatch_count' => 0,
+                ];
+
+                $reconciled = $invokePrivate(
+                    $service,
+                    'overlayCurrentOriginalFilingState',
+                    $classification,
+                    $comparison
+                );
+                $harness->assertTrue((bool)$reconciled['original_filing_reconciled']);
+                $harness->assertSame('approved_basis', (string)$reconciled['source']);
+                $harness->assertSame('original', (string)$reconciled['filing_kind']);
+                $harness->assertSame(str_repeat('a', 64), (string)$reconciled['approval_basis_hash']);
+
+                $comparison['mismatch_count'] = 1;
+                $mismatch = $invokePrivate(
+                    $service,
+                    'overlayCurrentOriginalFilingState',
+                    $classification,
+                    $comparison
+                );
+                $harness->assertFalse((bool)$mismatch['original_filing_reconciled']);
             }
         );
 

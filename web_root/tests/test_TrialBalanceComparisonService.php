@@ -74,6 +74,53 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
         );
+        $harness->check(
+            $service::class,
+            'uses semantic inline signs while keeping creditor magnitudes positive',
+            static function () use ($harness, $service): void {
+                foreach ([
+                    'companies',
+                    'accounting_periods',
+                    'companies_house_documents',
+                    'companies_house_document_contexts',
+                    'companies_house_document_facts',
+                    'companies_house_taxonomy_concepts',
+                ] as $table) {
+                    if (!\InterfaceDB::tableExists($table)) {
+                        $harness->skip($table . ' table is not available.');
+                    }
+                }
+
+                \InterfaceDB::beginTransaction();
+                try {
+                    $fixture = trialBalanceComparisonSeedOriginal();
+                    $comparison = $service->fetchComparison(
+                        $fixture['company_id'],
+                        $fixture['accounting_period_id'],
+                        [
+                            'current_assets' => 100.0,
+                            'net_current_assets_liabilities' => -25.0,
+                            'net_assets_liabilities' => -40.0,
+                            'creditors_within_one_year' => 30.0,
+                        ]
+                    );
+                    $harness->assertSame(true, !empty($comparison['available']));
+                    $rows = array_column((array)($comparison['rows'] ?? []), null, 'metric_key');
+
+                    foreach ([
+                        'current_assets' => 100.0,
+                        'net_current_assets_liabilities' => -25.0,
+                        'net_assets_liabilities' => -40.0,
+                        'creditors_within_one_year' => 30.0,
+                    ] as $metricKey => $expectedValue) {
+                        $harness->assertSame($expectedValue, $rows[$metricKey]['filed_value'] ?? null);
+                        $harness->assertSame('matches', (string)($rows[$metricKey]['status'] ?? ''));
+                    }
+                } finally {
+                    \InterfaceDB::rollBack();
+                }
+            }
+        );
     }
 );
 
@@ -94,6 +141,8 @@ function trialBalanceComparisonSeedOriginal(): array
         'current_assets_concept_id' => $seed + 31,
         'net_assets_concept_id' => $seed + 32,
         'revision_marker_concept_id' => $seed + 33,
+        'net_current_assets_concept_id' => $seed + 34,
+        'creditors_within_one_year_concept_id' => $seed + 35,
         'company_number' => 'TB' . substr((string)$seed, -6),
     ];
 
@@ -126,6 +175,8 @@ function trialBalanceComparisonSeedOriginal(): array
         [$fixture['period_concept_id'], 'EndDateForPeriodCoveredByReport', 'date'],
         [$fixture['current_assets_concept_id'], 'CurrentAssets', 'monetary'],
         [$fixture['net_assets_concept_id'], 'NetAssetsLiabilities', 'monetary'],
+        [$fixture['net_current_assets_concept_id'], 'NetCurrentAssetsLiabilities', 'monetary'],
+        [$fixture['creditors_within_one_year_concept_id'], 'CreditorsDueWithinOneYear', 'monetary'],
         [
             $fixture['revision_marker_concept_id'],
             'ReportAnAmendedRevisedVersionPreviouslyFiledReportTruefalse',
@@ -182,7 +233,26 @@ function trialBalanceComparisonSeedOriginal(): array
         (int)$fixture['original_context_id'],
         (int)$fixture['net_assets_concept_id'],
         3,
-        -40.0
+        40.0,
+        'ix_sign+presentation_parentheses'
+    );
+    trialBalanceComparisonInsertFact(
+        $fixture,
+        (int)$fixture['original_document_id'],
+        (int)$fixture['original_context_id'],
+        (int)$fixture['net_current_assets_concept_id'],
+        4,
+        -25.0,
+        'ix_sign'
+    );
+    trialBalanceComparisonInsertFact(
+        $fixture,
+        (int)$fixture['original_document_id'],
+        (int)$fixture['original_context_id'],
+        (int)$fixture['creditors_within_one_year_concept_id'],
+        5,
+        30.0,
+        'ix_sign+presentation_parentheses'
     );
 
     return $fixture;

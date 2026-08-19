@@ -166,7 +166,8 @@ final class TrialBalanceComparisonService
     private function fetchMetricFacts(int $documentRowId): array {
         $placeholders = implode(', ', array_fill(0, count($this->factShortNameMap()), '?'));
         $stmt = \InterfaceDB::prepareExecute( 'SELECT c.short_name,
-                    f.normalised_numeric
+                    f.normalised_numeric,
+                    f.sign_hint
              FROM companies_house_document_facts f
              INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
              WHERE f.document_fk = ?
@@ -177,12 +178,22 @@ final class TrialBalanceComparisonService
         foreach ($stmt->fetchAll() ?: [] as $row) {
             $shortName = (string)($row['short_name'] ?? '');
             $metricKey = $this->factShortNameMap()[$shortName] ?? null;
-            if ($metricKey === null || trim((string)($row['normalised_numeric'] ?? '')) === '') {
+            $value = \eel_accounts\Support\IxbrlNumericFactValue::semantic(
+                $row['normalised_numeric'] ?? null,
+                $row['sign_hint'] ?? null
+            );
+            if ($metricKey === null || $value === null) {
                 continue;
+            }
+            if (in_array($metricKey, [
+                'creditors_within_one_year',
+                'creditors_after_more_than_one_year',
+            ], true)) {
+                $value = abs($value);
             }
             if (!isset($facts[$metricKey])) {
                 $facts[$metricKey] = [
-                    'value' => round((float)$row['normalised_numeric'], 2),
+                    'value' => round($value, 2),
                     'source_concept' => $shortName,
                 ];
             }

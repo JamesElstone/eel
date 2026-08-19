@@ -55,8 +55,10 @@ final class CompaniesHouseAccountsSubmissionService
         $filingKind = (string)($filingClassification['filing_kind'] ?? '');
         $classificationApproved = !empty($filingClassification['approved']);
         $correctionRequired = !empty($filingClassification['correction_required']);
-        $filingRequired = $filingKind === 'original'
-            || ($filingKind === 'revised' && $correctionRequired);
+        $originalFilingReconciled = !empty($filingClassification['original_filing_reconciled']);
+        $filingRequired = !$originalFilingReconciled
+            && ($filingKind === 'original'
+                || ($filingKind === 'revised' && $correctionRequired));
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
         $reconciliation = $this->filingReconciliation(
             $filingRequired,
@@ -156,6 +158,9 @@ final class CompaniesHouseAccountsSubmissionService
         }
         if ($filingKind === 'revised' && !$correctionRequired) {
             $preparationBlockers[] = 'An exact-period filing already exists and no reportable difference requires a duplicate filing.';
+        }
+        if ($originalFilingReconciled) {
+            $preparationBlockers[] = 'The exact-period original Companies House filing reconciles with the current accounts; no further original filing is required.';
         }
         if ($filingRequired && !$filingOutstanding) {
             $preparationBlockers[] = 'The latest revised Companies House filing reconciles with the approved correction; no further filing is outstanding.';
@@ -396,8 +401,10 @@ final class CompaniesHouseAccountsSubmissionService
         $classification = $this->filingClassification($companyId, $accountingPeriodId);
         $filingKind = strtolower(trim((string)($classification['filing_kind'] ?? '')));
         $correctionRequired = !empty($classification['correction_required']);
-        $filingRequired = $filingKind === 'original'
-            || ($filingKind === 'revised' && $correctionRequired);
+        $originalFilingReconciled = !empty($classification['original_filing_reconciled']);
+        $filingRequired = !$originalFilingReconciled
+            && ($filingKind === 'original'
+                || ($filingKind === 'revised' && $correctionRequired));
         $needsRevision = $filingKind === 'revised' && $correctionRequired;
         $reconciliation = $this->filingReconciliation(
             $filingRequired,
@@ -3088,7 +3095,10 @@ final class CompaniesHouseAccountsSubmissionService
     private function comparisonNeedsRevision(int $companyId, int $accountingPeriodId): bool
     {
         try {
-            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+            $comparison = (new YearEndCompaniesHouseComparisonService())->fetchCurrentComparison(
+                $companyId,
+                $accountingPeriodId
+            );
             if (empty($comparison['has_exact_filing'])) {
                 return false;
             }
@@ -3105,19 +3115,57 @@ final class CompaniesHouseAccountsSubmissionService
 
     private function filingClassification(int $companyId, int $accountingPeriodId): array
     {
+        $review = [];
+        $reviewErrors = [];
         try {
             $review = (new YearEndSectionApprovalService())->fetchCompaniesHouseReview(
                 $companyId,
                 $accountingPeriodId
             );
-            return $this->classificationFromReview($review);
         } catch (\Throwable $exception) {
+            $reviewErrors[] = trim($exception->getMessage());
+        }
+
+        if ($review !== []) {
+            $approvedClassification = $this->classificationFromReview($review);
+            if ((string)($approvedClassification['source'] ?? '') === 'approved_basis') {
+                if ((string)($approvedClassification['filing_kind'] ?? '') !== 'original') {
+                    return $approvedClassification;
+                }
+                try {
+                    $currentComparison = (new YearEndCompaniesHouseComparisonService())
+                        ->fetchCurrentComparison($companyId, $accountingPeriodId);
+                    return $this->overlayCurrentOriginalFilingState(
+                        $approvedClassification,
+                        (array)$currentComparison
+                    );
+                } catch (\Throwable) {
+                    // The signed classification remains authoritative if the
+                    // optional post-filing observation cannot be loaded.
+                    return $approvedClassification;
+                }
+            }
+        }
+
+        try {
+            $currentComparison = (new YearEndCompaniesHouseComparisonService())
+                ->fetchCurrentComparison($companyId, $accountingPeriodId);
+            return $this->classificationFromReview($review, (array)$currentComparison);
+        } catch (\Throwable $exception) {
+            $reviewErrors[] = trim($exception->getMessage());
+            $reviewErrors = array_values(array_unique(array_filter(
+                $reviewErrors,
+                static fn(string $error): bool => $error !== ''
+            )));
             return [
                 'available' => false,
                 'approved' => false,
+                'source' => 'unavailable',
                 'filing_kind' => '',
                 'correction_required' => false,
-                'errors' => [$exception->getMessage()],
+                'errors' => $reviewErrors !== []
+                    ? $reviewErrors
+                    : ['Companies House filing classification is unavailable.'],
             ];
         }
     }
@@ -3131,7 +3179,7 @@ final class CompaniesHouseAccountsSubmissionService
      * @param array<string,mixed> $review
      * @return array<string,mixed>
      */
-    private function classificationFromReview(array $review): array
+    private function classificationFromReview(array $review, ?array $currentComparison = null): array
     {
         $acknowledgement = (array)($review['acknowledgement'] ?? []);
         $basis = json_decode((string)($acknowledgement['basis_json'] ?? ''), true);
@@ -3172,10 +3220,18 @@ final class CompaniesHouseAccountsSubmissionService
         }
 
         $display = (array)($review['display'] ?? []);
-        $comparison = (array)($display['comparison'] ?? []);
+        $comparison = $currentComparison !== null
+            ? $currentComparison
+            : (array)($display['comparison'] ?? []);
         $liveKind = strtolower(trim((string)($comparison['filing_kind'] ?? '')));
-        if (empty($review['available']) || !in_array($liveKind, ['original', 'revised'], true)) {
-            $errors = (array)($review['errors'] ?? []);
+        $comparisonAvailable = $currentComparison !== null
+            ? !empty($comparison['available'])
+            : !empty($review['available']);
+        if (!$comparisonAvailable || !in_array($liveKind, ['original', 'revised'], true)) {
+            $errors = array_values(array_unique(array_merge(
+                (array)($comparison['errors'] ?? []),
+                (array)($review['errors'] ?? [])
+            )));
             if ($errors === []) {
                 $errors[] = $acknowledgement !== []
                     ? 'The stored Companies House filing-classification approval basis could not be verified.'
@@ -3198,14 +3254,41 @@ final class CompaniesHouseAccountsSubmissionService
             'filing_kind' => $liveKind,
             'filing_reason' => (string)($comparison['filing_reason'] ?? ''),
             'filing_evidence' => (array)($comparison['filing_evidence'] ?? []),
-            'correction_required' => (int)($display['mismatch_count'] ?? 0) > 0,
-            'check_code' => (string)($review['check_code'] ?? ''),
+            'correction_required' => (int)($currentComparison !== null
+                ? ($comparison['mismatch_count'] ?? 0)
+                : ($display['mismatch_count'] ?? 0)) > 0,
+            'check_code' => $currentComparison !== null
+                ? (!empty($comparison['has_exact_filing'])
+                    ? 'companies_house_mismatch_acknowledgement'
+                    : 'companies_house_no_filing_acknowledgement')
+                : (string)($review['check_code'] ?? ''),
             'approval_basis_version' => '',
             'approval_basis_hash' => '',
             'approved_at' => '',
             'approved_by' => '',
             'errors' => [],
         ];
+    }
+
+    /** @param array<string,mixed> $classification @param array<string,mixed> $comparison */
+    private function overlayCurrentOriginalFilingState(array $classification, array $comparison): array
+    {
+        $reconciled = !empty($comparison['available'])
+            && !empty($comparison['has_exact_filing'])
+            && !empty($comparison['can_acknowledge'])
+            && (string)($comparison['comparison_scope'] ?? '') === 'exact_filing'
+            && (int)($comparison['comparable_count'] ?? 0) > 0
+            && (int)($comparison['mismatch_count'] ?? 0) === 0;
+        $classification['original_filing_reconciled'] = $reconciled;
+        $classification['current_comparison'] = [
+            'available' => !empty($comparison['available']),
+            'has_exact_filing' => !empty($comparison['has_exact_filing']),
+            'comparison_scope' => (string)($comparison['comparison_scope'] ?? ''),
+            'comparable_count' => (int)($comparison['comparable_count'] ?? 0),
+            'mismatch_count' => (int)($comparison['mismatch_count'] ?? 0),
+        ];
+
+        return $classification;
     }
 
     /** @return array<string,mixed> */
@@ -3560,7 +3643,7 @@ final class CompaniesHouseAccountsSubmissionService
         $comparison = [];
         try {
             $comparison = (array)(new YearEndCompaniesHouseComparisonService())
-                ->fetchComparison($companyId, $accountingPeriodId);
+                ->fetchCurrentComparison($companyId, $accountingPeriodId);
         } catch (\Throwable) {
         }
         $model = [];

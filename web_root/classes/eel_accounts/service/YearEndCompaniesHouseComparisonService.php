@@ -155,6 +155,100 @@ final class YearEndCompaniesHouseComparisonService
     }
 
     /**
+     * Return the live comparison view using the semantic inline iXBRL sign.
+     *
+     * fetchComparison() is deliberately left as the immutable, approval-bound
+     * legacy contract. This current view can therefore correct parser-era sign
+     * ambiguity without changing any previously signed Year End basis.
+     */
+    public function fetchCurrentComparison(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $accountingPeriod = null,
+        ?array $appMetrics = null
+    ): array {
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $accountingPeriod ??= $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($appMetrics === null && $accountingPeriod !== null) {
+            $appMetrics = $metrics->fetchBalanceSheetMetricValues(
+                $companyId,
+                $accountingPeriodId,
+                (string)$accountingPeriod['period_start'],
+                (string)$accountingPeriod['period_end']
+            );
+        }
+
+        $comparison = $this->fetchComparison(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            $appMetrics
+        );
+        if (empty($comparison['available']) || empty($comparison['has_exact_filing'])) {
+            return $comparison;
+        }
+
+        $filing = (array)($comparison['filing'] ?? []);
+        $parseStatus = strtolower(trim((string)($filing['parse_status'] ?? '')));
+        if (!in_array($parseStatus, ['parsed', 'parsed_latest_year'], true) || $appMetrics === null) {
+            return $comparison;
+        }
+
+        $facts = $this->fetchCurrentMetricFacts((int)($filing['document_row_id'] ?? 0));
+        $rows = $this->buildRows(
+            $appMetrics,
+            $facts,
+            (float)($comparison['threshold'] ?? self::DEFAULT_SOFT_THRESHOLD),
+            true
+        );
+        $comparableCount = count(array_filter(
+            $rows,
+            static fn(array $row): bool => $row['variance'] !== null
+        ));
+        $matchedCount = count(array_filter(
+            $rows,
+            static fn(array $row): bool => (string)$row['status'] === 'pass'
+        ));
+        $mismatchCount = count(array_filter(
+            $rows,
+            static fn(array $row): bool => in_array((string)$row['status'], ['warning', 'fail'], true)
+        ));
+        $reliableClosingBalance = !empty($comparison['reliable_closing_balance']);
+        $warnings = array_values(array_filter(array_map(
+            'strval',
+            (array)($appMetrics['warnings'] ?? [])
+        )));
+        if ($comparableCount === 0) {
+            $comparisonNote = 'An exact-period Companies House filing was selected, but it contains no comparable numeric facts for these metrics.';
+            $warnings[] = 'The exact-period original Companies House filing contains no comparable facts and cannot be approved.';
+        } elseif ($mismatchCount > 0) {
+            $comparisonNote = 'An exact-period Companies House filing was selected, but ' . $mismatchCount
+                . ' of ' . $comparableCount
+                . ' comparable values differ from the current reconstructed accounts.';
+        } else {
+            $comparisonNote = 'An exact-period Companies House filing was selected and all '
+                . $matchedCount . ' comparable values match the current reconstructed accounts.';
+        }
+        if (!$reliableClosingBalance) {
+            $comparisonNote = 'Provisional comparison only: the prior accounting period must be locked before these reconstructed closing balances can be approved. '
+                . $comparisonNote;
+        }
+
+        $comparison['comparison_scope'] = $comparableCount > 0
+            ? 'exact_filing'
+            : 'exact_filing_unverifiable';
+        $comparison['comparison_note'] = $comparisonNote;
+        $comparison['comparable_count'] = $comparableCount;
+        $comparison['matched_count'] = $matchedCount;
+        $comparison['mismatch_count'] = $mismatchCount;
+        $comparison['can_acknowledge'] = $reliableClosingBalance && $comparableCount > 0;
+        $comparison['warnings'] = $warnings;
+        $comparison['rows'] = $rows;
+
+        return $comparison;
+    }
+
+    /**
      * Observe the newest imported revised filing without changing the original
      * comparison contract that was signed during Year End approval.
      */
@@ -232,7 +326,12 @@ final class YearEndCompaniesHouseComparisonService
         ));
         $missingNonZeroCount = count($missingNonZeroRows);
 
-        $original = $this->fetchComparison($companyId, $accountingPeriodId, $accountingPeriod, $appMetrics);
+        $original = $this->fetchCurrentComparison(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            $appMetrics
+        );
         $originalCorrectionRequired = (int)($original['mismatch_count'] ?? 0) > 0;
         $reconciliationState = 'awaiting';
         if ($hasRevision && (
@@ -502,6 +601,51 @@ final class YearEndCompaniesHouseComparisonService
         return $facts;
     }
 
+    /** Read the legacy original fact coverage with current semantic sign rules. */
+    private function fetchCurrentMetricFacts(int $documentRowId): array
+    {
+        $factShortNameMap = $this->factShortNameMap();
+        $placeholders = implode(', ', array_fill(0, count($factShortNameMap), '?'));
+        $stmt = \InterfaceDB::prepare(
+            'SELECT c.short_name,
+                    f.normalised_numeric,
+                    f.sign_hint
+             FROM companies_house_document_facts f
+             INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
+             WHERE f.document_fk = ?
+               AND c.short_name IN (' . $placeholders . ')
+               AND f.is_latest_year_fact = 1'
+        );
+        $stmt->execute(array_merge([$documentRowId], array_keys($factShortNameMap)));
+
+        $facts = [];
+        foreach ($stmt->fetchAll() ?: [] as $row) {
+            $shortName = (string)($row['short_name'] ?? '');
+            $metricKey = $factShortNameMap[$shortName] ?? null;
+            $value = \eel_accounts\Support\IxbrlNumericFactValue::semantic(
+                $row['normalised_numeric'] ?? null,
+                $row['sign_hint'] ?? null
+            );
+            if ($metricKey === null || $value === null) {
+                continue;
+            }
+            if (in_array($metricKey, [
+                'creditors_within_one_year',
+                'creditors_after_more_than_one_year',
+            ], true)) {
+                $value = abs($value);
+            }
+            if (!isset($facts[$metricKey])) {
+                $facts[$metricKey] = [
+                    'value' => round($value, 2),
+                    'source_concept' => $shortName,
+                ];
+            }
+        }
+
+        return $facts;
+    }
+
     /**
      * Revised accounts contain hidden superseded facts alongside the current
      * facts. Read only non-superseded contexts, and resolve the generic
@@ -540,18 +684,18 @@ final class YearEndCompaniesHouseComparisonService
             )) {
                 continue;
             }
-            if (trim((string)($row['normalised_numeric'] ?? '')) === '') {
-                continue;
-            }
-
             $shortName = (string)($row['short_name'] ?? '');
             $metricKey = $shortName === 'Creditors'
                 ? $this->creditorMetricFromDimensions((string)($row['dimension_json'] ?? ''))
                 : ($factShortNameMap[$shortName] ?? null);
-            if ($metricKey === null) {
+            $value = \eel_accounts\Support\IxbrlNumericFactValue::semantic(
+                $row['normalised_numeric'] ?? null,
+                $row['sign_hint'] ?? null
+            );
+            if ($metricKey === null || $value === null) {
                 continue;
             }
-            $value = $this->revisedSemanticNumericValue($row);
+            $value = round($value, 2);
             if (in_array($metricKey, [
                 'creditors_within_one_year',
                 'creditors_after_more_than_one_year',
@@ -576,26 +720,6 @@ final class YearEndCompaniesHouseComparisonService
         }
 
         return $facts;
-    }
-
-    /** @param array<string,mixed> $fact */
-    private function revisedSemanticNumericValue(array $fact): float
-    {
-        $value = round((float)($fact['normalised_numeric'] ?? 0.0), 2);
-        // Companies House AAMD iXBRL can render a sign="-" fact inside
-        // presentation parentheses. The stored parser value double-applies
-        // those two visual signals and is therefore positive. For revised
-        // observation only, the authoritative inline sign restores the
-        // negative accounting value. The original approval-bound extractor is
-        // intentionally unchanged.
-        if (str_contains(
-            strtolower(trim((string)($fact['sign_hint'] ?? ''))),
-            'ix_sign'
-        )) {
-            return -abs($value);
-        }
-
-        return $value;
     }
 
     private function isSupersededContext(string $contextRef, string $dimensionJson): bool

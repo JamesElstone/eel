@@ -313,7 +313,9 @@ final class Ct600GenerationService
         if ($schemaError !== null) {
             return $this->statusFailure($schemaError);
         }
-        $context = $this->sourceContext($companyId, $accountingPeriodId, $ctPeriodId, $deep);
+        $context = $deep
+            ? $this->sourceContext($companyId, $accountingPeriodId, $ctPeriodId, true)
+            : $this->sourceContextForReadModel($companyId, $accountingPeriodId, $ctPeriodId);
         if (empty($context['ready'])) {
             return [
                 'ready_to_generate' => false,
@@ -535,6 +537,7 @@ final class Ct600GenerationService
             'source_manifest' => $manifest,
             'source_manifest_sha256' => (string)$artifact['source_manifest_sha256'],
             'body_sha256' => (string)$artifact['sha256'],
+            'readiness' => (array)($status['source'] ?? []),
             'package_hash' => hash(
                 'sha256',
                 (string)$artifact['source_manifest_sha256'] . '|' . (string)$artifact['sha256']
@@ -700,6 +703,152 @@ final class Ct600GenerationService
             'declaration' => (array)$declarationResult['declaration'],
             'filing_evidence' => $filingEvidence,
             'return' => $return,
+            'accounts' => $accounts,
+            'computation' => $computation,
+        ];
+    }
+
+    /**
+     * Resolve only immutable/current identities needed to validate a prepared
+     * artifact.  This deliberately does not rebuild the CT600 return, remap
+     * facts, validate CT600A, or run any schemas.
+     *
+     * @return array<string,mixed>
+     */
+    private function sourceContextForReadModel(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId
+    ): array {
+        $period = $this->period($companyId, $accountingPeriodId, $ctPeriodId);
+        if (!is_array($period)) {
+            return ['ready' => false, 'errors' => [
+                'The selected CT period does not belong to this company and accounting period.',
+            ]];
+        }
+
+        $approvalResult = (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
+            $companyId,
+            $accountingPeriodId
+        );
+        $approval = (array)($approvalResult['approval'] ?? []);
+        if ((string)($approvalResult['state'] ?? '') !== 'current' || $approval === []) {
+            return ['ready' => false, 'errors' => [
+                (string)(((array)($approvalResult['errors'] ?? []))[0]
+                    ?? 'A current approved filing basis is required.'),
+            ]];
+        }
+
+        $hmrcApprovalResult = (new HmrcCtFilingApprovalService())->statusForReadModel(
+            $companyId,
+            $accountingPeriodId
+        );
+        $hmrcApproval = (array)($hmrcApprovalResult['approval'] ?? []);
+        if ((string)($hmrcApprovalResult['state'] ?? '') !== 'current' || $hmrcApproval === []) {
+            return ['ready' => false, 'errors' => [
+                (string)(((array)($hmrcApprovalResult['errors'] ?? []))[0]
+                    ?? 'A current HMRC Corporation Tax filing approval is required.'),
+            ]];
+        }
+        if ((int)($hmrcApproval['accounts_filing_approval_id'] ?? 0) !== (int)($approval['id'] ?? 0)
+            || !hash_equals(
+                strtolower((string)($hmrcApproval['accounts_filing_approval_hash'] ?? '')),
+                strtolower((string)($approval['basis_hash'] ?? ''))
+            )) {
+            return ['ready' => false, 'errors' => [
+                'The HMRC Corporation Tax approval is not bound to the current statutory-accounts approval.',
+            ]];
+        }
+
+        $declarationResult = $this->frozenDeclaration($hmrcApproval);
+        if (empty($declarationResult['ok'])) {
+            return ['ready' => false, 'errors' => (array)$declarationResult['errors']];
+        }
+
+        $filing = (new CtPeriodFilingModelService())->buildForStatus(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId
+        );
+        if (empty($filing['available'])) {
+            return ['ready' => false, 'errors' => array_values(array_unique(array_merge(
+                ['The current CT600 source model is not ready.'],
+                array_map('strval', (array)($filing['errors'] ?? []))
+            )))];
+        }
+
+        $filingEvidence = $this->filingEvidence($approval, $companyId, $accountingPeriodId);
+        if (!is_array($filingEvidence)) {
+            return ['ready' => false, 'errors' => [
+                'The current filing approval has no matching immutable filing-evidence bundle.',
+            ]];
+        }
+
+        $packages = $this->packageTools();
+        $accounts = $packages->locateAccountsIxbrlForStatus($companyId, $accountingPeriodId);
+        $computation = $packages->locateComputationsIxbrlForStatus($companyId, $ctPeriodId);
+        $errors = [];
+        if (empty($accounts['ok'])) {
+            $errors = array_merge($errors, (array)($accounts['errors'] ?? [
+                'The HMRC Accounting iXBRL artifact is not ready.',
+            ]));
+        }
+        if (empty($computation['ok'])) {
+            $errors = array_merge($errors, (array)($computation['errors'] ?? [
+                'The Corporation Tax computation iXBRL artifact is not ready.',
+            ]));
+        }
+
+        $rim = (new HmrcCt600VersionService())->resolveForCtPeriod(
+            (string)($period['period_start'] ?? ''),
+            (string)($period['period_end'] ?? '')
+        );
+        $packageId = !empty($rim['ok']) ? (int)(\InterfaceDB::fetchColumn(
+            'SELECT id FROM hmrc_ct_rim_packages
+             WHERE form_version = :form_version AND artifact_version = :artifact_version
+             ORDER BY id DESC LIMIT 1',
+            [
+                'form_version' => (string)($rim['form_version'] ?? ''),
+                'artifact_version' => (string)($rim['artifact_version'] ?? ''),
+            ]
+        ) ?: 0) : 0;
+        $profile = $packageId > 0
+            ? (new CtFilingMappingService())->activeProfile(CtFilingMappingService::TARGET_RIM, $packageId)
+            : null;
+        if (empty($rim['ok']) || $packageId <= 0) {
+            $errors = array_merge($errors, (array)($rim['errors'] ?? [
+                'No verified applicable CT600 RIM package is ready.',
+            ]));
+        }
+        if (!is_array($profile)) {
+            $errors[] = 'Activate a compatible CT600 mapping profile for the selected RIM package.';
+        }
+        if ($errors !== []) {
+            return ['ready' => false, 'errors' => array_values(array_unique(array_map('strval', $errors)))];
+        }
+
+        $source = [
+            'rim_package_id' => $packageId,
+            'rim_form_version' => (string)($rim['form_version'] ?? ''),
+            'rim_artifact_version' => (string)($rim['artifact_version'] ?? ''),
+            'rim_package_sha256' => strtolower((string)($rim['sha256'] ?? '')),
+            'mapping_profile_id' => (int)($profile['id'] ?? 0),
+            'mapping_revision_no' => (int)($profile['revision_no'] ?? 0),
+            'mapping_content_hash' => strtolower((string)($profile['content_hash'] ?? '')),
+        ];
+
+        return [
+            'ready' => true,
+            'errors' => [],
+            'period' => $period,
+            'approval' => $approval,
+            'hmrc_approval' => $hmrcApproval,
+            'declaration' => (array)$declarationResult['declaration'],
+            'filing_evidence' => $filingEvidence,
+            'return' => [
+                'filing_model' => $filing,
+                'source_manifest' => $source,
+            ],
             'accounts' => $accounts,
             'computation' => $computation,
         ];

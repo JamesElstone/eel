@@ -146,22 +146,31 @@ final class HmrcCorporationTaxSubmissionService
                 'superseded' => 'superseded',
             ]
         );
+        $submissionsByPeriod = $this->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+        $requestArtifactCandidates = $this->requestArtifactCandidatesForAccountingPeriod(
+            $companyId,
+            $accountingPeriodId
+        );
         $ctPeriodService = new CorporationTaxPeriodService();
         foreach ($periods as $period) {
             $ctPeriodId = (int)$period['id'];
-            $submissions = $this->fetchForCtPeriod($companyId, $ctPeriodId);
+            $submissions = (array)($submissionsByPeriod[$ctPeriodId] ?? []);
             $latestTest = $testEnvironment === 'DISABLED'
                 ? null
                 : $this->firstMode($submissions, $testEnvironment);
             $latestLive = $this->firstMode($submissions, 'LIVE');
             $pending = $this->firstPending($submissions);
-            $filingSnapshot = $this->filingSnapshot($companyId, $accountingPeriodId, $ctPeriodId);
-            $filingDependencies = (array)($filingSnapshot['dependencies'] ?? []);
             $manifest = $this->safeCurrentManifestForStatus(
                 $companyId,
-                $ctPeriodId,
-                $filingSnapshot
+                $ctPeriodId
             );
+            $filingSnapshot = $this->filingSnapshot(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $manifest
+            );
+            $filingDependencies = (array)($filingSnapshot['dependencies'] ?? []);
             $manifestHash = (string)($manifest['source_manifest_sha256'] ?? '');
             $bodyHash = (string)($manifest['body_sha256'] ?? '');
             $requestArtifacts = [];
@@ -169,9 +178,8 @@ final class HmrcCorporationTaxSubmissionService
                 ? ['TEST']
                 : ($xmlEnvironment === 'LIVE' ? ['TEST', 'TIL', 'LIVE'] : []);
             foreach ($requestModes as $requestMode) {
-                $artifact = $this->requestArtifactRecordForHashes(
-                    $companyId,
-                    $accountingPeriodId,
+                $artifact = $this->requestArtifactFromCandidates(
+                    (array)($requestArtifactCandidates[$ctPeriodId] ?? []),
                     $ctPeriodId,
                     $requestMode,
                     $manifestHash,
@@ -232,7 +240,7 @@ final class HmrcCorporationTaxSubmissionService
                     : 'This exact filing body has already passed HMRC Test in Live.';
             }
             if ($xmlEnvironment === 'LIVE') {
-                $testGate = $this->successfulTestForHashes($companyId, $ctPeriodId, $manifestHash, $bodyHash);
+                $testGate = $this->successfulTestForHashesInRows($submissions, $manifestHash, $bodyHash);
                 if (!is_array($testGate)) {
                     $liveBlockers[] = 'The exact current filing body must pass HMRC Test in Live before LIVE filing.';
                 }
@@ -247,18 +255,16 @@ final class HmrcCorporationTaxSubmissionService
 
             $testGatewayRejection = $testEnvironment === 'DISABLED' || $manifestHash === '' || $bodyHash === ''
                 ? null
-                : $this->gatewayRejectionForHashes(
-                    $companyId,
-                    $ctPeriodId,
+                : $this->gatewayRejectionForHashesInRows(
+                    $submissions,
                     $testEnvironment,
                     $manifestHash,
                     $bodyHash
                 );
             $liveGatewayRejection = $liveEnvironment === 'DISABLED' || $manifestHash === '' || $bodyHash === ''
                 ? null
-                : $this->gatewayRejectionForHashes(
-                    $companyId,
-                    $ctPeriodId,
+                : $this->gatewayRejectionForHashesInRows(
+                    $submissions,
                     $liveEnvironment,
                     $manifestHash,
                     $bodyHash
@@ -2839,6 +2845,23 @@ final class HmrcCorporationTaxSubmissionService
         return array_map(fn(array $row): array => $this->normaliseSubmission($row), $rows);
     }
 
+    /** @return array<int,list<array<string,mixed>>> */
+    private function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT * FROM ' . self::SUBMISSIONS . '
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+             ORDER BY id DESC',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+        $indexed = [];
+        foreach ($rows as $row) {
+            $normalised = $this->normaliseSubmission($row);
+            $indexed[(int)$normalised['ct_period_id']][] = $normalised;
+        }
+        return $indexed;
+    }
+
     private function firstMode(array $rows, string $mode): ?array
     {
         foreach ($rows as $row) {
@@ -2895,45 +2918,96 @@ final class HmrcCorporationTaxSubmissionService
         return is_array($row) ? $this->normaliseSubmission($row) : null;
     }
 
+    private function successfulTestForHashesInRows(
+        array $rows,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        foreach ($rows as $row) {
+            if ((string)($row['environment'] ?? '') === 'TIL'
+                && (string)($row['business_outcome'] ?? '') === 'til_validated'
+                && (string)($row['protocol_state'] ?? '') === 'closed'
+                && hash_equals($manifestHash, (string)($row['source_manifest_sha256'] ?? ''))
+                && hash_equals($bodyHash, (string)($row['body_sha256'] ?? ''))) {
+                return $row;
+            }
+        }
+        return null;
+    }
+
+    private function gatewayRejectionForHashesInRows(
+        array $rows,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        foreach ($rows as $row) {
+            if ((string)($row['environment'] ?? '') === strtoupper(trim($mode))
+                && (string)($row['protocol_state'] ?? '') === 'gateway_rejected'
+                && hash_equals($manifestHash, (string)($row['source_manifest_sha256'] ?? ''))
+                && hash_equals($bodyHash, (string)($row['body_sha256'] ?? ''))) {
+                return $row;
+            }
+        }
+        return null;
+    }
+
     /** @return array{dependencies:list<array{label:string,ready:bool,message:string,detail?:string}>,return?:array<string,mixed>,accounts?:array<string,mixed>,computations?:array<string,mixed>} */
-    private function filingSnapshot(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    private function filingSnapshot(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $manifest = []
+    ): array
     {
         if ($this->filingReadinessResolver instanceof \Closure) {
             return ['dependencies' => (array)($this->filingReadinessResolver)($companyId, $accountingPeriodId, $ctPeriodId)];
         }
 
-        $approval = $this->safeReadinessCheck(
-            fn(): array => (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
-                $companyId,
-                $accountingPeriodId
-            ),
-            'The current disclosures and filing basis could not be verified.'
-        );
-        $basis = $this->safeReadinessCheck(
-            fn(): array => (new CtPeriodFilingModelService())->buildForStatus(
-                $companyId,
-                $accountingPeriodId,
-                $ctPeriodId
-            ),
-            'The current CT-period filing basis could not be verified.'
-        );
-        $return = $this->safeReadinessCheck(
-            fn(): array => (new Ct600ReturnModelService())->buildForStatus(
-                $companyId,
-                $accountingPeriodId,
-                $ctPeriodId
-            ),
-            'The current CT600 source model could not be verified.'
-        );
-        $accounts = $this->safeReadinessCheck(
-            fn(): array => $this->packages->locateAccountsIxbrlForStatus($companyId, $accountingPeriodId),
-            'The accounts iXBRL artifact could not be verified.'
-        );
-        $computations = $this->safeReadinessCheck(
-            fn(): array => $this->packages->locateComputationsIxbrlForStatus($companyId, $ctPeriodId),
-            'The computations iXBRL artifact could not be verified.'
-        );
-
+        $readiness = (array)($manifest['readiness'] ?? []);
+        if (!empty($readiness['ready'])) {
+            $approval = [
+                'state' => 'current',
+                'approval' => (array)($readiness['approval'] ?? []),
+                'errors' => [],
+            ];
+            $basis = (array)(($readiness['return'] ?? [])['filing_model'] ?? []);
+            $accounts = (array)($readiness['accounts'] ?? []);
+            $computations = (array)($readiness['computation'] ?? []);
+        } else {
+            $approval = $this->safeReadinessCheck(
+                fn(): array => (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
+                    $companyId,
+                    $accountingPeriodId
+                ),
+                'The current disclosures and filing basis could not be verified.'
+            );
+            $basis = $this->safeReadinessCheck(
+                fn(): array => (new CtPeriodFilingModelService())->buildForStatus(
+                    $companyId,
+                    $accountingPeriodId,
+                    $ctPeriodId
+                ),
+                'The current CT-period filing basis could not be verified.'
+            );
+            $accounts = $this->safeReadinessCheck(
+                fn(): array => $this->packages->locateAccountsIxbrlForStatus($companyId, $accountingPeriodId),
+                'The accounts iXBRL artifact could not be verified.'
+            );
+            $computations = $this->safeReadinessCheck(
+                fn(): array => $this->packages->locateComputationsIxbrlForStatus($companyId, $ctPeriodId),
+                'The computations iXBRL artifact could not be verified.'
+            );
+        }
+        $return = $manifest !== []
+            ? $manifest
+            : $this->safeReadinessCheck(
+                fn(): array => (new Ct600GenerationService($this->packages))->currentManifestForStatus(
+                    $companyId,
+                    $ctPeriodId
+                ),
+                'The current CT600 source model could not be verified.'
+            );
         $approvalReady = (string)($approval['state'] ?? '') === 'current';
         $basisReady = !empty($basis['available']);
         $returnReady = !empty($return['ok']);
@@ -3414,6 +3488,159 @@ final class HmrcCorporationTaxSubmissionService
             'warnings' => [],
             'submission' => $submission,
         ];
+    }
+
+    /**
+     * Load all request-artifact candidates for a card in two queries.  Exact
+     * body/manifest matching remains in PHP so each CT period/environment does
+     * not repeat the same archive and evidence-table joins.
+     *
+     * @return array<int,list<array<string,mixed>>>
+     */
+    private function requestArtifactCandidatesForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId
+    ): array {
+        $indexed = [];
+        if (\InterfaceDB::tableExists('govtalk_protocol_exchanges')
+            && \InterfaceDB::tableExists('transmission_archives')) {
+            $rows = \InterfaceDB::fetchAll(
+                'SELECT s.id AS submission_id, s.ct_period_id, s.environment,
+                        s.source_manifest_sha256, s.body_sha256,
+                        e.id AS exchange_id, e.transaction_id, e.request_path, e.request_sha256,
+                        a.submission_reference AS archive_submission_reference
+                 FROM ' . self::SUBMISSIONS . ' s
+                 INNER JOIN govtalk_protocol_exchanges e
+                   ON e.hmrc_submission_id = s.id
+                  AND e.authority = :exchange_authority
+                  AND e.operation = :operation
+                  AND e.environment = s.environment
+                  AND e.request_path IS NOT NULL
+                  AND e.request_sha256 IS NOT NULL
+                 INNER JOIN transmission_archives a
+                   ON a.id = e.transmission_archive_id
+                  AND a.authority = :archive_authority
+                  AND a.company_id = s.company_id
+                  AND a.accounting_period_id = s.accounting_period_id
+                  AND a.environment = s.environment
+                 WHERE s.company_id = :company_id
+                   AND s.accounting_period_id = :accounting_period_id
+                 ORDER BY s.id DESC, e.id DESC',
+                [
+                    'exchange_authority' => 'hmrc',
+                    'archive_authority' => 'hmrc',
+                    'operation' => 'submit',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            ) ?: [];
+            foreach ($rows as $row) {
+                $submissionId = (int)($row['submission_id'] ?? 0);
+                $ctPeriodId = (int)($row['ct_period_id'] ?? 0);
+                $mode = strtoupper(trim((string)($row['environment'] ?? '')));
+                if ($submissionId <= 0 || $ctPeriodId <= 0 || !isset(self::DEVELOPER_REQUEST_ROLES[$mode])
+                    || trim((string)($row['archive_submission_reference'] ?? ''))
+                        !== $this->archiveReference($submissionId)) {
+                    continue;
+                }
+                $indexed[$ctPeriodId][] = [
+                    'source' => 'submitted',
+                    'company_id' => $companyId,
+                    'environment' => $mode,
+                    'artifact_id' => '',
+                    'artifact_row_id' => 0,
+                    'bundle_id' => 0,
+                    'submission_id' => $submissionId,
+                    'exchange_id' => (int)($row['exchange_id'] ?? 0),
+                    'transaction_id' => strtoupper(trim((string)($row['transaction_id'] ?? ''))),
+                    'filename' => basename((string)($row['request_path'] ?? '')),
+                    'storage_path' => (string)($row['request_path'] ?? ''),
+                    'sha256' => strtolower(trim((string)($row['request_sha256'] ?? ''))),
+                    'metadata' => [
+                        'environment' => $mode,
+                        'body_sha256' => strtolower(trim((string)($row['body_sha256'] ?? ''))),
+                        'source_manifest_sha256' => strtolower(trim((string)($row['source_manifest_sha256'] ?? ''))),
+                        'transmitted' => true,
+                    ],
+                ];
+            }
+        }
+
+        if (\InterfaceDB::tableExists('filing_evidence_artifacts')
+            && \InterfaceDB::tableExists('filing_evidence_bundles')) {
+            $rows = \InterfaceDB::fetchAll(
+                "SELECT artifact.id, artifact.artifact_id, artifact.transaction_hex,
+                        artifact.bundle_id, artifact.ct_period_id, artifact.artifact_role,
+                        artifact.filename, artifact.storage_path, artifact.sha256,
+                        artifact.metadata_json
+                 FROM filing_evidence_artifacts artifact
+                 INNER JOIN filing_evidence_bundles bundle ON bundle.id = artifact.bundle_id
+                 WHERE bundle.company_id = :company_id
+                   AND bundle.accounting_period_id = :accounting_period_id
+                   AND artifact.artifact_status IN ('generated', 'validated', 'historical')
+                 ORDER BY artifact.id DESC",
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            ) ?: [];
+            $modesByRole = array_flip(self::DEVELOPER_REQUEST_ROLES);
+            foreach ($rows as $row) {
+                $mode = (string)($modesByRole[(string)($row['artifact_role'] ?? '')] ?? '');
+                $ctPeriodId = (int)($row['ct_period_id'] ?? 0);
+                $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
+                $metadata = is_array($metadata) ? $metadata : [];
+                if ($mode === '' || $ctPeriodId <= 0
+                    || strtoupper(trim((string)($metadata['environment'] ?? ''))) !== $mode
+                    || !array_key_exists('transmitted', $metadata)
+                    || !empty($metadata['transmitted'])) {
+                    continue;
+                }
+                $indexed[$ctPeriodId][] = [
+                    'source' => 'generated',
+                    'company_id' => $companyId,
+                    'environment' => $mode,
+                    'artifact_id' => (string)($row['artifact_id'] ?? ''),
+                    'artifact_row_id' => (int)($row['id'] ?? 0),
+                    'bundle_id' => (int)($row['bundle_id'] ?? 0),
+                    'submission_id' => 0,
+                    'exchange_id' => 0,
+                    'transaction_id' => strtoupper(trim((string)($row['transaction_hex'] ?? ''))),
+                    'filename' => (string)($row['filename'] ?? ''),
+                    'storage_path' => (string)($row['storage_path'] ?? ''),
+                    'sha256' => strtolower(trim((string)($row['sha256'] ?? ''))),
+                    'metadata' => $metadata,
+                ];
+            }
+        }
+        return $indexed;
+    }
+
+    /** @return array<string,mixed>|null */
+    private function requestArtifactFromCandidates(
+        array $candidates,
+        int $ctPeriodId,
+        string $mode,
+        string $manifestHash,
+        string $bodyHash
+    ): ?array {
+        $mode = strtoupper(trim($mode));
+        $manifestHash = strtolower(trim($manifestHash));
+        $bodyHash = strtolower(trim($bodyHash));
+        if ($ctPeriodId <= 0 || !isset(self::DEVELOPER_REQUEST_ROLES[$mode])
+            || preg_match('/^[a-f0-9]{64}$/D', $manifestHash) !== 1
+            || preg_match('/^[a-f0-9]{64}$/D', $bodyHash) !== 1) {
+            return null;
+        }
+        foreach (['submitted', 'generated'] as $source) {
+            foreach ($candidates as $candidate) {
+                $metadata = (array)($candidate['metadata'] ?? []);
+                if ((string)($candidate['source'] ?? '') === $source
+                    && (string)($candidate['environment'] ?? '') === $mode
+                    && hash_equals($manifestHash, strtolower(trim((string)($metadata['source_manifest_sha256'] ?? ''))))
+                    && hash_equals($bodyHash, strtolower(trim((string)($metadata['body_sha256'] ?? ''))))) {
+                    return $candidate;
+                }
+            }
+        }
+        return null;
     }
 
     /** @return array<string,mixed>|null */

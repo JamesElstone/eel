@@ -61,10 +61,10 @@ final class CtPeriodFilingModelService
             return $this->failure('Approve the current disclosures and filing basis before preparing CT filing output.');
         }
         $approval = (array)$approvalStatus['approval'];
-        $hmrcApprovalStatus = (new HmrcCtFilingApprovalService())->status(
-            $companyId,
-            $accountingPeriodId
-        );
+        $hmrcApprovalService = new HmrcCtFilingApprovalService();
+        $hmrcApprovalStatus = $readModel
+            ? $hmrcApprovalService->statusForReadModel($companyId, $accountingPeriodId)
+            : $hmrcApprovalService->status($companyId, $accountingPeriodId);
         $hmrcApproval = (array)($hmrcApprovalStatus['approval'] ?? []);
         if (($hmrcApprovalStatus['state'] ?? '') !== 'current' || $hmrcApproval === []) {
             return $this->failure((string)(($hmrcApprovalStatus['errors'] ?? [])[0]

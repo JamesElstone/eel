@@ -91,6 +91,249 @@ final class HmrcCtFilingApprovalService
     }
 
     /**
+     * Lightweight integrity status for render-time read models.
+     *
+     * Native approvals already freeze the complete filing decision.  A card
+     * render therefore verifies that immutable evidence and only the mutable
+     * identities which can make it stale.  Legacy combined approvals retain
+     * the deep compatibility path because their evidence predates the native
+     * approval/basis junction.
+     *
+     * @return array<string,mixed>
+     */
+    public function statusForReadModel(int $companyId, int $accountingPeriodId): array
+    {
+        $cacheKey = \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId);
+        return (array)\eel_accounts\Support\RequestCache::remember(
+            'hmrc.ct-filing-approval.status-read-model',
+            $cacheKey,
+            function () use ($companyId, $accountingPeriodId): array {
+                if ($companyId <= 0 || $accountingPeriodId <= 0) {
+                    return $this->statusResult('absent', false, null, null, [
+                        'Select a company and accounting period.',
+                    ]);
+                }
+                if (!$this->schemaReady()) {
+                    return $this->status($companyId, $accountingPeriodId);
+                }
+
+                $approval = $this->latestNativeApproval($companyId, $accountingPeriodId);
+                if (!is_array($approval)) {
+                    // Only the pre-split combined approval can be current
+                    // without a native HMRC approval row.
+                    return $this->status($companyId, $accountingPeriodId);
+                }
+
+                $errors = [];
+                $basisJson = (string)($approval['basis_json'] ?? '');
+                $basisHash = strtolower(trim((string)($approval['basis_hash'] ?? '')));
+                $basis = $basisJson !== '' ? json_decode($basisJson, true) : null;
+                if (!is_array($basis)
+                    || (string)($approval['basis_version'] ?? '') !== self::BASIS_VERSION
+                    || (string)($basis['basis_version'] ?? '') !== self::BASIS_VERSION
+                    || (int)($basis['company_id'] ?? 0) !== $companyId
+                    || (int)($basis['accounting_period_id'] ?? 0) !== $accountingPeriodId
+                    || preg_match('/^[a-f0-9]{64}$/D', $basisHash) !== 1
+                    || !hash_equals($basisHash, hash('sha256', $basisJson))) {
+                    $errors[] = 'The previous HMRC Corporation Tax approval failed its integrity check.';
+                    $basis = [];
+                }
+
+                $accountsStatus = (new IxbrlAccountsFilingApprovalService())->statusForReadModel(
+                    $companyId,
+                    $accountingPeriodId
+                );
+                $accounts = (array)($accountsStatus['approval'] ?? []);
+                $frozenAccounts = (array)($basis['accounts_filing_approval'] ?? []);
+                if (empty($accountsStatus['current'])
+                    || (int)($accounts['id'] ?? 0) !== (int)($approval['accounts_filing_approval_id'] ?? 0)
+                    || (int)($accounts['id'] ?? 0) !== (int)($frozenAccounts['id'] ?? 0)
+                    || !hash_equals(
+                        strtolower(trim((string)($accounts['basis_hash'] ?? ''))),
+                        strtolower(trim((string)($approval['accounts_filing_approval_hash'] ?? '')))
+                    )
+                    || !hash_equals(
+                        strtolower(trim((string)($accounts['basis_hash'] ?? ''))),
+                        strtolower(trim((string)($frozenAccounts['basis_hash'] ?? '')))
+                    )) {
+                    $errors[] = 'The statutory-accounts approval changed after HMRC approval.';
+                }
+
+                $authorisation = (new Ct600ReturnAuthorisationService())->current(
+                    $companyId,
+                    $accountingPeriodId
+                );
+                $authorisationSnapshot = $this->authorisationSnapshot($authorisation);
+                $authorisationJson = $this->canonicalJson($authorisationSnapshot);
+                $authorisationHash = hash('sha256', $authorisationJson);
+                if ($authorisation === []
+                    || (int)($approval['return_authorisation_id'] ?? 0) !== (int)($authorisationSnapshot['id'] ?? 0)
+                    || !hash_equals($authorisationJson, (string)($approval['return_authorisation_json'] ?? ''))
+                    || !hash_equals($authorisationHash, strtolower(trim((string)($approval['return_authorisation_hash'] ?? ''))))
+                    || !hash_equals($authorisationJson, $this->canonicalJson((array)($basis['return_authorisation'] ?? [])))
+                    || !hash_equals($authorisationHash, strtolower(trim((string)($basis['return_authorisation_hash'] ?? ''))))) {
+                    $errors[] = 'The Corporation Tax return authorisation changed after HMRC approval.';
+                }
+
+                $scopeStatus = (new CorporationTaxFilingScopeService())->fetch($companyId, $accountingPeriodId);
+                $scope = (array)($scopeStatus['basis'] ?? []);
+                $scopeJson = $this->canonicalJson($scope);
+                $scopeHash = hash('sha256', $scopeJson);
+                if (empty($scopeStatus['available']) || empty($scopeStatus['complete'])
+                    || !hash_equals($scopeHash, strtolower(trim((string)($scopeStatus['basis_hash'] ?? ''))))
+                    || !hash_equals($scopeJson, (string)($approval['ct_scope_json'] ?? ''))
+                    || !hash_equals($scopeHash, strtolower(trim((string)($approval['ct_scope_hash'] ?? ''))))
+                    || !hash_equals($scopeJson, $this->canonicalJson((array)($basis['corporation_tax_filing_scope'] ?? [])))
+                    || !hash_equals($scopeHash, strtolower(trim((string)($basis['corporation_tax_filing_scope_hash'] ?? ''))))) {
+                    $errors[] = 'The Corporation Tax filing scope changed after HMRC approval.';
+                }
+
+                $periodReferences = $this->periodReferencesForReadModel(
+                    (int)($approval['id'] ?? 0),
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)($accounts['id'] ?? 0),
+                    strtolower(trim((string)($accounts['basis_hash'] ?? '')))
+                );
+                if (isset($periodReferences['error'])) {
+                    $errors[] = (string)$periodReferences['error'];
+                    $periodReferences = [];
+                }
+
+                if ($errors === []) {
+                    $currentBasis = [
+                        'basis_version' => self::BASIS_VERSION,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'accounts_filing_approval' => [
+                            'id' => (int)$accounts['id'],
+                            'basis_version' => (string)$accounts['basis_version'],
+                            'basis_hash' => (string)$accounts['basis_hash'],
+                        ],
+                        'return_authorisation' => $authorisationSnapshot,
+                        'return_authorisation_hash' => $authorisationHash,
+                        'corporation_tax_filing_scope' => $scope,
+                        'corporation_tax_filing_scope_hash' => $scopeHash,
+                        'ct_period_filing_bases' => array_values($periodReferences),
+                    ];
+                    $currentJson = $this->canonicalJson($currentBasis);
+                    if (!hash_equals($basisJson, $currentJson)
+                        || !hash_equals($basisHash, hash('sha256', $currentJson))) {
+                        $errors[] = 'The HMRC Corporation Tax filing basis changed after approval.';
+                    }
+                }
+
+                return $this->statusResult(
+                    $errors === [] ? 'current' : 'stale',
+                    true,
+                    $approval,
+                    null,
+                    $errors,
+                    $approval,
+                    'native'
+                );
+            }
+        );
+    }
+
+    /** @return array<int,array<string,mixed>>|array{error:string} */
+    private function periodReferencesForReadModel(
+        int $approvalId,
+        int $companyId,
+        int $accountingPeriodId,
+        int $accountsApprovalId,
+        string $accountsApprovalHash
+    ): array {
+        if ($approvalId <= 0 || $accountsApprovalId <= 0) {
+            return ['error' => 'A Corporation Tax period filing basis changed after HMRC approval.'];
+        }
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ctp.id AS active_ct_period_id, ctp.sequence_no, ctp.period_start, ctp.period_end,
+                    ctp.status AS ct_period_status, ctp.latest_computation_run_id,
+                    link.ct_period_filing_basis_id, link.ct_period_id AS linked_ct_period_id,
+                    link.basis_hash AS linked_basis_hash,
+                    b.id, b.filing_approval_id, b.company_id, b.accounting_period_id,
+                    b.ct_period_id, b.computation_run_id, b.calculation_basis_version,
+                    b.calculation_basis_hash, b.basis_version, b.basis_hash, b.basis_json,
+                    r.computation_hash
+             FROM corporation_tax_periods ctp
+             LEFT JOIN hmrc_ct_filing_approval_period_bases link
+               ON link.hmrc_ct_filing_approval_id = :approval_id
+              AND link.ct_period_id = ctp.id
+             LEFT JOIN ct_period_filing_bases b ON b.id = link.ct_period_filing_basis_id
+             LEFT JOIN corporation_tax_computation_runs r ON r.id = ctp.latest_computation_run_id
+             WHERE ctp.company_id = :company_id
+               AND ctp.accounting_period_id = :period_id
+               AND ctp.status <> :superseded
+             ORDER BY ctp.sequence_no, ctp.id',
+            [
+                'approval_id' => $approvalId,
+                'company_id' => $companyId,
+                'period_id' => $accountingPeriodId,
+                'superseded' => 'superseded',
+            ]
+        );
+        if ($rows === []) {
+            return ['error' => 'No active Corporation Tax periods are available for HMRC approval.'];
+        }
+
+        $references = [];
+        foreach ($rows as $row) {
+            $model = json_decode((string)($row['basis_json'] ?? ''), true);
+            $canonicalModel = is_array($model) ? $this->canonicalJson($model) : '';
+            $expectedHash = $canonicalModel !== ''
+                ? hash(
+                    'sha256',
+                    (string)($row['basis_version'] ?? '') . '|' . $accountsApprovalHash . '|'
+                    . (string)($row['calculation_basis_hash'] ?? '') . '|' . $canonicalModel
+                )
+                : '';
+            $basisVersion = (string)($row['basis_version'] ?? '');
+            $filed = in_array((string)($row['ct_period_status'] ?? ''), ['submitted', 'accepted'], true);
+            $recognised = $basisVersion === IxbrlAccountsFilingApprovalService::CT_BASIS_VERSION
+                || ($filed && CtPeriodFilingModelService::recognisesBasisVersion($basisVersion));
+            if ((int)($row['id'] ?? 0) <= 0
+                || (int)($row['active_ct_period_id'] ?? 0) !== (int)($row['linked_ct_period_id'] ?? 0)
+                || (int)($row['active_ct_period_id'] ?? 0) !== (int)($row['ct_period_id'] ?? 0)
+                || (int)($row['filing_approval_id'] ?? 0) !== $accountsApprovalId
+                || (int)($row['company_id'] ?? 0) !== $companyId
+                || (int)($row['accounting_period_id'] ?? 0) !== $accountingPeriodId
+                || (int)($row['latest_computation_run_id'] ?? 0) !== (int)($row['computation_run_id'] ?? 0)
+                || !$recognised
+                || !is_array($model)
+                || (int)($model['approval']['id'] ?? 0) !== $accountsApprovalId
+                || !hash_equals($accountsApprovalHash, strtolower(trim((string)($model['approval']['basis_hash'] ?? ''))))
+                || (int)($model['ct_period']['id'] ?? 0) !== (int)($row['ct_period_id'] ?? 0)
+                || (int)($model['computation']['run_id'] ?? 0) !== (int)($row['computation_run_id'] ?? 0)
+                || !hash_equals(
+                    strtolower(trim((string)($row['computation_hash'] ?? ''))),
+                    strtolower(trim((string)($model['computation']['hash'] ?? '')))
+                )
+                || !hash_equals(strtolower(trim((string)($row['basis_hash'] ?? ''))), $expectedHash)
+                || !hash_equals(
+                    strtolower(trim((string)($row['basis_hash'] ?? ''))),
+                    strtolower(trim((string)($row['linked_basis_hash'] ?? '')))
+                )) {
+                return ['error' => 'A Corporation Tax period filing basis changed after HMRC approval.'];
+            }
+            $references[] = [
+                'id' => (int)$row['id'],
+                'ct_period_id' => (int)$row['ct_period_id'],
+                'sequence_no' => (int)$row['sequence_no'],
+                'period_start' => (string)$row['period_start'],
+                'period_end' => (string)$row['period_end'],
+                'computation_run_id' => (int)$row['computation_run_id'],
+                'computation_hash' => (string)$row['computation_hash'],
+                'calculation_basis_version' => (string)$row['calculation_basis_version'],
+                'calculation_basis_hash' => (string)$row['calculation_basis_hash'],
+                'basis_version' => (string)$row['basis_version'],
+                'basis_hash' => (string)$row['basis_hash'],
+            ];
+        }
+        return $references;
+    }
+
+    /**
      * Returns the current native approval or a clearly labelled legacy adapter.
      * An empty array means that the HMRC filing decision is not current.
      *
@@ -140,7 +383,7 @@ final class HmrcCtFilingApprovalService
         if ($approvedBy === '') {
             throw new \RuntimeException('The HMRC Corporation Tax approval must identify its approver.');
         }
-        return (array)\InterfaceDB::transaction(function () use (
+        $result = (array)\InterfaceDB::transaction(function () use (
             $companyId,
             $accountingPeriodId,
             $approvedBy,
@@ -247,6 +490,14 @@ final class HmrcCtFilingApprovalService
                 'ct_basis_ids' => $ctBasisIds,
             ];
         });
+        \eel_accounts\Support\RequestCache::forget(
+            'hmrc.ct-filing-approval.status-read-model',
+            \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId)
+        );
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct-period.filing-model.status');
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct600.return-model.status');
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct600.generated-artifact.status');
+        return $result;
     }
 
     /** @return array<string,mixed> */

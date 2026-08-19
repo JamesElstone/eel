@@ -2732,6 +2732,17 @@ final class HmrcCtTestTransport implements \eel_accounts\Client\HmrcCtTransactio
                     (string)$status,
                     'safeCurrentManifestForStatus('
                 ));
+                $h->assertTrue(str_contains((string)$status, 'fetchForAccountingPeriod('));
+                $h->assertTrue(str_contains((string)$status, 'requestArtifactCandidatesForAccountingPeriod('));
+                $h->assertTrue(str_contains((string)$status, 'requestArtifactFromCandidates('));
+                $h->assertFalse(str_contains((string)$status, 'fetchForCtPeriod('));
+                $h->assertFalse(str_contains((string)$status, 'requestArtifactRecordForHashes('));
+
+                $snapshot = strstr($source, 'private function filingSnapshot(');
+                $snapshot = strstr((string)$snapshot, 'private function firstDiagnostic(', true);
+                $h->assertTrue(is_string($snapshot));
+                $h->assertTrue(str_contains((string)$snapshot, "\$manifest['readiness']"));
+                $h->assertFalse(str_contains((string)$snapshot, 'Ct600ReturnModelService'));
 
                 $submit = strstr($source, 'private function submitMode(');
                 $h->assertTrue(is_string($submit));

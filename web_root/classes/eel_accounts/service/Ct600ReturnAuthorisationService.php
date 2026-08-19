@@ -311,6 +311,13 @@ final class Ct600ReturnAuthorisationService
                     'actor' => trim($actor) !== '' ? trim($actor) : 'web_app',
                 ]
             );
+            \eel_accounts\Support\RequestCache::forget(
+                'hmrc.ct-filing-approval.status-read-model',
+                \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId)
+            );
+            \eel_accounts\Support\RequestCache::forgetNamespace('ct-period.filing-model.status');
+            \eel_accounts\Support\RequestCache::forgetNamespace('ct600.return-model.status');
+            \eel_accounts\Support\RequestCache::forgetNamespace('ct600.generated-artifact.status');
             return [
                 'success' => true,
                 'errors' => [],

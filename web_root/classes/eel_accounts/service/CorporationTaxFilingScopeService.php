@@ -138,6 +138,13 @@ final class CorporationTaxFilingScopeService
                 'revision' => $revision, 'confirmed_by' => $actor, 'basis_hash' => hash('sha256', $json),
             ]
         );
+        \eel_accounts\Support\RequestCache::forget(
+            'hmrc.ct-filing-approval.status-read-model',
+            \eel_accounts\Support\RequestCache::key($companyId, $accountingPeriodId)
+        );
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct-period.filing-model.status');
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct600.return-model.status');
+        \eel_accounts\Support\RequestCache::forgetNamespace('ct600.generated-artifact.status');
         return ['success' => true, 'errors' => []];
     }
 

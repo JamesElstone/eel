@@ -170,6 +170,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'status($companyId, $accountingPeriodId, $ctPeriodId, true)'
                 ));
 
+                $readModel = strstr($source, 'private function sourceContextForReadModel(');
+                $readModel = strstr((string)$readModel, 'private function frozenDeclaration(', true);
+                $harness->assertTrue(is_string($readModel));
+                $harness->assertTrue(str_contains((string)$readModel, 'statusForReadModel('));
+                $harness->assertTrue(str_contains((string)$readModel, 'buildForStatus('));
+                $harness->assertTrue(str_contains((string)$readModel, 'activeProfile('));
+                $harness->assertTrue(str_contains((string)$readModel, 'locateAccountsIxbrlForStatus('));
+                $harness->assertFalse(str_contains((string)$readModel, 'Ct600ReturnModelService'));
+                $harness->assertFalse(str_contains((string)$readModel, 'HmrcCt600ValidationService'));
+                $harness->assertFalse(str_contains((string)$readModel, 'Ct600aService'));
+
                 foreach ([
                     'Verifying the statutory-accounts and HMRC CT approvals',
                     'Checking the HMRC Accounting iXBRL artifact',

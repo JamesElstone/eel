@@ -334,5 +334,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $h->assertTrue(str_contains($source, 'new Ct600aService())->build('));
             $h->assertTrue(str_contains($source, "forgetNamespace('tax.ct600a')"));
         });
+
+        $h->check($service::class, 'uses cached stored-identity verification for the render read model', static function () use ($h): void {
+            $source = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes'
+                . DIRECTORY_SEPARATOR . 'eel_accounts' . DIRECTORY_SEPARATOR . 'service'
+                . DIRECTORY_SEPARATOR . 'HmrcCtFilingApprovalService.php');
+            $readModel = strstr($source, 'public function statusForReadModel(');
+            $readModel = strstr((string)$readModel, 'public function current(', true);
+            $h->assertTrue(is_string($readModel));
+            $h->assertTrue(str_contains((string)$readModel, 'hmrc.ct-filing-approval.status-read-model'));
+            $h->assertTrue(str_contains((string)$readModel, 'statusForReadModel('));
+            $h->assertTrue(str_contains((string)$readModel, 'hmrc_ct_filing_approval_period_bases'));
+            $h->assertTrue(str_contains((string)$readModel, 'latest_computation_run_id'));
+            $h->assertTrue(str_contains((string)$readModel, "hash('sha256', \$basisJson)"));
+            $h->assertFalse(str_contains((string)$readModel, 'Ct600aService'));
+            $h->assertFalse(str_contains((string)$readModel, '$this->candidate('));
+        });
     }
 );

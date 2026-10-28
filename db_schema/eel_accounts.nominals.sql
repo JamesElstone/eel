@@ -90,7 +90,7 @@ UNLOCK TABLES;
 
 LOCK TABLES `nominal_account_subtypes` WRITE;
 /*!40000 ALTER TABLE `nominal_account_subtypes` DISABLE KEYS */;
-INSERT INTO `nominal_account_subtypes` VALUES
+INSERT IGNORE INTO `nominal_account_subtypes` VALUES
 (1,'bank','Bank','asset',10,1),
 (2,'trade_debtor','Trade Debtor','asset',20,1),
 (3,'director_loan_asset','Director Loan Asset','asset',30,1),
@@ -110,7 +110,12 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (17,'dividends_payable','Dividends Payable','liability',56,1),
 (18,'asset_disposal_clearing','Asset Disposal Clearing','asset',149,1),
 (19,'hmrc_payable','HMRC Penalties & Interest Payable','liability',61,1),
-(20,'prepayments','Prepayments','asset',25,1);
+(20,'prepayments','Prepayments','asset',25,1),
+(21,'participator_loan_asset','Participator Loan Asset','asset',31,1),
+(22,'participator_loan_liability','Participator Loan Liability','liability',51,1),
+(23,'ordinary_share_capital','Ordinary Share Capital','equity',70,1),
+(24,'corp_tax_expense','Corporation Tax Expense','expense',625,1),
+(25,'charitable_donations','Charitable Donations','expense',615,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

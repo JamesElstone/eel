@@ -1939,33 +1939,6 @@ CREATE TABLE `nominal_account_subtypes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Baseline seed rows for table `nominal_account_subtypes`
---
-
-INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `sort_order`, `is_active`) VALUES
-  ('bank', 'Bank', 'asset', 10, 1),
-  ('prepayments', 'Prepayments', 'asset', 25, 1),
-  ('fixed_asset', 'Fixed Asset', 'asset', 20, 1),
-  ('director_loan_asset', 'Director Loan Asset', 'asset', 30, 1),
-  ('participator_loan_asset', 'Participator Loan Asset', 'asset', 31, 1),
-  ('trade_creditor', 'Trade Creditor', 'liability', 45, 1),
-  ('expense_payable', 'Expense Payable', 'liability', 46, 1),
-  ('director_loan_liability', 'Director Loan Liability', 'liability', 50, 1),
-  ('participator_loan_liability', 'Participator Loan Liability', 'liability', 51, 1),
-  ('vat_control', 'VAT Control', 'liability', 55, 1),
-  ('ordinary_share_capital', 'Ordinary Share Capital', 'equity', 70, 1),
-  ('capital_reserves', 'Capital Reserves', 'equity', 80, 1),
-  ('dividends_payable', 'Dividends Payable', 'liability', 85, 1),
-  ('overhead', 'Overhead', 'expense', 600, 1),
-  ('hmrc_payable', 'HMRC Penalties & Interest Payable', 'liability', 610, 1),
-  ('corp_tax', 'Corporation Tax', 'liability', 650, 1),
-  ('corp_tax_expense', 'Corporation Tax Expense', 'expense', 625, 1),
-  ('asset_disposal_gain', 'Asset Disposal Gain', 'income', 420, 1),
-  ('depreciation_expense', 'Depreciation Expense', 'expense', 620, 1),
-  ('asset_disposal_loss', 'Asset Disposal Loss', 'expense', 621, 1),
-  ('charitable_donations', 'Charitable Donations', 'expense', 615, 1);
-
---
 -- Table structure for table `nominal_accounts`
 --
 
@@ -2819,8 +2792,8 @@ CREATE TABLE `hmrc_obligation_evidence_links` (
   CONSTRAINT `chk_hmrc_evidence_one_source` CHECK ((`transaction_id` is not null and `expense_claim_line_id` is null) or (`transaction_id` is null and `expense_claim_line_id` is not null)),
   CONSTRAINT `chk_hmrc_evidence_positive_amount` CHECK (`allocated_amount` > 0),
   CONSTRAINT `fk_hmrc_evidence_obligation` FOREIGN KEY (`hmrc_obligation_id`) REFERENCES `hmrc_obligations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_hmrc_evidence_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `fk_hmrc_evidence_expense` FOREIGN KEY (`expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `fk_hmrc_evidence_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON UPDATE RESTRICT,
+  CONSTRAINT `fk_hmrc_evidence_expense` FOREIGN KEY (`expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -3231,7 +3204,7 @@ CREATE TABLE `asset_depreciation_adjustments` (
   CONSTRAINT `fk_asset_depreciation_adjustment_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_depreciation_adjustment_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_depreciation_adjustment_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `chk_asset_depreciation_adjustment_amount` CHECK (`amount <> 0)
+  CONSTRAINT `chk_asset_depreciation_adjustment_amount` CHECK (`amount` <> 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

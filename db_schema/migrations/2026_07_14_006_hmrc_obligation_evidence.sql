@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS hmrc_obligation_evidence_links (
   ),
   CONSTRAINT chk_hmrc_evidence_positive_amount CHECK (allocated_amount > 0),
   CONSTRAINT fk_hmrc_evidence_obligation FOREIGN KEY (hmrc_obligation_id) REFERENCES hmrc_obligations (id) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_hmrc_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT fk_hmrc_evidence_expense FOREIGN KEY (expense_claim_line_id) REFERENCES expense_claim_lines (id) ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT fk_hmrc_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_hmrc_evidence_expense FOREIGN KEY (expense_claim_line_id) REFERENCES expense_claim_lines (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO company_settings (company_id, setting, type, value)
